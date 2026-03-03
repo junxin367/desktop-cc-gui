@@ -1,4 +1,10 @@
+import { useEffect, useMemo, useState } from 'react';
 import type { TFunction } from 'i18next';
+import Circle from 'lucide-react/dist/esm/icons/circle';
+import CheckCircle2 from 'lucide-react/dist/esm/icons/check-circle-2';
+import Layers3 from 'lucide-react/dist/esm/icons/layers-3';
+import Clock3 from 'lucide-react/dist/esm/icons/clock-3';
+import Tag from 'lucide-react/dist/esm/icons/tag';
 import type {
   AccountRateLimitsInfo,
   DropdownItemData,
@@ -7,11 +13,13 @@ import type {
   ProviderId,
   ReasoningEffort,
   SelectedAgent,
+  TriggerQuery,
 } from './types.js';
 import type { TooltipState } from './hooks/useTooltip.js';
 import { ButtonArea } from './ButtonArea.js';
-import { CompletionDropdown } from './Dropdown/index.js';
+import { CompletionDropdown, Dropdown } from './Dropdown/index.js';
 import { PromptEnhancerDialog } from './PromptEnhancerDialog.js';
+import { Markdown } from '../../../messages/components/Markdown';
 
 interface CompletionController {
   isOpen: boolean;
@@ -19,9 +27,124 @@ interface CompletionController {
   items: DropdownItemData[];
   activeIndex: number;
   loading: boolean;
+  triggerQuery?: TriggerQuery | null;
   close: () => void;
   selectIndex: (index: number) => void;
   handleMouseEnter: (index: number) => void;
+}
+
+type MemoryDropdownData = {
+  id: string;
+  title: string;
+  summary: string;
+  detail: string;
+  kind: string;
+  importance: string;
+  updatedAt: number;
+  tags: string[];
+};
+
+type MemoryPreviewSection = {
+  label: string;
+  content: string;
+};
+
+const MEMORY_DETAIL_SECTION_REGEX =
+  /(用户输入|助手输出摘要|助手输出|User input|Assistant summary|Assistant output)[:：]/gi;
+const MEMORY_USER_INPUT_REGEX =
+  /(?:^|\n)\s*用户输入[:：]\s*([\s\S]*?)(?=\n+\s*(?:助手输出摘要|助手输出)[:：]|$)/;
+
+function asString(value: unknown) {
+  return typeof value === 'string' ? value : '';
+}
+
+function asNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function asStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as string[];
+  }
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+}
+
+function normalizeMemoryImportance(value?: string) {
+  const normalized = (value || '').trim().toLowerCase();
+  if (!normalized) {
+    return 'normal';
+  }
+  if (normalized.includes('high')) {
+    return 'high';
+  }
+  if (normalized.includes('low')) {
+    return 'low';
+  }
+  return normalized.includes('medium') ? 'medium' : 'normal';
+}
+
+function parseMemoryPreviewSections(text: string): MemoryPreviewSection[] {
+  const normalized = text.trim();
+  if (!normalized) {
+    return [];
+  }
+  const matches = Array.from(
+    normalized.matchAll(
+      new RegExp(MEMORY_DETAIL_SECTION_REGEX.source, MEMORY_DETAIL_SECTION_REGEX.flags),
+    ),
+  );
+  if (matches.length === 0) {
+    return [];
+  }
+  const sections: MemoryPreviewSection[] = [];
+  for (let index = 0; index < matches.length; index += 1) {
+    const current = matches[index];
+    if (!current || current.index === undefined) {
+      continue;
+    }
+    const label = (current[1] || '').trim();
+    const start = current.index + current[0].length;
+    const next = matches[index + 1];
+    const end = next?.index ?? normalized.length;
+    const content = normalized.slice(start, end).trim();
+    if (!content) {
+      continue;
+    }
+    sections.push({ label, content });
+  }
+  return sections;
+}
+
+function getMemoryUserInputText(detail: string) {
+  const normalized = detail.trim();
+  if (!normalized) {
+    return '';
+  }
+  const matched = normalized.match(MEMORY_USER_INPUT_REGEX);
+  if (!matched || !matched[1]) {
+    return '';
+  }
+  return matched[1].replace(/\s+/g, ' ').trim();
+}
+
+function toMemoryDropdownData(item: DropdownItemData): MemoryDropdownData | null {
+  const record = (item.data ?? {}) as Record<string, unknown>;
+  const memoryId = asString(record.id) || item.id.replace(/^memory:/, '');
+  if (!memoryId) {
+    return null;
+  }
+  const summary = asString(record.summary);
+  const detail = asString(record.detail);
+  return {
+    id: memoryId,
+    title: asString(record.title) || item.label,
+    summary,
+    detail,
+    kind: asString(record.kind) || 'note',
+    importance: asString(record.importance) || 'normal',
+    updatedAt: asNumber(record.updatedAt) ?? Date.now(),
+    tags: asStringArray(record.tags),
+  };
 }
 
 export function ChatInputBoxFooter({
@@ -58,9 +181,11 @@ export function ChatInputBoxFooter({
   onAddModel,
   onClearAgent,
   fileCompletion,
+  memoryCompletion,
   commandCompletion,
   agentCompletion,
   promptCompletion,
+  selectedManualMemoryIds = [],
   tooltip,
   promptEnhancer,
   t,
@@ -98,9 +223,11 @@ export function ChatInputBoxFooter({
   onAddModel?: () => void;
   onClearAgent: () => void;
   fileCompletion: CompletionController;
+  memoryCompletion: CompletionController;
   commandCompletion: CompletionController;
   agentCompletion: CompletionController;
   promptCompletion: CompletionController;
+  selectedManualMemoryIds?: string[];
   tooltip: TooltipState | null;
   promptEnhancer: {
     isOpen: boolean;
@@ -113,6 +240,70 @@ export function ChatInputBoxFooter({
   };
   t: TFunction;
 }) {
+  const [expandedPreviewMemoryId, setExpandedPreviewMemoryId] = useState<string | null>(null);
+  const selectedManualMemoryIdSet = useMemo(
+    () => new Set(selectedManualMemoryIds),
+    [selectedManualMemoryIds],
+  );
+
+  const memoryEntries = useMemo(
+    () =>
+      memoryCompletion.items.map((item, index) => ({
+        item,
+        index,
+        memory: toMemoryDropdownData(item),
+      })),
+    [memoryCompletion.items],
+  );
+  const activeMemoryEntry =
+    memoryEntries[memoryCompletion.activeIndex] ?? memoryEntries[0] ?? null;
+  const activeMemory = activeMemoryEntry?.memory ?? null;
+  const manualMemoryQueryText = (memoryCompletion.triggerQuery?.query ?? '').trim();
+  const manualMemoryPickerHeading = useMemo(() => {
+    if (!manualMemoryQueryText) {
+      return t('composer.manualMemoryPickerTitle');
+    }
+    const query = `@@${manualMemoryQueryText}`;
+    const translated = t('composer.manualMemoryPickerInputTitle', { query });
+    return translated === 'composer.manualMemoryPickerInputTitle'
+      ? `用户输入：${query}`
+      : translated;
+  }, [manualMemoryQueryText, t]);
+
+  const activeMemoryPreview = (activeMemory?.detail || activeMemory?.summary || '').trim();
+  const activeMemoryPreviewSections = useMemo(
+    () => parseMemoryPreviewSections(activeMemoryPreview),
+    [activeMemoryPreview],
+  );
+  const activeMemoryPreviewLong = activeMemoryPreview.length > 220;
+  const activeMemoryId = activeMemory?.id ?? null;
+  const activeMemoryPreviewExpanded =
+    Boolean(activeMemoryId) && expandedPreviewMemoryId === activeMemoryId;
+
+  useEffect(() => {
+    if (!memoryCompletion.isOpen || !activeMemoryId) {
+      setExpandedPreviewMemoryId(null);
+      return;
+    }
+    setExpandedPreviewMemoryId((prev) => (prev === activeMemoryId ? prev : null));
+  }, [activeMemoryId, memoryCompletion.isOpen]);
+
+  const formatMemoryDate = useMemo(
+    () =>
+      (value?: number) => {
+        if (!value || !Number.isFinite(value)) {
+          return '--';
+        }
+        return new Intl.DateTimeFormat(undefined, {
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(new Date(value));
+      },
+    [],
+  );
+
   return (
     <>
       {/* Bottom button area */}
@@ -163,6 +354,171 @@ export function ChatInputBoxFooter({
         onSelect={(_, index) => fileCompletion.selectIndex(index)}
         onMouseEnter={fileCompletion.handleMouseEnter}
       />
+
+      {/* @@ manual memory picker */}
+      <Dropdown
+        isVisible={memoryCompletion.isOpen}
+        position={memoryCompletion.position}
+        width={760}
+        className="completion-dropdown--memory"
+        onClose={memoryCompletion.close}
+      >
+        {memoryCompletion.loading ? (
+          <div className="dropdown-loading">{t('chat.loadingDropdown')}</div>
+        ) : memoryEntries.length === 0 ? (
+          <div className="dropdown-empty">{t('memory.empty')}</div>
+        ) : (
+          <div className="composer-memory-picker" role="listbox">
+            <div className="composer-memory-picker-list">
+              <div className="composer-memory-picker-head">
+                <span className="composer-memory-picker-title">{manualMemoryPickerHeading}</span>
+                <span className="composer-memory-picker-count">
+                  {t('composer.manualMemoryPickerSelectedCount', {
+                    count: selectedManualMemoryIds.length,
+                  })}
+                </span>
+              </div>
+              {memoryEntries.map(({ item, index, memory }) => {
+                const memoryId = memory?.id ?? item.id;
+                const selected = selectedManualMemoryIdSet.has(memoryId);
+                const isActive = index === memoryCompletion.activeIndex;
+                const detail = memory?.detail || '';
+                const displayTitle = getMemoryUserInputText(detail) || memory?.title || item.label;
+                const tags = (memory?.tags || []).slice(0, 3);
+                const importanceTone = normalizeMemoryImportance(memory?.importance);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`composer-memory-picker-card${isActive ? ' is-active' : ''}${
+                      selected ? ' is-selected' : ''
+                    }`}
+                    role="option"
+                    aria-selected={isActive}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => memoryCompletion.selectIndex(index)}
+                    onMouseEnter={() => memoryCompletion.handleMouseEnter(index)}
+                  >
+                    <span className="composer-memory-picker-card-check" aria-hidden>
+                      {selected ? <CheckCircle2 size={14} /> : <Circle size={14} />}
+                    </span>
+                    <span className="composer-memory-picker-card-main">
+                      <span className="composer-memory-picker-card-title">{displayTitle}</span>
+                      <span className="composer-memory-picker-card-meta">
+                        <span className="composer-memory-picker-card-meta-item">
+                          <Layers3 size={12} />
+                          {memory?.kind || 'note'}
+                        </span>
+                        <span
+                          className={`composer-memory-picker-card-meta-item composer-memory-picker-importance is-${importanceTone}`}
+                        >
+                          {memory?.importance || 'normal'}
+                        </span>
+                        <span className="composer-memory-picker-card-meta-item">
+                          <Clock3 size={12} />
+                          {formatMemoryDate(memory?.updatedAt)}
+                        </span>
+                      </span>
+                      {tags.length > 0 && (
+                        <span className="composer-memory-picker-card-tags">
+                          {tags.map((tag) => (
+                            <span key={`${memoryId}-${tag}`} className="composer-memory-picker-tag">
+                              #{tag}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <aside className="composer-memory-picker-preview">
+              {activeMemory ? (
+                <>
+                  <div className="composer-memory-picker-preview-head">
+                    <span className="composer-memory-picker-preview-title">
+                      {activeMemory.title}
+                    </span>
+                    <span className="composer-memory-picker-preview-shortcut">
+                      {selectedManualMemoryIdSet.has(activeMemory.id)
+                        ? t('composer.manualMemoryPickerShortcutUnselect')
+                        : t('composer.manualMemoryPickerShortcutSelect')}
+                    </span>
+                  </div>
+                  <div
+                    className={`composer-memory-picker-preview-body${
+                      activeMemoryPreviewExpanded ? ' is-expanded' : ''
+                    }`}
+                  >
+                    {activeMemoryPreviewSections.length > 0 ? (
+                      <div className="composer-memory-picker-preview-sections">
+                        {activeMemoryPreviewSections.map((section, index) => (
+                          <div
+                            key={`${section.label}-${index}`}
+                            className="composer-memory-picker-preview-section"
+                          >
+                            <div className="composer-memory-picker-preview-section-label">
+                              {section.label}
+                            </div>
+                            <Markdown
+                              className="markdown composer-memory-picker-preview-markdown"
+                              value={section.content}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="composer-memory-picker-preview-text">
+                        <Markdown
+                          className="markdown composer-memory-picker-preview-markdown"
+                          value={activeMemoryPreview || t('composer.manualMemoryPickerPreviewEmpty')}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {activeMemoryPreviewLong && (
+                    <button
+                      type="button"
+                      className="composer-memory-picker-preview-toggle"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() =>
+                        setExpandedPreviewMemoryId((prev) =>
+                          prev === activeMemory.id ? null : activeMemory.id,
+                        )
+                      }
+                    >
+                      {activeMemoryPreviewExpanded
+                        ? t('composer.manualMemoryPreviewCollapse')
+                        : t('composer.manualMemoryPreviewExpand')}
+                    </button>
+                  )}
+                  <div className="composer-memory-picker-preview-meta">
+                    <span className="composer-memory-picker-preview-meta-item">
+                      <Layers3 size={12} />
+                      {activeMemory.kind || 'note'}
+                    </span>
+                    <span className="composer-memory-picker-preview-meta-item">
+                      <Clock3 size={12} />
+                      {formatMemoryDate(activeMemory.updatedAt)}
+                    </span>
+                    {activeMemory.tags.length > 0 && (
+                      <span className="composer-memory-picker-preview-meta-item">
+                        <Tag size={12} />
+                        {activeMemory.tags.slice(0, 5).join(' · ')}
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <span className="composer-memory-picker-preview-empty">
+                  {t('composer.manualMemoryPickerPreviewFallback')}
+                </span>
+              )}
+            </aside>
+          </div>
+        )}
+      </Dropdown>
 
       {/* / slash command dropdown menu */}
       <CompletionDropdown

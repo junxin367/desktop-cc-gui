@@ -36,6 +36,7 @@ function Harness({
     lastCompositionEndTimeRef,
     sendShortcut,
     fileCompletion: closedCompletion,
+    memoryCompletion: closedCompletion,
     commandCompletion: closedCompletion,
     agentCompletion: closedCompletion,
     promptCompletion: closedCompletion,

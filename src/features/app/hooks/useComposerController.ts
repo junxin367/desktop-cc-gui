@@ -75,6 +75,7 @@ export function useComposerController({
   const [composerDraftsByThread, setComposerDraftsByThread] = useState<
     Record<string, string>
   >({});
+  const [detachedDraft, setDetachedDraft] = useState("");
   const [prefillDraft, setPrefillDraft] = useState<QueuedMessage | null>(null);
   const [composerInsert, setComposerInsert] = useState<QueuedMessage | null>(
     null,
@@ -124,13 +125,16 @@ export function useComposerController({
 
   const activeDraft = useMemo(
     () =>
-      activeThreadId ? composerDraftsByThread[activeThreadId] ?? "" : "",
-    [activeThreadId, composerDraftsByThread],
+      activeThreadId
+        ? composerDraftsByThread[activeThreadId] ?? ""
+        : detachedDraft,
+    [activeThreadId, composerDraftsByThread, detachedDraft],
   );
 
   const handleDraftChange = useCallback(
     (next: string) => {
       if (!activeThreadId) {
+        setDetachedDraft(next);
         return;
       }
       startTransition(() => {

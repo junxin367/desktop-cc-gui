@@ -1397,6 +1397,8 @@ export const Composer = memo(function Composer({
           files={files}
           directories={directories}
           commands={commands}
+          workspaceId={activeWorkspaceId}
+          onManualMemorySelect={handleSelectManualMemory}
           sendShortcut={sendShortcut}
           placeholder={
             sendShortcut === "cmdEnter"
@@ -1408,6 +1410,7 @@ export const Composer = memo(function Composer({
           onClearContext={hasActiveFileReference ? handleClearContext : undefined}
           selectedAgent={selectedChatInputAgent}
           selectedContextChips={contextSelectionChips}
+          selectedManualMemoryIds={selectedManualMemories.map((entry) => entry.id)}
           onRemoveContextChip={handleRemoveContextChip}
           onAgentSelect={handleAgentSelect}
           onOpenAgentSettings={onOpenAgentSettings}

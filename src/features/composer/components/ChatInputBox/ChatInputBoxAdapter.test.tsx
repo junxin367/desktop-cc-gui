@@ -10,6 +10,7 @@ const mockState = vi.hoisted(() => ({
   setClaudeAlwaysThinkingEnabled: vi.fn(),
   updateClaudeProvider: vi.fn(),
   switchClaudeProvider: vi.fn(),
+  projectMemoryList: vi.fn(),
 }));
 
 vi.mock('./ChatInputBox', async () => {
@@ -36,6 +37,12 @@ vi.mock('../../../../services/tauri', () => ({
   setClaudeAlwaysThinkingEnabled: mockState.setClaudeAlwaysThinkingEnabled,
   updateClaudeProvider: mockState.updateClaudeProvider,
   switchClaudeProvider: mockState.switchClaudeProvider,
+}));
+
+vi.mock('../../../project-memory/services/projectMemoryFacade', () => ({
+  projectMemoryFacade: {
+    list: mockState.projectMemoryList,
+  },
 }));
 
 import { ChatInputBoxAdapter } from './ChatInputBoxAdapter';
@@ -73,6 +80,7 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
     mockState.setClaudeAlwaysThinkingEnabled.mockReset().mockResolvedValue(undefined);
     mockState.updateClaudeProvider.mockReset().mockResolvedValue(undefined);
     mockState.switchClaudeProvider.mockReset().mockResolvedValue(undefined);
+    mockState.projectMemoryList.mockReset().mockResolvedValue({ items: [], total: 0 });
     window.localStorage.clear();
   });
 
@@ -142,15 +150,15 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
     renderAdapter();
 
     await waitFor(() => expect(mockState.latestProps).toBeTruthy());
-    const latest = mockState.latestProps as {
+    const getLatest = () => mockState.latestProps as {
       alwaysThinkingEnabled?: boolean;
       onToggleThinking?: (enabled: boolean) => void | Promise<void>;
     };
 
-    await waitFor(() => expect(latest.alwaysThinkingEnabled).toBe(true));
+    await waitFor(() => expect(getLatest().alwaysThinkingEnabled).toBe(true));
 
     await act(async () => {
-      await Promise.resolve(latest.onToggleThinking?.(false));
+      await Promise.resolve(getLatest().onToggleThinking?.(false));
     });
 
     expect(mockState.updateClaudeProvider).not.toHaveBeenCalled();
@@ -184,5 +192,85 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
       latest.onInput?.('hello');
     }).not.toThrow();
     expect(onTextChange).toHaveBeenCalledWith('hello', null);
+  });
+
+  it('bridges @@ manual memory provider and selection callback', async () => {
+    const onManualMemorySelect = vi.fn();
+    mockState.projectMemoryList.mockResolvedValue({
+      items: [
+        {
+          id: 'm-1',
+          title: '发布步骤',
+          summary: '先构建再发布',
+          detail: '用户输入：发布\n助手输出摘要：先构建再发布',
+          cleanText: '发布 clean text',
+          kind: 'conversation',
+          importance: 'high',
+          tags: ['release'],
+          createdAt: 1_700_000_000_000,
+          updatedAt: 1_700_000_000_100,
+        },
+      ],
+      total: 1,
+    });
+
+    renderAdapter({
+      workspaceId: 'ws-1',
+      onManualMemorySelect,
+    });
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+
+    const latest = mockState.latestProps as {
+      manualMemoryCompletionProvider?: (
+        query: string,
+        signal: AbortSignal,
+      ) => Promise<
+        Array<{
+          id: string;
+          title: string;
+          summary: string;
+          detail: string;
+          kind: string;
+          importance: string;
+          tags: string[];
+          updatedAt: number;
+        }>
+      >;
+      onSelectManualMemory?: (memory: {
+        id: string;
+        title: string;
+      }) => void;
+    };
+
+    expect(typeof latest.manualMemoryCompletionProvider).toBe('function');
+    const signal = new AbortController().signal;
+    const results = await latest.manualMemoryCompletionProvider?.('发布', signal);
+    expect(mockState.projectMemoryList).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        query: '发布',
+      }),
+    );
+    expect(results?.[0]).toEqual(
+      expect.objectContaining({
+        id: 'm-1',
+        title: '发布步骤',
+        summary: '先构建再发布',
+        kind: 'conversation',
+        importance: 'high',
+      }),
+    );
+
+    latest.onSelectManualMemory?.({
+      id: 'm-1',
+      title: '发布步骤',
+    });
+    expect(onManualMemorySelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'm-1',
+        title: '发布步骤',
+      }),
+    );
   });
 });

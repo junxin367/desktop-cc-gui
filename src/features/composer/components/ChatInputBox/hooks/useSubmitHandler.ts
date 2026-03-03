@@ -21,6 +21,7 @@ export interface UseSubmitHandlerOptions {
   externalAttachments: Attachment[] | undefined;
   setInternalAttachments: Dispatch<SetStateAction<Attachment[]>>;
   fileCompletion: CompletionLike;
+  memoryCompletion: CompletionLike;
   commandCompletion: CompletionLike;
   agentCompletion: CompletionLike;
   promptCompletion: CompletionLike;
@@ -52,6 +53,7 @@ export function useSubmitHandler({
   externalAttachments,
   setInternalAttachments,
   fileCompletion,
+  memoryCompletion,
   commandCompletion,
   agentCompletion,
   promptCompletion,
@@ -89,6 +91,7 @@ export function useSubmitHandler({
 
     // Close completions
     fileCompletion.close();
+    memoryCompletion.close();
     commandCompletion.close();
     agentCompletion.close();
     promptCompletion.close();
@@ -124,6 +127,7 @@ export function useSubmitHandler({
     externalAttachments,
     setInternalAttachments,
     fileCompletion,
+    memoryCompletion,
     commandCompletion,
     agentCompletion,
     promptCompletion,

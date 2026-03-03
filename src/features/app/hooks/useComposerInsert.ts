@@ -23,23 +23,29 @@ export function useComposerInsert({
 
   return useCallback(
     (insertText: string) => {
-      if (!activeThreadId) {
-        return;
-      }
       const textarea = textareaRef.current;
       const currentText = latestTextRef.current;
       const isTextareaActive =
         textarea !== null &&
         typeof document !== "undefined" &&
         document.activeElement === textarea;
-      const hasLiveSelection =
-        isTextareaActive &&
+      const hasSelectionRange =
+        textarea !== null &&
         typeof textarea.selectionStart === "number" &&
         typeof textarea.selectionEnd === "number";
-      const start = hasLiveSelection
+      const canUseSelection = activeThreadId
+        ? isTextareaActive && hasSelectionRange
+        : hasSelectionRange;
+      const selectionStart = canUseSelection && textarea
         ? textarea.selectionStart
+        : null;
+      const selectionEnd = canUseSelection && textarea
+        ? textarea.selectionEnd
+        : null;
+      const start = canUseSelection
+        ? (selectionStart ?? latestSelectionRef.current ?? currentText.length)
         : latestSelectionRef.current ?? currentText.length;
-      const end = hasLiveSelection ? textarea.selectionEnd : start;
+      const end = canUseSelection ? (selectionEnd ?? start) : start;
       const before = currentText.slice(0, start);
       const after = currentText.slice(end);
       const needsSpaceBefore = before.length > 0 && !/\s$/.test(before);

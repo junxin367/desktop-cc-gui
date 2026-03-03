@@ -23,6 +23,7 @@ interface UseCompletionTriggerDetectionParams {
   justRenderedTagRef: RefObject<boolean>;
   getTextContent: () => string;
   fileCompletion: CompletionDropdownState;
+  memoryCompletion: CompletionDropdownState;
   commandCompletion: CompletionDropdownState;
   agentCompletion: CompletionDropdownState;
   promptCompletion: CompletionDropdownState;
@@ -30,7 +31,7 @@ interface UseCompletionTriggerDetectionParams {
 
 /**
  * useCompletionTriggerDetection - Completion trigger detection hook
- * Handles detection and triggering of @ / / # / ! completion menus
+ * Handles detection and triggering of @@, @, /, #, ! completion menus
  */
 export function useCompletionTriggerDetection({
   editableRef,
@@ -38,6 +39,7 @@ export function useCompletionTriggerDetection({
   justRenderedTagRef,
   getTextContent,
   fileCompletion,
+  memoryCompletion,
   commandCompletion,
   agentCompletion,
   promptCompletion,
@@ -46,7 +48,7 @@ export function useCompletionTriggerDetection({
 
   /**
    * Detect and handle completion triggers
-   * Optimized: only start detection when @ or / or # is input
+   * Optimized: only start detection when trigger symbols are present
    */
   const detectAndTriggerCompletion = useCallback(() => {
     const timer = perfTimer('detectAndTriggerCompletion');
@@ -63,6 +65,7 @@ export function useCompletionTriggerDetection({
     if (justRenderedTagRef.current) {
       justRenderedTagRef.current = false;
       fileCompletion.close();
+      memoryCompletion.close();
       commandCompletion.close();
       agentCompletion.close();
       promptCompletion.close();
@@ -76,6 +79,7 @@ export function useCompletionTriggerDetection({
     // This prevents expensive operations (cursor position calculation, trigger detection) on large inputs
     if (text.length > TEXT_LENGTH_THRESHOLDS.COMPLETION_DETECTION) {
       fileCompletion.close();
+      memoryCompletion.close();
       commandCompletion.close();
       agentCompletion.close();
       promptCompletion.close();
@@ -92,6 +96,7 @@ export function useCompletionTriggerDetection({
 
     if (!hasAtSymbol && !hasSlashSymbol && !hasHashSymbol && !hasExclamationSymbol) {
       fileCompletion.close();
+      memoryCompletion.close();
       commandCompletion.close();
       agentCompletion.close();
       promptCompletion.close();
@@ -110,6 +115,7 @@ export function useCompletionTriggerDetection({
     // Close currently open completion
     if (!trigger) {
       fileCompletion.close();
+      memoryCompletion.close();
       commandCompletion.close();
       agentCompletion.close();
       promptCompletion.close();
@@ -125,7 +131,19 @@ export function useCompletionTriggerDetection({
     }
 
     // Open corresponding completion based on trigger symbol
-    if (trigger.trigger === '@') {
+    if (trigger.trigger === '@@') {
+      fileCompletion.close();
+      commandCompletion.close();
+      agentCompletion.close();
+      promptCompletion.close();
+      if (!memoryCompletion.isOpen) {
+        memoryCompletion.open(position, trigger);
+        memoryCompletion.updateQuery(trigger);
+      } else {
+        memoryCompletion.updateQuery(trigger);
+      }
+    } else if (trigger.trigger === '@') {
+      memoryCompletion.close();
       commandCompletion.close();
       agentCompletion.close();
       promptCompletion.close();
@@ -137,6 +155,7 @@ export function useCompletionTriggerDetection({
       }
     } else if (trigger.trigger === '/') {
       fileCompletion.close();
+      memoryCompletion.close();
       agentCompletion.close();
       promptCompletion.close();
       if (!commandCompletion.isOpen) {
@@ -147,6 +166,7 @@ export function useCompletionTriggerDetection({
       }
     } else if (trigger.trigger === '#') {
       fileCompletion.close();
+      memoryCompletion.close();
       commandCompletion.close();
       promptCompletion.close();
       if (!agentCompletion.isOpen) {
@@ -157,6 +177,7 @@ export function useCompletionTriggerDetection({
       }
     } else if (trigger.trigger === '!') {
       fileCompletion.close();
+      memoryCompletion.close();
       commandCompletion.close();
       agentCompletion.close();
       if (!promptCompletion.isOpen) {
@@ -177,6 +198,7 @@ export function useCompletionTriggerDetection({
     detectTrigger,
     getTriggerPosition,
     fileCompletion,
+    memoryCompletion,
     commandCompletion,
     agentCompletion,
     promptCompletion,

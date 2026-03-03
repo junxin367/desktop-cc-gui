@@ -11,6 +11,7 @@ export interface UseNativeEventCaptureOptions {
   lastCompositionEndTimeRef: MutableRefObject<number>;
   sendShortcut: 'enter' | 'cmdEnter';
   fileCompletion: CompletionOpenLike;
+  memoryCompletion: CompletionOpenLike;
   commandCompletion: CompletionOpenLike;
   agentCompletion: CompletionOpenLike;
   promptCompletion: CompletionOpenLike;
@@ -34,6 +35,7 @@ export function useNativeEventCapture({
   lastCompositionEndTimeRef,
   sendShortcut,
   fileCompletion,
+  memoryCompletion,
   commandCompletion,
   agentCompletion,
   promptCompletion,
@@ -51,6 +53,7 @@ export function useNativeEventCapture({
     lastCompositionEndTimeRef,
     sendShortcut,
     fileCompletion,
+    memoryCompletion,
     commandCompletion,
     agentCompletion,
     promptCompletion,
@@ -65,6 +68,7 @@ export function useNativeEventCapture({
     lastCompositionEndTimeRef,
     sendShortcut,
     fileCompletion,
+    memoryCompletion,
     commandCompletion,
     agentCompletion,
     promptCompletion,
@@ -114,7 +118,13 @@ export function useNativeEventCapture({
         ((ev.key === 'e' || ev.key === 'E') && ev.ctrlKey && !ev.metaKey);
       if (isCursorMovementKey) return;
 
-      if (latest.fileCompletion.isOpen || latest.commandCompletion.isOpen || latest.agentCompletion.isOpen || latest.promptCompletion.isOpen) {
+      if (
+        latest.fileCompletion.isOpen ||
+        latest.memoryCompletion.isOpen ||
+        latest.commandCompletion.isOpen ||
+        latest.agentCompletion.isOpen ||
+        latest.promptCompletion.isOpen
+      ) {
         return;
       }
 
@@ -175,7 +185,13 @@ export function useNativeEventCapture({
         latest.completionSelectedRef.current = false;
         return;
       }
-      if (latest.fileCompletion.isOpen || latest.commandCompletion.isOpen || latest.agentCompletion.isOpen || latest.promptCompletion.isOpen) {
+      if (
+        latest.fileCompletion.isOpen ||
+        latest.memoryCompletion.isOpen ||
+        latest.commandCompletion.isOpen ||
+        latest.agentCompletion.isOpen ||
+        latest.promptCompletion.isOpen
+      ) {
         return;
       }
       latest.handleSubmit();

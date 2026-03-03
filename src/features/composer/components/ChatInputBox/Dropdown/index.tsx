@@ -23,6 +23,7 @@ export const Dropdown = ({
   offsetX = 0,
   selectedIndex: _selectedIndex = 0,
   onClose,
+  className,
   children,
 }: DropdownProps) => {
   // selectedIndex is passed from parent component, not directly used here
@@ -96,7 +97,7 @@ export const Dropdown = ({
   return (
     <div
       ref={dropdownRef}
-      className="completion-dropdown"
+      className={`completion-dropdown${className ? ` ${className}` : ''}`}
       style={style}
     >
       {children}

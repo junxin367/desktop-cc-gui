@@ -772,12 +772,20 @@ export function FileTreePanel({
           </button>
           <button
             type="button"
-            className="ghost icon-button file-tree-action"
+            className={`ghost icon-button file-tree-action${selectedNodePath === node.path ? " is-visible" : ""}`}
+            onMouseDown={(event) => {
+              // Keep row click from stealing the pointer sequence on dense list rows.
+              event.stopPropagation();
+            }}
             onClick={(event) => {
               event.stopPropagation();
-              const icon = node.type === "folder" ? "📁" : "📄";
               const absolutePath = resolvePath(node.path);
-              onInsertText?.(`${icon} ${node.name} \`${absolutePath}\`  `);
+              // Keep `+` insertion behavior aligned with native @ reference tokens.
+              const mentionText =
+                node.type === "folder"
+                  ? `@${absolutePath}`
+                  : `@${absolutePath} `;
+              onInsertText?.(mentionText);
             }}
             aria-label={t("files.mentionFile", { name: node.name })}
             title={t("files.mentionInChat")}

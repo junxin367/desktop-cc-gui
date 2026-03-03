@@ -27,7 +27,7 @@ describe("useComposerInsert", () => {
     expect(onDraftChange).toHaveBeenNthCalledWith(2, "first second");
   });
 
-  it("does nothing when there is no active thread", () => {
+  it("still updates draft when there is no active thread", () => {
     const onDraftChange = vi.fn();
     const textarea = document.createElement("textarea");
     const textareaRef = { current: textarea };
@@ -42,9 +42,9 @@ describe("useComposerInsert", () => {
     );
 
     act(() => {
-      result.current("ignored");
+      result.current("detached");
     });
 
-    expect(onDraftChange).not.toHaveBeenCalled();
+    expect(onDraftChange).toHaveBeenCalledWith("detached");
   });
 });
