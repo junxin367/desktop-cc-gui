@@ -262,6 +262,7 @@ type LayoutNodesOptions = {
   tabletNavTab: "codex" | "spec" | "git" | "log";
   gitPanelMode: "diff" | "log" | "issues" | "prs";
   onGitPanelModeChange: (mode: "diff" | "log" | "issues" | "prs") => void;
+  onOpenGitHistoryPanel: () => void;
   gitDiffViewStyle: "split" | "unified";
   gitDiffListView: GitDiffListView;
   onGitDiffListViewChange: (view: "flat" | "tree") => void;
@@ -463,6 +464,7 @@ type LayoutNodesOptions = {
   files: string[];
   directories: string[];
   gitignoredFiles: Set<string>;
+  gitignoredDirectories: Set<string>;
   onInsertComposerText: (text: string) => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   composerEditorSettings: ComposerEditorSettings;
@@ -1016,6 +1018,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         workspaceId={options.activeWorkspace.id}
         workspacePath={options.activeWorkspace.path}
         files={options.files}
+        directories={options.directories}
         isLoading={options.fileTreeLoading}
         filePanelMode={options.filePanelMode}
         onFilePanelModeChange={options.onFilePanelModeChange}
@@ -1029,6 +1032,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         isRuntimeConsoleVisible={options.runtimeConsoleVisible}
         gitStatusFiles={options.gitStatus.files}
         gitignoredFiles={options.gitignoredFiles}
+        gitignoredDirectories={options.gitignoredDirectories}
         onRefreshFiles={options.onRefreshFiles}
       />
     );
@@ -1064,6 +1068,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         workspaceId={options.activeWorkspace?.id ?? null}
         mode={options.gitPanelMode}
         onModeChange={options.onGitPanelModeChange}
+        onOpenGitHistoryPanel={options.onOpenGitHistoryPanel}
+        isGitHistoryOpen={options.appMode === "gitHistory"}
         diffEntries={options.gitDiffs}
         gitDiffListView={options.gitDiffListView}
         onGitDiffListViewChange={options.onGitDiffListViewChange}

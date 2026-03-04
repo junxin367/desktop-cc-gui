@@ -1189,7 +1189,14 @@ function MainApp() {
     workspaceId: activeWorkspace?.id ?? null,
   });
   const workspaceFilesPollingEnabled = !isCompact && !rightPanelCollapsed && filePanelMode === "files";
-  const { files, directories, gitignoredFiles, isLoading: isFilesLoading, refreshFiles } = useWorkspaceFiles({
+  const {
+    files,
+    directories,
+    gitignoredFiles,
+    gitignoredDirectories,
+    isLoading: isFilesLoading,
+    refreshFiles,
+  } = useWorkspaceFiles({
     activeWorkspace,
     onDebug: addDebugEntry,
     pollingEnabled: workspaceFilesPollingEnabled,
@@ -4268,6 +4275,9 @@ function MainApp() {
     tabletNavTab: tabletTab,
     gitPanelMode,
     onGitPanelModeChange: handleGitPanelModeChange,
+    onOpenGitHistoryPanel: () => {
+      setAppMode((current) => (current === "gitHistory" ? "chat" : "gitHistory"));
+    },
     gitDiffViewStyle,
     gitDiffListView,
     onGitDiffListViewChange: setGitDiffListView,
@@ -4447,6 +4457,7 @@ function MainApp() {
     files,
     directories,
     gitignoredFiles,
+    gitignoredDirectories,
     onInsertComposerText: handleInsertComposerText,
     textareaRef: composerInputRef,
     composerEditorSettings,

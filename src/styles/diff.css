@@ -94,25 +94,53 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .git-panel-select-input {
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-control);
-  color: var(--text-emphasis);
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  background-color: transparent;
+  color: var(--text-faint);
   font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 8px 30px 8px 30px;
-  border-radius: 999px;
+  padding: 4px 24px 5px 20px;
+  border-radius: 0;
   cursor: pointer;
-  min-height: 32px;
+  min-height: 28px;
+  -webkit-appearance: none;
   appearance: none;
+  -moz-appearance: none;
+  box-shadow: none;
+  outline: none;
   background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
     linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
-  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-position: calc(100% - 12px) 55%, calc(100% - 7px) 55%;
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
+}
+
+.git-panel-select-input::-ms-expand {
+  display: none;
+}
+
+.git-panel-select-input:hover {
+  color: var(--text-emphasis);
+  border-bottom-color: color-mix(in srgb, var(--text-accent, #7a9dcc) 60%, var(--border-subtle));
+}
+
+.git-panel-select-input:focus,
+.git-panel-select-input:active,
+.git-panel-select-input:focus-visible {
+  outline: none;
+  border: 0;
+  color: var(--text-emphasis);
+  border-bottom-color: var(--text-accent, #7a9dcc);
+  box-shadow: none;
+  background-image: none;
 }
 
 .git-panel-select-icon {
@@ -121,7 +149,9 @@
   justify-content: center;
   color: var(--text-muted);
   position: absolute;
-  left: 12px;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
   pointer-events: none;
 }
 
@@ -260,12 +290,12 @@
 .diff-list-view-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  align-self: flex-start;
-  padding: 2px;
-  border-radius: 999px;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-control);
+  gap: 8px;
+  align-self: center;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .diff-list-controls {
@@ -277,18 +307,67 @@
 }
 
 .diff-list-view-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: none;
-  border-radius: 999px;
-  padding: 4px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 4px 2px 5px;
   font-size: 11px;
   color: var(--text-faint);
   background: transparent;
   cursor: pointer;
 }
 
-.diff-list-view-button.active {
-  background: var(--surface-active);
+.diff-list-view-button svg {
+  flex: 0 0 auto;
+}
+
+.diff-list-view-button:hover {
   color: var(--text-emphasis);
+  border-bottom-color: color-mix(in srgb, var(--text-accent, #7a9dcc) 60%, var(--border-subtle));
+}
+
+.diff-list-view-button.active {
+  background: transparent;
+  color: color-mix(in srgb, var(--accent-primary, #2563eb) 88%, var(--text-emphasis));
+  border-bottom-color: var(--accent-primary, #2563eb);
+  border-bottom-width: 2px;
+  font-weight: 600;
+}
+
+.git-panel-history-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  min-height: 24px;
+  padding: 4px 2px 5px;
+  cursor: pointer;
+}
+
+.git-panel-history-button:hover {
+  color: var(--text-emphasis);
+  border-bottom-color: color-mix(in srgb, var(--text-accent, #7a9dcc) 60%, var(--border-subtle));
+}
+
+.git-panel-history-button.is-active {
+  color: var(--text-accent, #7a9dcc);
+  border-bottom-color: var(--text-accent, #7a9dcc);
+}
+
+.git-panel-history-button:focus-visible {
+  outline: none;
+  color: var(--text-accent, #7a9dcc);
+  border-bottom-color: var(--text-accent, #7a9dcc);
 }
 
 .diff-status-issues {
@@ -301,7 +380,7 @@
 .diff-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   overflow-y: auto;
   flex: 1;
   padding-right: 2px;
@@ -311,8 +390,8 @@
 .diff-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
+  gap: 5px;
+  padding: 7px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-card) 70%, transparent);
   border: 1px solid var(--border-muted);
@@ -344,18 +423,18 @@
 .diff-section-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .diff-section-tree-list {
-  gap: 4px;
+  gap: 3px;
   overflow-x: hidden;
 }
 
 .diff-tree-folder-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .diff-tree-folder-row {
@@ -364,10 +443,10 @@
   gap: 6px;
   width: 100%;
   border: 1px solid var(--border-muted);
-  border-radius: 8px;
+  border-radius: 7px;
   background: color-mix(in srgb, var(--surface-card) 75%, transparent);
   color: var(--text-faint);
-  padding: 4px 8px;
+  padding: 3px 8px;
   text-align: left;
 }
 
@@ -409,15 +488,15 @@
 
 .diff-row {
   display: grid;
-  grid-template-columns: 30px 16px minmax(0, 1fr) auto;
-  column-gap: 8px;
+  grid-template-columns: 26px 14px minmax(0, 1fr) auto;
+  column-gap: 6px;
   align-items: center;
-  padding: 6px 8px;
-  border-radius: 10px;
+  padding: 4px 8px;
+  border-radius: 8px;
   cursor: pointer;
   border: 1px solid var(--border-muted);
   background: var(--surface-item);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03);
   transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
   --git-file-status-color: var(--text-emphasis);
   --git-file-status-color-unstaged: color-mix(
@@ -518,7 +597,7 @@
 .diff-row-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   max-width: 0;
   overflow: hidden;
   margin-left: 0;
@@ -531,8 +610,8 @@
 
 .diff-row:hover .diff-row-actions,
 .diff-row:focus-within .diff-row-actions {
-  max-width: 96px;
-  margin-left: 6px;
+  max-width: 90px;
+  margin-left: 4px;
   opacity: 1;
   pointer-events: auto;
   overflow: visible;
@@ -540,8 +619,8 @@
 }
 
 .diff-row-action {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 6px;
   padding: 0;
   border: 1px solid transparent;
@@ -687,12 +766,12 @@
 }
 
 .diff-icon {
-  width: 28px;
+  width: 24px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   font-family: var(--code-font-family, monospace);
   line-height: 1;
@@ -731,15 +810,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   overflow: hidden;
 }
 
 .diff-file-icon svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
 }
 
 .diff-file {
@@ -754,7 +833,7 @@
 .diff-path {
   display: flex;
   align-items: center;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-emphasis);
   flex-shrink: 0;
 }
@@ -791,12 +870,12 @@
 }
 
 .diff-counts-inline {
-  font-size: var(--code-font-size, 11px);
+  font-size: var(--code-font-size, 10px);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: 3px;
+  padding: 1px 7px;
   border-radius: 999px;
   border: 1px solid var(--border-muted);
   background: var(--surface-control);

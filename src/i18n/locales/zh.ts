@@ -1108,6 +1108,7 @@ const zh = {
     listView: "文件列表视图",
     listFlat: "平铺",
     listTree: "树形",
+    historyQuickAction: "Hub",
     // 文件操作
     stageChanges: "暂存更改",
     stageFile: "暂存文件",

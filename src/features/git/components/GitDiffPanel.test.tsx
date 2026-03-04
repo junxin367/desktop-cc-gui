@@ -22,6 +22,7 @@ vi.mock("react-i18next", () => ({
         "git.fileActions": "File actions",
         "git.stageFile": "Stage file",
         "git.stageChanges": "Stage changes",
+        "git.historyQuickAction": "Hub",
         "menu.maximize": "Maximize",
         "common.restore": "Restore",
         "common.close": "Close",
@@ -191,6 +192,22 @@ describe("GitDiffPanel", () => {
     textarea.focus();
     fireEvent.keyDown(textarea, { key: "V", altKey: true, shiftKey: true });
     expect(onGitDiffListViewChange).not.toHaveBeenCalled();
+  });
+
+  it("opens git history panel from Hub button", () => {
+    const onOpenGitHistoryPanel = vi.fn();
+    render(
+      <GitDiffPanel
+        {...baseProps}
+        onOpenGitHistoryPanel={onOpenGitHistoryPanel}
+        unstagedFiles={[
+          { path: "file.txt", status: "M", additions: 1, deletions: 0 },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Hub" }));
+    expect(onOpenGitHistoryPanel).toHaveBeenCalledTimes(1);
   });
 
   it("keeps flat mode stage action behavior", () => {

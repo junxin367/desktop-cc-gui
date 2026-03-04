@@ -987,30 +987,6 @@ fn should_always_skip(name: &str) -> bool {
     name == ".git"
 }
 
-fn is_heavy_directory(name: &str) -> bool {
-    matches!(
-        name,
-        "node_modules"
-            | ".pnpm"
-            | "bower_components"
-            | "__pycache__"
-            | ".tox"
-            | ".mypy_cache"
-            | ".pytest_cache"
-            | "target"
-            | "dist"
-            | "build"
-            | ".next"
-            | ".nuxt"
-            | ".output"
-            | ".turbo"
-            | ".svelte-kit"
-            | ".parcel-cache"
-            | ".cache"
-            | ".gradle"
-    )
-}
-
 fn normalize_git_path(path: &str) -> String {
     path.replace('\\', "/")
 }
@@ -1140,7 +1116,7 @@ fn list_workspace_files_inner(root: &PathBuf, max_files: usize) -> WorkspaceFile
             }
             let name = entry.file_name().to_string_lossy();
             if entry.file_type().is_some_and(|ft| ft.is_dir()) {
-                return !should_always_skip(&name) && !is_heavy_directory(&name);
+                return !should_always_skip(&name);
             }
             // Skip OS metadata files
             name != ".DS_Store"
@@ -1173,33 +1149,6 @@ fn list_workspace_files_inner(root: &PathBuf, max_files: usize) -> WorkspaceFile
                 }
                 if files.len() >= max_files {
                     break;
-                }
-            }
-        }
-    }
-
-    // Re-add heavy directories at root level so they appear grayed out
-    // in the tree without their contents.
-    if let Ok(entries) = std::fs::read_dir(root) {
-        for dir_entry in entries.flatten() {
-            if dir_entry.file_type().is_ok_and(|ft| ft.is_dir()) {
-                let name = dir_entry.file_name();
-                let name_str = name.to_string_lossy();
-                if is_heavy_directory(&name_str) {
-                    let normalized = normalize_git_path(&name_str);
-                    if !directories.contains(&normalized) {
-                        let is_ignored = repo
-                            .as_ref()
-                            .and_then(|r| {
-                                r.status_should_ignore(std::path::Path::new(&*name_str))
-                                    .ok()
-                            })
-                            .unwrap_or(false);
-                        directories.push(normalized.clone());
-                        if is_ignored {
-                            gitignored_directories.push(normalized);
-                        }
-                    }
                 }
             }
         }

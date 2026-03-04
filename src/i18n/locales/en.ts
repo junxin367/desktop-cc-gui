@@ -1117,6 +1117,7 @@ const en = {
     listView: "File list view",
     listFlat: "Flat",
     listTree: "Tree",
+    historyQuickAction: "Hub",
     // File operations
     stageChanges: "Stage Changes",
     stageFile: "Stage file",

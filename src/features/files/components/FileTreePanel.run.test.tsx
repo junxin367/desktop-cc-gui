@@ -79,6 +79,85 @@ describe("FileTreePanel run action isolation", () => {
     expect(screen.getByText("src")).toBeTruthy();
   });
 
+  it("renders empty directories from workspace directory snapshot", () => {
+    render(
+      <FileTreePanel
+        workspaceId="workspace-1"
+        workspacePath="/tmp/workspace"
+        files={["README.md"]}
+        directories={["empty-dir"]}
+        isLoading={false}
+        filePanelMode="files"
+        onFilePanelModeChange={() => undefined}
+        onOpenFile={() => undefined}
+        onInsertText={() => undefined}
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={() => undefined}
+        gitStatusFiles={[]}
+        gitignoredFiles={new Set<string>()}
+      />,
+    );
+
+    expect(screen.getByText("empty-dir")).toBeTruthy();
+    expect(screen.getByText("README.md")).toBeTruthy();
+  });
+
+  it("renders single-child empty directory chains in a.b.c style", () => {
+    render(
+      <FileTreePanel
+        workspaceId="workspace-1"
+        workspacePath="/tmp/workspace"
+        files={[]}
+        directories={["a/b/c"]}
+        isLoading={false}
+        filePanelMode="files"
+        onFilePanelModeChange={() => undefined}
+        onOpenFile={() => undefined}
+        onInsertText={() => undefined}
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={() => undefined}
+        gitStatusFiles={[]}
+        gitignoredFiles={new Set<string>()}
+      />,
+    );
+
+    expect(screen.getByText("a.b.c")).toBeTruthy();
+  });
+
+  it("keeps matched empty directories visible when filtering", () => {
+    render(
+      <FileTreePanel
+        workspaceId="workspace-1"
+        workspacePath="/tmp/workspace"
+        files={["README.md"]}
+        directories={["empty-dir"]}
+        isLoading={false}
+        filePanelMode="files"
+        onFilePanelModeChange={() => undefined}
+        onOpenFile={() => undefined}
+        onInsertText={() => undefined}
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={() => undefined}
+        gitStatusFiles={[]}
+        gitignoredFiles={new Set<string>()}
+      />,
+    );
+
+    const filterInput = screen.getByRole("searchbox", {
+      name: "files.filterPlaceholder",
+    });
+    fireEvent.change(filterInput, { target: { value: "empty" } });
+
+    expect(screen.getByText("empty-dir")).toBeTruthy();
+    expect(screen.queryByText("README.md")).toBeNull();
+  });
+
   it("does not render run icon button in file tree search bar", () => {
     const openTargets: OpenAppTarget[] = [];
 
