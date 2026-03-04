@@ -22,7 +22,7 @@ type PanelTabsProps = {
 // Toggle to show/hide prompts tab (set to true to re-enable)
 const SHOW_PROMPTS_TAB = false;
 // Toggle to show/hide git tab
-const SHOW_GIT_TAB = false;
+const SHOW_GIT_TAB = true;
 
 const tabIds: PanelTabId[] = (["git", "files", "prompts"] as const).filter(
   (id) =>

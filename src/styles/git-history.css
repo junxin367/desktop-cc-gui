@@ -646,7 +646,7 @@ body[data-git-history-column-resizing="true"] .git-history-vertical-resizer::aft
   padding: 3px;
   width: fit-content;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
+  border: none;
   background: color-mix(in srgb, var(--surface-control, #1a2230) 58%, transparent);
 }
 
@@ -657,6 +657,12 @@ body[data-git-history-column-resizing="true"] .git-history-vertical-resizer::aft
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.git-history-overview-list-chip svg {
+  flex: 0 0 auto;
 }
 
 .git-history-overview-list-chip.is-icon {
@@ -840,15 +846,15 @@ button.git-history-overview-list-chip {
 
 .git-history-worktree-folder-row {
   width: 100%;
-  min-height: 30px;
+  min-height: 26px;
   border: none;
   border-bottom: 1px solid color-mix(in srgb, var(--border-default) 28%, transparent);
   background: transparent;
   color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 5px;
+  padding: 3px 10px;
   cursor: pointer;
 }
 
@@ -869,14 +875,14 @@ button.git-history-overview-list-chip {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .git-history-worktree-file-row {
   width: 100%;
-  min-height: 30px;
+  min-height: 26px;
   border: none;
   border-bottom: 1px solid color-mix(in srgb, var(--border-default) 28%, transparent);
   background: transparent;
@@ -900,13 +906,13 @@ button.git-history-overview-list-chip {
   display: grid;
   align-items: center;
   grid-template-columns: auto auto minmax(0, 1fr) auto auto;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 5px;
+  padding: 3px 10px;
 }
 
 .git-history-worktree-file-status {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -928,8 +934,8 @@ button.git-history-overview-list-chip {
 
 .git-history-worktree-file-path strong {
   color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -938,7 +944,7 @@ button.git-history-overview-list-chip {
 .git-history-worktree-file-path em {
   color: var(--text-muted);
   font-style: normal;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -946,12 +952,12 @@ button.git-history-overview-list-chip {
 
 .git-history-worktree-file-stats {
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  min-height: 22px;
+  gap: 3px;
+  padding: 0 6px;
+  min-height: 18px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--border-default) 62%, transparent);
   background: color-mix(in srgb, var(--surface-control, #1a2230) 72%, transparent);
@@ -976,8 +982,8 @@ button.git-history-overview-list-chip {
 }
 
 .git-history-worktree-action {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 6px;
   border: 1px solid color-mix(in srgb, var(--border-default) 68%, transparent);
   background: color-mix(in srgb, var(--surface-control, #1a2230) 68%, transparent);
@@ -991,8 +997,8 @@ button.git-history-overview-list-chip {
 .git-history-worktree-action svg,
 .git-history-worktree-generate svg {
   display: block;
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   stroke: currentColor !important;
   stroke-width: 2.2;
   fill: none;

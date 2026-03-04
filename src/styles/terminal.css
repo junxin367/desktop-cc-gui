@@ -3,9 +3,10 @@
   background: var(--surface-debug);
   display: flex;
   flex-direction: column;
-  grid-column: 1;
-  grid-row: 4;
+  grid-column: 1 / -1;
+  grid-row: 5;
   height: var(--terminal-panel-height, 220px);
+  width: 100%;
   -webkit-app-region: no-drag;
   --terminal-background: #11151b;
   --terminal-foreground: #d9dee7;
@@ -58,22 +59,24 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--text-muted);
-  padding: 4px 12px;
-  border-radius: 999px;
+  padding: 4px 12px 6px;
+  border-radius: 0;
   font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: none;
 }
 
 .terminal-tab.active {
   color: var(--text-stronger);
-  border-color: var(--border-strong);
-  background: var(--surface-card-muted, #232329);
+  border-bottom-color: #2563eb;
+  background: transparent;
 }
 
 .terminal-tab-label {
@@ -88,13 +91,25 @@
 }
 
 .terminal-tab-add {
-  border: 1px dashed var(--border-strong);
+  border: none;
+  border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--text-muted);
-  padding: 4px 12px;
-  border-radius: 999px;
+  padding: 4px 12px 6px;
+  border-radius: 0;
   font-size: 12px;
   cursor: pointer;
+  box-shadow: none;
+}
+
+.terminal-tab:hover,
+.terminal-tab-add:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.terminal-tab-add:hover {
+  border-bottom-color: #2563eb;
 }
 
 .terminal-body {

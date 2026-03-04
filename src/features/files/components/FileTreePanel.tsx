@@ -17,6 +17,8 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import Plus from "lucide-react/dist/esm/icons/plus";
 import ChevronsUpDown from "lucide-react/dist/esm/icons/chevrons-up-down";
+import Construction from "lucide-react/dist/esm/icons/construction";
+import LayoutDashboard from "lucide-react/dist/esm/icons/layout-dashboard";
 import Search from "lucide-react/dist/esm/icons/search";
 import FileIcon from "../../../components/FileIcon";
 import { PanelTabs, type PanelTabId } from "../../layout/components/PanelTabs";
@@ -36,6 +38,7 @@ type FileTreePanelProps = {
   workspaceId: string;
   workspacePath: string;
   files: string[];
+  directories?: string[];
   isLoading: boolean;
   filePanelMode: PanelTabId;
   onFilePanelModeChange: (mode: PanelTabId) => void;
@@ -45,8 +48,13 @@ type FileTreePanelProps = {
   openAppIconById: Record<string, string>;
   selectedOpenAppId: string;
   onSelectOpenAppId: (id: string) => void;
+  onToggleRuntimeConsole?: () => void;
+  isRuntimeConsoleVisible?: boolean;
+  onOpenSpecHub?: () => void;
+  isSpecHubActive?: boolean;
   gitStatusFiles?: GitFileStatus[];
   gitignoredFiles?: Set<string>;
+  gitignoredDirectories?: Set<string>;
   onRefreshFiles?: () => void;
 };
 
@@ -57,7 +65,12 @@ type FileTreeBuildNode = {
   children: Map<string, FileTreeBuildNode>;
 };
 
-function buildTree(paths: string[]): { nodes: FileTreeNode[]; folderPaths: Set<string> } {
+const EMPTY_DIRECTORIES: string[] = [];
+
+function buildTree(
+  files: string[],
+  directories: string[],
+): { nodes: FileTreeNode[]; folderPaths: Set<string> } {
   const root = new Map<string, FileTreeBuildNode>();
   const addNode = (
     map: Map<string, FileTreeBuildNode>,
@@ -82,41 +95,85 @@ function buildTree(paths: string[]): { nodes: FileTreeNode[]; folderPaths: Set<s
     return node;
   };
 
-  paths.forEach((path) => {
+  const insertPath = (path: string, leafType: "file" | "folder") => {
     const parts = path.split("/").filter(Boolean);
+    if (parts.length === 0) {
+      return;
+    }
     let currentMap = root;
     let currentPath = "";
     parts.forEach((segment, index) => {
-      const isFile = index === parts.length - 1;
+      const isLeaf = index === parts.length - 1;
       const nextPath = currentPath ? `${currentPath}/${segment}` : segment;
-      const node = addNode(currentMap, segment, nextPath, isFile ? "file" : "folder");
-      if (!isFile) {
+      const nodeType: "file" | "folder" = isLeaf ? leafType : "folder";
+      const node = addNode(currentMap, segment, nextPath, nodeType);
+      if (nodeType === "folder") {
         currentMap = node.children;
         currentPath = nextPath;
       }
     });
-  });
+  };
+
+  directories.forEach((path) => insertPath(path, "folder"));
+  files.forEach((path) => insertPath(path, "file"));
 
   const folderPaths = new Set<string>();
 
+  const sortNodes = (a: FileTreeBuildNode, b: FileTreeBuildNode) => {
+    if (a.type !== b.type) {
+      return a.type === "folder" ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name);
+  };
+
+  const collapseFolderChain = (
+    start: FileTreeBuildNode,
+  ): { node: FileTreeBuildNode; label: string; path: string } => {
+    let node = start;
+    const labels = [start.name];
+    let path = start.path;
+
+    while (true) {
+      const children = Array.from(node.children.values());
+      const hasDirectFile = children.some((child) => child.type === "file");
+      const directFolders = children.filter((child) => child.type === "folder");
+      if (hasDirectFile || directFolders.length !== 1) {
+        break;
+      }
+      const next = directFolders[0];
+      labels.push(next.name);
+      node = next;
+      path = node.path;
+    }
+
+    return {
+      node,
+      label: labels.join("."),
+      path,
+    };
+  };
+
   const toArray = (map: Map<string, FileTreeBuildNode>): FileTreeNode[] => {
-    const nodes = Array.from(map.values()).map((node) => {
-      if (node.type === "folder") {
-        folderPaths.add(node.path);
-      }
-      return {
-        name: node.name,
-        path: node.path,
-        type: node.type,
-        children: node.type === "folder" ? toArray(node.children) : [],
-      };
-    });
-    nodes.sort((a, b) => {
-      if (a.type !== b.type) {
-        return a.type === "folder" ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
+    const nodes = Array.from(map.values())
+      .sort(sortNodes)
+      .map((node) => {
+        if (node.type === "folder") {
+          const collapsed = collapseFolderChain(node);
+          folderPaths.add(collapsed.path);
+          return {
+            name: collapsed.label,
+            path: collapsed.path,
+            type: "folder" as const,
+            children: toArray(collapsed.node.children),
+          };
+        }
+        return {
+          name: node.name,
+          path: node.path,
+          type: "file" as const,
+          children: [],
+        };
+      });
     return nodes;
   };
 
@@ -147,6 +204,7 @@ export function FileTreePanel({
   workspaceId,
   workspacePath,
   files,
+  directories,
   isLoading,
   filePanelMode,
   onFilePanelModeChange,
@@ -156,10 +214,16 @@ export function FileTreePanel({
   openAppIconById,
   selectedOpenAppId,
   onSelectOpenAppId,
+  onToggleRuntimeConsole,
+  isRuntimeConsoleVisible = false,
+  onOpenSpecHub,
+  isSpecHubActive = false,
   gitStatusFiles,
   gitignoredFiles,
+  gitignoredDirectories,
   onRefreshFiles,
 }: FileTreePanelProps) {
+  const directoryEntries = directories ?? EMPTY_DIRECTORIES;
   const { t } = useTranslation();
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
@@ -213,9 +277,19 @@ export function FileTreePanel({
     return files.filter((path) => path.toLowerCase().includes(normalizedQuery));
   }, [files, normalizedQuery]);
 
+  const filteredDirectories = useMemo(() => {
+    if (!normalizedQuery) {
+      return directoryEntries;
+    }
+    return directoryEntries.filter((path) => path.toLowerCase().includes(normalizedQuery));
+  }, [directoryEntries, normalizedQuery]);
+
   const { nodes, folderPaths } = useMemo(
-    () => buildTree(normalizedQuery ? filteredFiles : files),
-    [files, filteredFiles, normalizedQuery],
+    () => buildTree(
+      normalizedQuery ? filteredFiles : files,
+      normalizedQuery ? filteredDirectories : directoryEntries,
+    ),
+    [directoryEntries, files, filteredDirectories, filteredFiles, normalizedQuery],
   );
 
   const folderGitStatusMap = useMemo(() => {
@@ -339,10 +413,13 @@ export function FileTreePanel({
 
   const resolvePath = useCallback(
     (relativePath: string) => {
-      const base = workspacePath.endsWith("/")
-        ? workspacePath.slice(0, -1)
-        : workspacePath;
-      return `${base}/${relativePath}`;
+      const usesWindowsSeparator = workspacePath.includes("\\");
+      const separator = usesWindowsSeparator ? "\\" : "/";
+      const base = workspacePath.replace(/[\\/]+$/, "");
+      const normalizedRelative = usesWindowsSeparator
+        ? relativePath.replaceAll("/", "\\")
+        : relativePath;
+      return `${base}${separator}${normalizedRelative}`;
     },
     [workspacePath],
   );
@@ -724,14 +801,17 @@ export function FileTreePanel({
 
   const renderNode = (node: FileTreeNode, depth: number) => {
     const isFolder = node.type === "folder";
-    const isExpanded = isFolder && expandedFolders.has(node.path);
+    const hasChildren = isFolder && node.children.length > 0;
+    const isExpanded = hasChildren && expandedFolders.has(node.path);
     const fileGitStatus = isFolder
       ? folderGitStatusMap.get(node.path) ?? null
       : gitStatusMap.get(node.path) ?? null;
     const gitStatusClass = fileGitStatus
       ? ` git-${fileGitStatus.toLowerCase()}`
       : "";
-    const isGitignored = gitignoredFiles?.has(node.path) ?? false;
+    const isGitignored = isFolder
+      ? gitignoredDirectories?.has(node.path) ?? false
+      : gitignoredFiles?.has(node.path) ?? false;
     return (
       <div key={node.path}>
         <div className="file-tree-row-wrap">
@@ -743,7 +823,9 @@ export function FileTreePanel({
               setSelectedNodePath(node.path);
               setSelectedNodeType(node.type);
               if (isFolder) {
-                toggleFolder(node.path);
+                if (hasChildren) {
+                  toggleFolder(node.path);
+                }
                 return;
               }
               if (onOpenFile) {
@@ -758,7 +840,7 @@ export function FileTreePanel({
               void showContextMenu(event, node.path, isFolder);
             }}
           >
-            {isFolder ? (
+            {isFolder && hasChildren ? (
               <span className={`file-tree-chevron${isExpanded ? " is-open" : ""}`}>
                 ›
               </span>
@@ -796,7 +878,7 @@ export function FileTreePanel({
             <Plus size={10} aria-hidden />
           </button>
         </div>
-        {isFolder && isExpanded && node.children.length > 0 && (
+        {hasChildren && isExpanded && (
           <div className="file-tree-children">
             {node.children.map((child) => renderNode(child, depth + 1))}
           </div>
@@ -819,6 +901,28 @@ export function FileTreePanel({
               ? t("files.loadingFiles")
               : t("files.noFiles")}
         </div>
+          {onToggleRuntimeConsole ? (
+            <button
+              type="button"
+              className={`ghost icon-button file-tree-toggle file-tree-toggle-runtime${isRuntimeConsoleVisible ? " is-active" : ""}`}
+              onClick={onToggleRuntimeConsole}
+              aria-label={t("files.openRunConsole")}
+              title={t("files.openRunConsole")}
+            >
+              <Construction aria-hidden />
+            </button>
+          ) : null}
+          {onOpenSpecHub ? (
+            <button
+              type="button"
+              className={`ghost icon-button file-tree-toggle file-tree-toggle-spec-hub${isSpecHubActive ? " is-active" : ""}`}
+              onClick={onOpenSpecHub}
+              aria-label={t("sidebar.specHub")}
+              title={t("sidebar.specHub")}
+            >
+              <LayoutDashboard aria-hidden />
+            </button>
+          ) : null}
           {hasFolders ? (
             <button
               type="button"

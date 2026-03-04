@@ -9,13 +9,12 @@ import ArrowLeftRight from "lucide-react/dist/esm/icons/arrow-left-right";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
 import Check from "lucide-react/dist/esm/icons/check";
-import FileText from "lucide-react/dist/esm/icons/file-text";
 import Folder from "lucide-react/dist/esm/icons/folder";
-import GitBranch from "lucide-react/dist/esm/icons/git-branch";
+import FolderTree from "lucide-react/dist/esm/icons/folder-tree";
+import History from "lucide-react/dist/esm/icons/history";
+import LayoutGrid from "lucide-react/dist/esm/icons/layout-grid";
 import Minus from "lucide-react/dist/esm/icons/minus";
 import Plus from "lucide-react/dist/esm/icons/plus";
-import ScrollText from "lucide-react/dist/esm/icons/scroll-text";
-import Search from "lucide-react/dist/esm/icons/search";
 import Undo2 from "lucide-react/dist/esm/icons/undo-2";
 import Upload from "lucide-react/dist/esm/icons/upload";
 import X from "lucide-react/dist/esm/icons/x";
@@ -45,6 +44,8 @@ type GitDiffPanelProps = {
   onGitDiffListViewChange?: (view: "flat" | "tree") => void;
   filePanelMode: PanelTabId;
   onFilePanelModeChange: (mode: PanelTabId) => void;
+  onOpenGitHistoryPanel?: () => void;
+  isGitHistoryOpen?: boolean;
   worktreeApplyLabel?: string;
   worktreeApplyTitle?: string | null;
   worktreeApplyLoading?: boolean;
@@ -1004,6 +1005,8 @@ export function GitDiffPanel({
   onGitDiffListViewChange,
   filePanelMode,
   onFilePanelModeChange,
+  onOpenGitHistoryPanel,
+  isGitHistoryOpen = false,
   worktreeApplyTitle = null,
   worktreeApplyLoading = false,
   worktreeApplyError = null,
@@ -1087,7 +1090,10 @@ export function GitDiffPanel({
     null,
   );
   const [isPreviewModalMaximized, setIsPreviewModalMaximized] = useState(false);
+  const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const panelRef = useRef<HTMLElement | null>(null);
+  const modeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const modeMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Combine staged and unstaged files for range selection
   const allFiles = useMemo(
@@ -1112,6 +1118,46 @@ export function GitDiffPanel({
     setIsPreviewModalMaximized(false);
     setPreviewFile({ ...file, section });
   }, []);
+  const modeOptions = useMemo(
+    () => [
+      {
+        value: "diff" as const,
+        label: t("git.diffMode"),
+        description: t("git.diffModeDescription"),
+      },
+      {
+        value: "log" as const,
+        label: t("git.logMode"),
+        description: t("git.logModeDescription"),
+      },
+      {
+        value: "issues" as const,
+        label: t("git.issuesMode"),
+        description: t("git.issuesModeDescription"),
+      },
+      {
+        value: "prs" as const,
+        label: t("git.prsMode"),
+        description: t("git.prsModeDescription"),
+      },
+    ],
+    [t],
+  );
+  const currentModeOption = useMemo(
+    () => modeOptions.find((option) => option.value === mode) ?? modeOptions[0],
+    [mode, modeOptions],
+  );
+
+  const handleModeSelect = useCallback(
+    (nextMode: GitDiffPanelProps["mode"]) => {
+      setIsModeMenuOpen(false);
+      if (nextMode === mode) {
+        return;
+      }
+      onModeChange(nextMode);
+    },
+    [mode, onModeChange],
+  );
 
   const handleFileClick = useCallback(
     (
@@ -1203,6 +1249,43 @@ export function GitDiffPanel({
   }, [closePreviewModal, previewFile]);
 
   useEffect(() => {
+    if (!isModeMenuOpen) {
+      return;
+    }
+
+    const handleWindowMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+      if (modeTriggerRef.current?.contains(target) || modeMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsModeMenuOpen(false);
+    };
+
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      setIsModeMenuOpen(false);
+      modeTriggerRef.current?.focus();
+    };
+
+    window.addEventListener("mousedown", handleWindowMouseDown);
+    window.addEventListener("keydown", handleWindowKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handleWindowMouseDown);
+      window.removeEventListener("keydown", handleWindowKeyDown);
+    };
+  }, [isModeMenuOpen]);
+
+  useEffect(() => {
+    setIsModeMenuOpen(false);
+  }, [mode]);
+
+  useEffect(() => {
     if (mode !== "diff" || !onGitDiffListViewChange) {
       return;
     }
@@ -1258,18 +1341,6 @@ export function GitDiffPanel({
     });
   }, []);
 
-  const ModeIcon = useMemo(() => {
-    switch (mode) {
-      case "log":
-        return ScrollText;
-      case "issues":
-        return Search;
-      case "prs":
-        return GitBranch;
-      default:
-        return FileText;
-    }
-  }, [mode]);
   const githubBaseUrl = useMemo(() => {
     if (!gitRemoteUrl) {
       return null;
@@ -1521,23 +1592,88 @@ export function GitDiffPanel({
       <div className="git-panel-header">
         <PanelTabs active={filePanelMode} onSelect={onFilePanelModeChange} />
         <div className="git-panel-actions" role="group" aria-label="Git panel">
+          {mode === "diff" && (
+            <div className="diff-list-view-toggle" role="group" aria-label={t("git.listView")}>
+              <button
+                type="button"
+                className={`diff-list-view-button ${gitDiffListView === "flat" ? "active" : ""}`}
+                onClick={() => onGitDiffListViewChange?.("flat")}
+                aria-pressed={gitDiffListView === "flat"}
+              >
+                <LayoutGrid size={13} aria-hidden />
+                <span>{t("git.listFlat")}</span>
+              </button>
+              <button
+                type="button"
+                className={`diff-list-view-button ${gitDiffListView === "tree" ? "active" : ""}`}
+                onClick={() => onGitDiffListViewChange?.("tree")}
+                aria-pressed={gitDiffListView === "tree"}
+              >
+                <FolderTree size={13} aria-hidden />
+                <span>{t("git.listTree")}</span>
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className={`git-panel-history-button${isGitHistoryOpen ? " is-active" : ""}`}
+            onClick={onOpenGitHistoryPanel}
+            aria-label={t("git.historyQuickAction")}
+            title={t("git.historyQuickAction")}
+            aria-pressed={isGitHistoryOpen}
+          >
+            <History size={12} aria-hidden />
+            <span>{t("git.historyQuickAction")}</span>
+          </button>
           <div className="git-panel-select">
-            <span className="git-panel-select-icon" aria-hidden>
-              <ModeIcon />
-            </span>
-            <select
-              className="git-panel-select-input"
-              value={mode}
-              onChange={(event) =>
-                onModeChange(event.target.value as GitDiffPanelProps["mode"])
-              }
+            <button
+              ref={modeTriggerRef}
+              type="button"
+              className={`git-panel-select-trigger${isModeMenuOpen ? " is-open" : ""}`}
               aria-label={t("git.panelView")}
+              aria-haspopup="menu"
+              aria-expanded={isModeMenuOpen}
+              onClick={() => setIsModeMenuOpen((current) => !current)}
             >
-              <option value="diff">{t("git.diffMode")}</option>
-              <option value="log">{t("git.logMode")}</option>
-              <option value="issues">{t("git.issuesMode")}</option>
-              <option value="prs">{t("git.prsMode")}</option>
-            </select>
+              <span className="git-panel-select-label">{currentModeOption.label}</span>
+              <ChevronDown className="git-panel-select-caret" size={12} aria-hidden />
+            </button>
+            {isModeMenuOpen && (
+              <div
+                ref={modeMenuRef}
+                className="git-panel-select-menu"
+                role="menu"
+                aria-label={t("git.panelView")}
+              >
+                <div className="git-panel-select-menu-title">{currentModeOption.label}</div>
+                {modeOptions.map((option) => {
+                  const isActive = option.value === mode;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`git-panel-select-option${isActive ? " is-active" : ""}`}
+                      role="menuitemradio"
+                      aria-checked={isActive}
+                      onClick={() => handleModeSelect(option.value)}
+                    >
+                      <span className="git-panel-select-option-text">
+                        <span className="git-panel-select-option-label">{option.label}</span>
+                        <span className="git-panel-select-option-description">
+                          {option.description}
+                        </span>
+                      </span>
+                      <span
+                        className={`git-panel-select-option-check${isActive ? " is-active" : ""}`}
+                        aria-hidden
+                      >
+                        ✓
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           {showApplyWorktree && (
             <button
@@ -1558,26 +1694,6 @@ export function GitDiffPanel({
       {mode === "diff" ? (
         <>
           <div className="diff-status">{diffStatusLabel}</div>
-          <div className="diff-list-controls">
-            <div className="diff-list-view-toggle" role="group" aria-label={t("git.listView")}>
-              <button
-                type="button"
-                className={`diff-list-view-button ${gitDiffListView === "flat" ? "active" : ""}`}
-                onClick={() => onGitDiffListViewChange?.("flat")}
-                aria-pressed={gitDiffListView === "flat"}
-              >
-                {t("git.listFlat")}
-              </button>
-              <button
-                type="button"
-                className={`diff-list-view-button ${gitDiffListView === "tree" ? "active" : ""}`}
-                onClick={() => onGitDiffListViewChange?.("tree")}
-                aria-pressed={gitDiffListView === "tree"}
-              >
-                {t("git.listTree")}
-              </button>
-            </div>
-          </div>
           {worktreeApplyError && <div className="diff-error">{worktreeApplyError}</div>}
         </>
       ) : mode === "log" ? (

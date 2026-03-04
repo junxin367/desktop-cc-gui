@@ -28,6 +28,7 @@ import "./styles/review-inline.css";
 import "./styles/diff.css";
 import "./styles/diff-viewer.css";
 import "./styles/file-tree.css";
+import "./styles/runtime-console.css";
 import "./styles/file-view-panel.css";
 import "./styles/panel-tabs.css";
 import "./styles/prompts.css";
@@ -55,6 +56,7 @@ import { AppLayout } from "./features/app/components/AppLayout";
 import { AppModals } from "./features/app/components/AppModals";
 import { LockScreenOverlay } from "./features/app/components/LockScreenOverlay";
 import { MainHeaderActions } from "./features/app/components/MainHeaderActions";
+import { RuntimeConsoleDock } from "./features/app/components/RuntimeConsoleDock";
 import { useLayoutNodes } from "./features/layout/hooks/useLayoutNodes";
 import { useWorkspaceDropZone } from "./features/workspaces/hooks/useWorkspaceDropZone";
 import { useThreads } from "./features/threads/hooks/useThreads";
@@ -120,6 +122,7 @@ import { useLiquidGlassEffect } from "./features/app/hooks/useLiquidGlassEffect"
 import { useCopyThread } from "./features/threads/hooks/useCopyThread";
 import { useTerminalController } from "./features/terminal/hooks/useTerminalController";
 import { useWorkspaceLaunchScript } from "./features/app/hooks/useWorkspaceLaunchScript";
+import { useWorkspaceRuntimeRun } from "./features/app/hooks/useWorkspaceRuntimeRun";
 import { useKanbanStore } from "./features/kanban/hooks/useKanbanStore";
 import { KanbanView } from "./features/kanban/components/KanbanView";
 import { GitHistoryPanel } from "./features/git-history/components/GitHistoryPanel";
@@ -1185,7 +1188,14 @@ function MainApp() {
     workspaceId: activeWorkspace?.id ?? null,
   });
   const workspaceFilesPollingEnabled = !isCompact && !rightPanelCollapsed && filePanelMode === "files";
-  const { files, directories, gitignoredFiles, isLoading: isFilesLoading, refreshFiles } = useWorkspaceFiles({
+  const {
+    files,
+    directories,
+    gitignoredFiles,
+    gitignoredDirectories,
+    isLoading: isFilesLoading,
+    refreshFiles,
+  } = useWorkspaceFiles({
     activeWorkspace,
     onDebug: addDebugEntry,
     pollingEnabled: workspaceFilesPollingEnabled,
@@ -1738,7 +1748,6 @@ function MainApp() {
     (workspaceId: string) => ensureTerminalWithTitle(workspaceId, "launch", "Launch"),
     [ensureTerminalWithTitle],
   );
-
   const launchScriptState = useWorkspaceLaunchScript({
     activeWorkspace,
     updateWorkspaceSettings,
@@ -1748,6 +1757,33 @@ function MainApp() {
     terminalState,
     activeTerminalId,
   });
+  const runtimeRunState = useWorkspaceRuntimeRun({ activeWorkspace });
+
+  const handleToggleRuntimeConsole = useCallback(() => {
+    if (runtimeRunState.runtimeConsoleVisible) {
+      runtimeRunState.onCloseRuntimeConsole();
+      return;
+    }
+    closeTerminalPanel();
+    runtimeRunState.onOpenRuntimeConsole();
+  }, [
+    closeTerminalPanel,
+    runtimeRunState,
+  ]);
+
+  const handleToggleTerminalPanel = useCallback(() => {
+    if (!terminalOpen) {
+      runtimeRunState.onCloseRuntimeConsole();
+    }
+    handleToggleTerminal();
+  }, [handleToggleTerminal, runtimeRunState, terminalOpen]);
+
+  useEffect(() => {
+    if (!terminalOpen || !runtimeRunState.runtimeConsoleVisible) {
+      return;
+    }
+    closeTerminalPanel();
+  }, [closeTerminalPanel, runtimeRunState.runtimeConsoleVisible, terminalOpen]);
 
   const launchScriptsState = useWorkspaceLaunchScripts({
     activeWorkspace,
@@ -3915,7 +3951,7 @@ function MainApp() {
     onCycleAgent: handleCycleAgent,
     onCycleWorkspace: handleCycleWorkspace,
     onToggleDebug: handleDebugClick,
-    onToggleTerminal: handleToggleTerminal,
+    onToggleTerminal: handleToggleTerminalPanel,
     onToggleGlobalSearch: handleToggleSearchPalette,
     sidebarCollapsed,
     rightPanelCollapsed,
@@ -4184,7 +4220,7 @@ function MainApp() {
     onCreateBranch: handleCreateBranch,
     onCopyThread: handleCopyThread,
     onLockPanel: handleLockPanel,
-    onToggleTerminal: handleToggleTerminal,
+    onToggleTerminal: handleToggleTerminalPanel,
     showTerminalButton: !isCompact,
     launchScript: launchScriptState.launchScript,
     launchScriptEditorOpen: launchScriptState.editorOpen,
@@ -4202,15 +4238,20 @@ function MainApp() {
         isCompact={isCompact}
         rightPanelCollapsed={rightPanelCollapsed}
         sidebarToggleProps={sidebarToggleProps}
+        showRuntimeConsoleButton={!isCompact}
+        isRuntimeConsoleVisible={runtimeRunState.runtimeConsoleVisible}
+        onToggleRuntimeConsole={handleToggleRuntimeConsole}
         showTerminalButton={!isCompact}
         isTerminalOpen={terminalOpen}
-        onToggleTerminal={handleToggleTerminal}
+        onToggleTerminal={handleToggleTerminalPanel}
       />
     ),
     filePanelMode,
     onFilePanelModeChange: setFilePanelMode,
     fileTreeLoading: isFilesLoading,
     onRefreshFiles: refreshFiles,
+    onToggleRuntimeConsole: handleToggleRuntimeConsole,
+    runtimeConsoleVisible: runtimeRunState.runtimeConsoleVisible,
     centerMode,
     editorSplitLayout,
     onToggleEditorSplitLayout: () =>
@@ -4233,6 +4274,9 @@ function MainApp() {
     tabletNavTab: tabletTab,
     gitPanelMode,
     onGitPanelModeChange: handleGitPanelModeChange,
+    onOpenGitHistoryPanel: () => {
+      setAppMode((current) => (current === "gitHistory" ? "chat" : "gitHistory"));
+    },
     gitDiffViewStyle,
     gitDiffListView,
     onGitDiffListViewChange: setGitDiffListView,
@@ -4412,6 +4456,7 @@ function MainApp() {
     files,
     directories,
     gitignoredFiles,
+    gitignoredDirectories,
     onInsertComposerText: handleInsertComposerText,
     textareaRef: composerInputRef,
     composerEditorSettings,
@@ -4573,6 +4618,30 @@ function MainApp() {
         { topbarNode: desktopTopbarLeftNodeWithToggle },
       )
     : sidebarNode;
+  const runtimeConsoleDockNode = (
+    <RuntimeConsoleDock
+      isVisible={runtimeRunState.runtimeConsoleVisible}
+      status={runtimeRunState.runtimeConsoleStatus}
+      commandPreview={runtimeRunState.runtimeConsoleCommandPreview}
+      log={runtimeRunState.runtimeConsoleLog}
+      error={runtimeRunState.runtimeConsoleError}
+      exitCode={runtimeRunState.runtimeConsoleExitCode}
+      truncated={runtimeRunState.runtimeConsoleTruncated}
+      autoScroll={runtimeRunState.runtimeAutoScroll}
+      wrapLines={runtimeRunState.runtimeWrapLines}
+      commandPresetOptions={runtimeRunState.runtimeCommandPresetOptions}
+      commandPresetId={runtimeRunState.runtimeCommandPresetId}
+      commandInput={runtimeRunState.runtimeCommandInput}
+      onRun={runtimeRunState.onRunProject}
+      onCommandPresetChange={runtimeRunState.onSelectRuntimeCommandPreset}
+      onCommandInputChange={runtimeRunState.onChangeRuntimeCommandInput}
+      onStop={runtimeRunState.onStopProject}
+      onClear={runtimeRunState.onClearRuntimeLogs}
+      onCopy={runtimeRunState.onCopyRuntimeLogs}
+      onToggleAutoScroll={runtimeRunState.onToggleRuntimeAutoScroll}
+      onToggleWrapLines={runtimeRunState.onToggleRuntimeWrapLines}
+    />
+  );
 
   return (
     <div
@@ -4655,7 +4724,7 @@ function MainApp() {
               onKanbanConversationResizeStart={onKanbanConversationResizeStart}
               gitPanelNode={gitDiffPanelNode}
               terminalOpen={terminalOpen}
-              onToggleTerminal={handleToggleTerminal}
+              onToggleTerminal={handleToggleTerminalPanel}
             />
           ) : null
         }
@@ -4682,6 +4751,7 @@ function MainApp() {
         gitDiffViewerNode={gitDiffViewerNode}
         fileViewPanelNode={fileViewPanelNode}
         planPanelNode={planPanelNode}
+        runtimeConsoleDockNode={runtimeConsoleDockNode}
         debugPanelNode={debugPanelNode}
         debugPanelFullNode={debugPanelFullNode}
         terminalDockNode={terminalDockNode}

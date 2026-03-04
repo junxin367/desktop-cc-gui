@@ -26,6 +26,7 @@ export function useWorkspaceFiles({
   const [files, setFiles] = useState<string[]>([]);
   const [directories, setDirectories] = useState<string[]>([]);
   const [gitignoredFiles, setGitignoredFiles] = useState<Set<string>>(new Set());
+  const [gitignoredDirectories, setGitignoredDirectories] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const hasLoadedWorkspaceId = useRef<string | null>(null);
   const inFlight = useRef<string | null>(null);
@@ -63,6 +64,9 @@ export function useWorkspaceFiles({
       const nextFiles = Array.isArray(response.files) ? response.files : [];
       const nextDirectories = Array.isArray(response.directories) ? response.directories : [];
       const ignored = Array.isArray(response.gitignored_files) ? response.gitignored_files : [];
+      const ignoredDirectories = Array.isArray(response.gitignored_directories)
+        ? response.gitignored_directories
+        : [];
       if (
         import.meta.env.DEV &&
         (elapsedMs >= WORKSPACE_FILES_SLOW_REQUEST_MS ||
@@ -75,6 +79,7 @@ export function useWorkspaceFiles({
           files: nextFiles.length,
           directories: nextDirectories.length,
           gitignoredFiles: ignored.length,
+          gitignoredDirectories: ignoredDirectories.length,
         });
       }
       onDebug?.({
@@ -89,12 +94,14 @@ export function useWorkspaceFiles({
           files: nextFiles.length,
           directories: nextDirectories.length,
           gitignoredFiles: ignored.length,
+          gitignoredDirectories: ignoredDirectories.length,
         },
       });
       if (requestWorkspaceId === workspaceId) {
         setFiles(nextFiles);
         setDirectories(nextDirectories);
         setGitignoredFiles(new Set(ignored));
+        setGitignoredDirectories(new Set(ignoredDirectories));
         hasLoadedWorkspaceId.current = requestWorkspaceId;
         consecutiveFailures.current = 0;
       }
@@ -138,6 +145,7 @@ export function useWorkspaceFiles({
     setFiles([]);
     setDirectories([]);
     setGitignoredFiles(new Set());
+    setGitignoredDirectories(new Set());
     hasLoadedWorkspaceId.current = null;
     inFlight.current = null;
     consecutiveFailures.current = 0;
@@ -192,6 +200,7 @@ export function useWorkspaceFiles({
     files: fileOptions,
     directories: directoryOptions,
     gitignoredFiles,
+    gitignoredDirectories,
     isLoading,
     refreshFiles,
   };

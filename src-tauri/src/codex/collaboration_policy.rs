@@ -272,7 +272,7 @@ pub(crate) fn apply_policy_to_collaboration_mode(
 mod tests {
     use super::{
         apply_policy_to_collaboration_mode, build_policy_directives, normalize_mode,
-        resolve_collaboration_profile_from_raw, resolve_policy, CollaborationProfile,
+        resolve_collaboration_profile_from_raw, CodexCollaborationPolicy, CollaborationProfile,
         RequestUserInputPolicy, COLLABORATION_POLICY_VERSION,
     };
     use serde_json::json;

@@ -494,12 +494,13 @@ if (!("requestAnimationFrame" in globalThis)) {
   });
 }
 
-const hasLocalStorage = "localStorage" in globalThis;
-const existingLocalStorage = hasLocalStorage
-  ? (globalThis as { localStorage?: Storage }).localStorage
-  : null;
+const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+const existingLocalStorage =
+  localStorageDescriptor && "value" in localStorageDescriptor
+    ? localStorageDescriptor.value
+    : null;
 
-if (!existingLocalStorage || typeof existingLocalStorage.clear !== "function") {
+if (!existingLocalStorage || typeof (existingLocalStorage as Storage).clear !== "function") {
   const store = new Map<string, string>();
   const localStorage = {
     getItem: (key: string) => (store.has(key) ? store.get(key) ?? null : null),

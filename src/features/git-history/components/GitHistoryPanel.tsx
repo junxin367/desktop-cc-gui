@@ -5890,22 +5890,24 @@ export function GitHistoryPanel({
           <div className="git-history-overview-toolbar is-files-top-row">
             <div className="git-history-overview-list-toggle">
               <ActionSurface
-                className="git-history-overview-list-chip is-icon"
+                className="git-history-overview-list-chip"
                 active={overviewListView === "flat"}
                 onActivate={() => setOverviewListView("flat")}
                 ariaLabel={t("git.listFlat")}
                 title={t("git.listFlat")}
               >
-                <LayoutGrid size={14} />
+                <LayoutGrid size={13} />
+                <span>{t("git.listFlat")}</span>
               </ActionSurface>
               <ActionSurface
-                className="git-history-overview-list-chip is-icon"
+                className="git-history-overview-list-chip"
                 active={overviewListView === "tree"}
                 onActivate={() => setOverviewListView("tree")}
                 ariaLabel={t("git.listTree")}
                 title={t("git.listTree")}
               >
-                <FolderTree size={14} />
+                <FolderTree size={13} />
+                <span>{t("git.listTree")}</span>
               </ActionSurface>
             </div>
             <ActionSurface
