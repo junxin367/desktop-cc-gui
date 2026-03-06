@@ -12,11 +12,15 @@ import { Composer } from "../../composer/components/Composer";
 import { GitDiffPanel } from "../../git/components/GitDiffPanel";
 import { GitDiffViewer } from "../../git/components/GitDiffViewer";
 import { FileTreePanel } from "../../files/components/FileTreePanel";
+import { WorkspaceSearchPanel } from "../../search/components/WorkspaceSearchPanel";
 import { FileViewPanel } from "../../files/components/FileViewPanel";
 import { PromptPanel } from "../../prompts/components/PromptPanel";
 import { ProjectMemoryPanel } from "../../project-memory/components/ProjectMemoryPanel";
 import { DebugPanel } from "../../debug/components/DebugPanel";
 import { PlanPanel } from "../../plan/components/PlanPanel";
+import { PanelTabs } from "../components/PanelTabs";
+import Construction from "lucide-react/dist/esm/icons/construction";
+import LayoutDashboard from "lucide-react/dist/esm/icons/layout-dashboard";
 import { TabBar } from "../../app/components/TabBar";
 import { TabletNav } from "../../app/components/TabletNav";
 import { TerminalDock } from "../../terminal/components/TerminalDock";
@@ -77,6 +81,7 @@ type ThreadActivityStatus = {
   isProcessing: boolean;
   hasUnread: boolean;
   isReviewing: boolean;
+  isContextCompacting?: boolean;
   processingStartedAt?: number | null;
   lastDurationMs?: number | null;
   heartbeatPulse?: number;
@@ -174,6 +179,11 @@ type LayoutNodesOptions = {
   onToggleWorkspaceCollapse: (workspaceId: string, collapsed: boolean) => void;
   onSelectThread: (workspaceId: string, threadId: string) => void;
   onDeleteThread: (workspaceId: string, threadId: string) => void;
+  deleteConfirmThreadId?: string | null;
+  deleteConfirmWorkspaceId?: string | null;
+  deleteConfirmBusy?: boolean;
+  onCancelDeleteConfirm?: () => void;
+  onConfirmDeleteConfirm?: () => void;
   onSyncThread: (workspaceId: string, threadId: string) => void;
   pinThread: (workspaceId: string, threadId: string) => boolean;
   unpinThread: (workspaceId: string, threadId: string) => void;
@@ -247,6 +257,8 @@ type LayoutNodesOptions = {
   centerMode: "chat" | "diff" | "editor" | "memory";
   editorSplitLayout: "vertical" | "horizontal";
   onToggleEditorSplitLayout: () => void;
+  isEditorFileMaximized: boolean;
+  onToggleEditorFileMaximized: () => void;
   editorFilePath: string | null;
   editorNavigationTarget: EditorNavigationTarget | null;
   openEditorTabs: string[];
@@ -272,8 +284,8 @@ type LayoutNodesOptions = {
   worktreeApplyError: string | null;
   worktreeApplySuccess: boolean;
   onApplyWorktreeChanges?: () => void | Promise<void>;
-  filePanelMode: "git" | "files" | "prompts" | "memory";
-  onFilePanelModeChange: (mode: "git" | "files" | "prompts" | "memory") => void;
+  filePanelMode: "git" | "files" | "search" | "prompts" | "memory";
+  onFilePanelModeChange: (mode: "git" | "files" | "search" | "prompts" | "memory") => void;
   fileTreeLoading: boolean;
   onRefreshFiles?: () => void;
   onToggleRuntimeConsole: () => void;
@@ -417,6 +429,7 @@ type LayoutNodesOptions = {
   onReviewPromptUpdateCustomInstructions: (value: string) => void;
   onReviewPromptConfirmCustom: () => Promise<void>;
   activeTokenUsage: ThreadTokenUsage | null;
+  contextDualViewEnabled?: boolean;
   activeQueue: QueuedMessage[];
   draftText: string;
   onDraftChange: (next: string) => void;
@@ -532,6 +545,7 @@ type LayoutNodesResult = {
   desktopTopbarLeftNode: ReactNode;
   tabletNavNode: ReactNode;
   tabBarNode: ReactNode;
+  rightPanelToolbarNode: ReactNode;
   gitDiffPanelNode: ReactNode;
   gitDiffViewerNode: ReactNode;
   fileViewPanelNode: ReactNode;
@@ -699,6 +713,11 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       onToggleWorkspaceCollapse={options.onToggleWorkspaceCollapse}
       onSelectThread={options.onSelectThread}
       onDeleteThread={options.onDeleteThread}
+      deleteConfirmThreadId={options.deleteConfirmThreadId}
+      deleteConfirmWorkspaceId={options.deleteConfirmWorkspaceId}
+      deleteConfirmBusy={options.deleteConfirmBusy}
+      onCancelDeleteConfirm={options.onCancelDeleteConfirm}
+      onConfirmDeleteConfirm={options.onConfirmDeleteConfirm}
       onSyncThread={options.onSyncThread}
       pinThread={options.pinThread}
       unpinThread={options.unpinThread}
@@ -722,6 +741,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       appMode={options.appMode}
       onAppModeChange={options.onAppModeChange}
       onOpenMemory={options.onOpenMemory}
+      onLockPanel={options.onLockPanel}
       onOpenProjectMemory={options.onOpenProjectMemory}
       onOpenReleaseNotes={options.onOpenReleaseNotes}
       onOpenGlobalSearch={options.onOpenGlobalSearch}
@@ -812,6 +832,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       canStop={options.canStop}
       disabled={options.isReviewing}
       contextUsage={options.activeTokenUsage}
+      contextDualViewEnabled={options.contextDualViewEnabled}
+      isContextCompacting={activeThreadStatus?.isContextCompacting ?? false}
       accountRateLimits={options.activeRateLimits}
       usageShowRemaining={options.usageShowRemaining}
       onRefreshAccountRateLimits={options.onRefreshAccountRateLimits}
@@ -865,6 +887,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       commands={composerCommands}
       files={options.files}
       directories={options.directories}
+      gitignoredFiles={options.gitignoredFiles}
+      gitignoredDirectories={options.gitignoredDirectories}
       textareaRef={options.textareaRef}
       historyKey={options.activeWorkspace?.id ?? null}
       editorSettings={options.composerEditorSettings}
@@ -1013,11 +1037,40 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   const sidebarSelectedDiffPath =
     options.centerMode === "diff" ? options.selectedDiffPath : null;
 
+  const rightPanelToolbarNode = (
+    <div className="right-panel-toolbar">
+      <PanelTabs active={options.filePanelMode} onSelect={options.onFilePanelModeChange} />
+      <div className="right-panel-toolbar-actions">
+        <button
+          type="button"
+          className={`ghost icon-button file-tree-toggle file-tree-toggle-runtime${options.runtimeConsoleVisible ? " is-active" : ""}`}
+          onClick={options.onToggleRuntimeConsole}
+          data-tauri-drag-region="false"
+          aria-label={t("files.openRunConsole")}
+          title={t("files.openRunConsole")}
+        >
+          <Construction aria-hidden />
+        </button>
+        <button
+          type="button"
+          className={`ghost icon-button file-tree-toggle file-tree-toggle-spec-hub${options.activeTab === "spec" ? " is-active" : ""}`}
+          onClick={options.onOpenSpecHub}
+          data-tauri-drag-region="false"
+          aria-label={t("sidebar.specHub")}
+          title={t("sidebar.specHub")}
+        >
+          <LayoutDashboard aria-hidden />
+        </button>
+      </div>
+    </div>
+  );
+
   let gitDiffPanelNode: ReactNode;
   if (options.filePanelMode === "files" && options.activeWorkspace) {
     gitDiffPanelNode = (
       <FileTreePanel
         workspaceId={options.activeWorkspace.id}
+        workspaceName={options.activeWorkspace.name}
         workspacePath={options.activeWorkspace.path}
         files={options.files}
         directories={options.directories}
@@ -1038,6 +1091,15 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         gitignoredFiles={options.gitignoredFiles}
         gitignoredDirectories={options.gitignoredDirectories}
         onRefreshFiles={options.onRefreshFiles}
+      />
+    );
+  } else if (options.filePanelMode === "search") {
+    gitDiffPanelNode = (
+      <WorkspaceSearchPanel
+        workspaceId={options.activeWorkspace?.id ?? null}
+        filePanelMode={options.filePanelMode}
+        onFilePanelModeChange={options.onFilePanelModeChange}
+        onOpenFile={options.onOpenFile}
       />
     );
   } else if (options.filePanelMode === "prompts") {
@@ -1198,6 +1260,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         onSelectOpenAppId={options.onSelectOpenAppId}
         editorSplitLayout={options.editorSplitLayout}
         onToggleEditorSplitLayout={options.onToggleEditorSplitLayout}
+        isEditorFileMaximized={options.isEditorFileMaximized}
+        onToggleEditorFileMaximized={options.onToggleEditorFileMaximized}
         onNavigateToLocation={options.onOpenFile}
         onClose={options.onExitEditor}
         onInsertText={options.onInsertComposerText}
@@ -1304,6 +1368,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
     desktopTopbarLeftNode,
     tabletNavNode,
     tabBarNode,
+    rightPanelToolbarNode,
     gitDiffPanelNode,
     gitDiffViewerNode,
     fileViewPanelNode,

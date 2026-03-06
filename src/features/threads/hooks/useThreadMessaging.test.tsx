@@ -101,7 +101,6 @@ describe("useThreadMessaging", () => {
       activeTurnIdByThread?: Record<string, string | null>;
       threadEngineById?: Record<string, "claude" | "codex" | "opencode" | undefined>;
       itemsByThread?: Record<string, ConversationItem[]>;
-      autoNameThread?: ReturnType<typeof vi.fn>;
       startThreadForWorkspace?: ReturnType<typeof vi.fn>;
       dispatch?: ReturnType<typeof vi.fn>;
     } = {},
@@ -146,7 +145,6 @@ describe("useThreadMessaging", () => {
         forkThreadForWorkspace: async () => null,
         updateThreadParent: vi.fn(),
         startThreadForWorkspace,
-        autoNameThread: overrides.autoNameThread,
         onDebug: vi.fn(),
       }),
     );
@@ -214,8 +212,7 @@ describe("useThreadMessaging", () => {
   });
 
   it("does not trigger auto title generation for opencode", async () => {
-    const autoNameThread = vi.fn().mockResolvedValue(null);
-    const { result } = makeHook("opencode", { autoNameThread });
+    const { result } = makeHook("opencode");
 
     await act(async () => {
       await result.current.sendUserMessageToThread(
@@ -226,7 +223,33 @@ describe("useThreadMessaging", () => {
     });
 
     expect(engineSendMessage).toHaveBeenCalledTimes(1);
-    expect(autoNameThread).not.toHaveBeenCalled();
+  });
+
+  it("does not trigger auto title generation for codex", async () => {
+    const { result } = makeHook("codex");
+
+    await act(async () => {
+      await result.current.sendUserMessageToThread(workspace, "thread-1", "hello codex");
+    });
+
+    expect(sendUserMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not trigger auto title generation for claude", async () => {
+    const { result } = makeHook("claude", {
+      activeThreadId: "claude:session-1",
+      ensuredThreadId: "claude:session-1",
+    });
+
+    await act(async () => {
+      await result.current.sendUserMessageToThread(
+        workspace,
+        "claude:session-1",
+        "hello claude",
+      );
+    });
+
+    expect(engineSendMessage).toHaveBeenCalledTimes(1);
   });
 
   it("routes by thread ownership when active engine mismatches", async () => {
@@ -454,7 +477,6 @@ describe("useThreadMessaging", () => {
         forkThreadForWorkspace: async () => null,
         updateThreadParent: vi.fn(),
         startThreadForWorkspace: vi.fn(async () => "thread-1"),
-        autoNameThread: vi.fn(),
         onDebug: vi.fn(),
       }),
     );
@@ -828,7 +850,6 @@ describe("useThreadMessaging", () => {
         forkThreadForWorkspace: async () => null,
         updateThreadParent: vi.fn(),
         startThreadForWorkspace: vi.fn(async () => "thread-1"),
-        autoNameThread: vi.fn(),
         onDebug: vi.fn(),
       }),
     );

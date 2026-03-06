@@ -1,4 +1,9 @@
 import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
   Tooltip,
   TooltipPopup,
   TooltipTrigger,
@@ -8,6 +13,7 @@ import { useTranslation } from "react-i18next";
 
 import type { ThreadSummary } from "../../../types";
 import { EngineIcon } from "../../engine/components/EngineIcon";
+import { ThreadDeleteConfirmBubble } from "../../threads/components/ThreadDeleteConfirmBubble";
 
 type ThreadStatusMap = Record<
   string,
@@ -44,6 +50,11 @@ type ThreadListProps = {
     threadId: string,
     canPin: boolean,
   ) => void;
+  deleteConfirmThreadId?: string | null;
+  deleteConfirmWorkspaceId?: string | null;
+  deleteConfirmBusy?: boolean;
+  onCancelDeleteConfirm?: () => void;
+  onConfirmDeleteConfirm?: () => void;
 };
 
 export function ThreadList({
@@ -66,6 +77,11 @@ export function ThreadList({
   onLoadOlderThreads,
   onSelectThread,
   onShowThreadMenu,
+  deleteConfirmThreadId = null,
+  deleteConfirmWorkspaceId = null,
+  deleteConfirmBusy = false,
+  onCancelDeleteConfirm,
+  onConfirmDeleteConfirm,
 }: ThreadListProps) {
   const { t } = useTranslation();
   const indentUnit = nested ? 10 : 14;
@@ -95,54 +111,85 @@ export function ThreadList({
           ? "OpenCode"
           : "Codex";
 
+    const isDeleteConfirmOpen =
+      deleteConfirmWorkspaceId === workspaceId && deleteConfirmThreadId === thread.id;
+
     return (
-      <Tooltip key={thread.id}>
-        <TooltipTrigger
-          delay={450}
-          className={`thread-row ${
-            workspaceId === activeWorkspaceId && thread.id === activeThreadId
-              ? "active"
-              : ""
-          }`}
-          style={indentStyle}
-          onClick={() => onSelectThread(workspaceId, thread.id)}
-          onContextMenu={(event) =>
-            onShowThreadMenu(event, workspaceId, thread.id, canPin)
+      <Popover
+        key={thread.id}
+        open={isDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            onCancelDeleteConfirm?.();
           }
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              onSelectThread(workspaceId, thread.id);
-            }
-          }}
-        >
-          <span className={`thread-status ${statusClass}`} aria-hidden />
-          {isPinned && <span className="thread-pin-icon" aria-label="Pinned" />}
-          <span
-            className={`thread-engine-badge thread-engine-${engineSource}${
-              isProcessing ? " is-processing" : ""
-            }`}
-            title={engineTitle}
+        }}
+      >
+        <Tooltip>
+          <PopoverAnchor asChild>
+            <TooltipTrigger
+              delay={450}
+              className={`thread-row ${
+                workspaceId === activeWorkspaceId && thread.id === activeThreadId
+                  ? "active"
+                  : ""
+              }${isDeleteConfirmOpen ? " has-delete-confirm" : ""}`}
+              style={indentStyle}
+              onClick={() => onSelectThread(workspaceId, thread.id)}
+              onContextMenu={(event) =>
+                onShowThreadMenu(event, workspaceId, thread.id, canPin)
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelectThread(workspaceId, thread.id);
+                }
+              }}
+            >
+              <span className={`thread-status ${statusClass}`} aria-hidden />
+              {isPinned && <span className="thread-pin-icon" aria-label="Pinned" />}
+              <span
+                className={`thread-engine-badge thread-engine-${engineSource}${
+                  isProcessing ? " is-processing" : ""
+                }`}
+                title={engineTitle}
+              >
+                <EngineIcon engine={engineSource} size={12} />
+              </span>
+              <span className="thread-name">{thread.name}</span>
+              <div className="thread-meta">
+                {isAutoNaming && (
+                  <span className="thread-auto-naming">{t("threads.autoNaming")}</span>
+                )}
+                {relativeTime && <span className="thread-time">{relativeTime}</span>}
+              </div>
+            </TooltipTrigger>
+          </PopoverAnchor>
+          <TooltipPopup
+            side="top"
+            align="start"
+            sideOffset={4}
+            className="max-w-[400px] break-words"
           >
-            <EngineIcon engine={engineSource} size={12} />
-          </span>
-          <span className="thread-name">{thread.name}</span>
-          <div className="thread-meta">
-            {isAutoNaming && (
-              <span className="thread-auto-naming">{t("threads.autoNaming")}</span>
-            )}
-            {relativeTime && <span className="thread-time">{relativeTime}</span>}
-          </div>
-        </TooltipTrigger>
-        <TooltipPopup
-          side="top"
-          align="start"
-          sideOffset={4}
-          className="max-w-[400px] break-words"
-        >
-          {thread.name}
-        </TooltipPopup>
-      </Tooltip>
+            {thread.name}
+          </TooltipPopup>
+        </Tooltip>
+        {isDeleteConfirmOpen && (
+          <PopoverContent
+            side="right"
+            align="start"
+            sideOffset={10}
+            className="thread-delete-popover-shell"
+            onOpenAutoFocus={(event) => event.preventDefault()}
+          >
+            <ThreadDeleteConfirmBubble
+              threadName={thread.name}
+              isDeleting={deleteConfirmBusy}
+              onCancel={() => onCancelDeleteConfirm?.()}
+              onConfirm={() => onConfirmDeleteConfirm?.()}
+            />
+          </PopoverContent>
+        )}
+      </Popover>
     );
   };
 

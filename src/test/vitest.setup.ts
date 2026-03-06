@@ -393,6 +393,12 @@ vi.mock("react-i18next", () => ({
         "settings.backgroundTerminalDesc": "Run long-running terminal commands in the background.",
         "settings.steerMode": "Steer mode",
         "settings.steerModeDesc": "Send messages immediately. Use Tab to queue while a run is active.",
+        "chat.contextDualViewLabel": "Dual",
+        "chat.contextDualViewTotalTokens": "Total {{tokens}}",
+        "chat.contextDualViewEmpty": "No context usage yet",
+        "chat.contextDualViewCompacting": "Compacting context...",
+        "chat.contextDualViewCompacted": "Context compacted",
+        "chat.contextDualViewAriaLabel": "Dual context view status: {{state}}",
         "composer.collaborationCode": "Code",
         "composer.collaborationPlan": "Plan",
         "composer.collaborationModeDisabledHint":

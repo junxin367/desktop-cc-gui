@@ -1177,6 +1177,17 @@ body[data-panel-resizing="true"] .main {
   background: var(--border-strong);
 }
 
+.content.is-editor-file-maximized .content-layer--editor {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+}
+
+.content.is-editor-file-maximized .content-layer--chat,
+.content.is-editor-file-maximized .content-editor-split-divider {
+  display: none;
+}
+
 .content.is-editor-split .messages-full {
   margin-top: 0;
   padding-top: 12px;
@@ -1204,7 +1215,7 @@ body.editor-horizontal-split-resizing * {
   flex-direction: column;
   gap: 0;
   padding-left: 0;
-  border-left: none;
+  border-left: 1px solid color-mix(in srgb, var(--border-subtle) 90%, transparent);
   background: var(--surface-right-panel);
   height: 100%;
   padding-top: 0;
@@ -1216,6 +1227,28 @@ body.editor-horizontal-split-resizing * {
   transition: opacity 200ms ease, transform 200ms ease;
 }
 
+.right-panel-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--main-topbar-height, 44px);
+  height: var(--main-topbar-height, 44px);
+  flex: 0 0 auto;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  box-sizing: border-box;
+  position: relative;
+  z-index: 3;
+  -webkit-app-region: no-drag;
+}
+
+.right-panel-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
 .right-panel-top {
   display: flex;
   flex-direction: column;
@@ -1223,7 +1256,7 @@ body.editor-horizontal-split-resizing * {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding-top: var(--main-topbar-height,44px);
+  padding-top: 0;
 }
 
 .right-panel-divider {

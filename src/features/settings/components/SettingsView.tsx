@@ -79,6 +79,7 @@ import type {
   DictationModelStatus,
   WorkspaceSettings,
   OpenAppTarget,
+  ThreadSummary,
   WorkspaceGroup,
   WorkspaceInfo,
 } from "../../../types";
@@ -118,6 +119,10 @@ import { PromptSection } from "./PromptSection";
 import { UsageSection } from "./UsageSection";
 import { McpSection } from "./McpSection";
 import { SkillsSection } from "./SkillsSection";
+import {
+  ProjectSessionManagementSection,
+  type ProjectSessionDeleteResult,
+} from "./ProjectSessionManagementSection";
 import Settings from "lucide-react/dist/esm/icons/settings";
 import GitCommitHorizontal from "lucide-react/dist/esm/icons/git-commit-horizontal";
 import BookOpen from "lucide-react/dist/esm/icons/book-open";
@@ -226,6 +231,7 @@ export type SettingsViewProps = {
     name: string;
     workspaces: WorkspaceInfo[];
   }>;
+  allWorkspaces?: WorkspaceInfo[];
   ungroupedLabel: string;
   onClose: () => void;
   onMoveWorkspace: (id: string, direction: "up" | "down") => void;
@@ -254,6 +260,13 @@ export type SettingsViewProps = {
     id: string,
     settings: Partial<WorkspaceSettings>,
   ) => Promise<void>;
+  workspaceThreadsById?: Record<string, ThreadSummary[]>;
+  workspaceThreadListLoadingById?: Record<string, boolean>;
+  onEnsureWorkspaceThreads?: (workspaceId: string) => void;
+  onDeleteWorkspaceThreads?: (
+    workspaceId: string,
+    threadIds: string[],
+  ) => Promise<ProjectSessionDeleteResult>;
   scaleShortcutTitle: string;
   scaleShortcutText: string;
   onTestNotificationSound: (soundId?: string, customSoundPath?: string) => void;
@@ -418,6 +431,7 @@ const getSystemResolvedTheme = (): "light" | "dark" => {
 export function SettingsView({
   workspaceGroups,
   groupedWorkspaces,
+  allWorkspaces,
   ungroupedLabel,
   onClose,
   onMoveWorkspace,
@@ -437,6 +451,10 @@ export function SettingsView({
   activeEngine,
   onUpdateWorkspaceCodexBin,
   onUpdateWorkspaceSettings,
+  workspaceThreadsById = {},
+  workspaceThreadListLoadingById = {},
+  onEnsureWorkspaceThreads,
+  onDeleteWorkspaceThreads,
   scaleShortcutTitle,
   scaleShortcutText,
   onTestNotificationSound,
@@ -659,7 +677,12 @@ export function SettingsView({
     () => groupedWorkspaces.flatMap((group) => group.workspaces),
     [groupedWorkspaces],
   );
+  const sessionWorkspaceOptions = useMemo(
+    () => (allWorkspaces && allWorkspaces.length > 0 ? allWorkspaces : projects),
+    [allWorkspaces, projects],
+  );
   const [settingsWorkspaceId, setSettingsWorkspaceId] = useState<string | null>(null);
+  const [projectSessionWorkspaceId, setProjectSessionWorkspaceId] = useState<string | null>(null);
   const selectedSettingsWorkspace = useMemo(() => {
     if (projects.length === 0) {
       return activeWorkspace;
@@ -672,9 +695,57 @@ export function SettingsView({
     }
     return projects[0] ?? null;
   }, [activeWorkspace, projects, settingsWorkspaceId]);
+  const selectedProjectSessionWorkspace = useMemo(() => {
+    if (sessionWorkspaceOptions.length === 0) {
+      return null;
+    }
+    if (projectSessionWorkspaceId) {
+      const matched = sessionWorkspaceOptions.find(
+        (workspace) => workspace.id === projectSessionWorkspaceId,
+      );
+      if (matched) {
+        return matched;
+      }
+    }
+    if (selectedSettingsWorkspace) {
+      const linked = sessionWorkspaceOptions.find(
+        (workspace) => workspace.id === selectedSettingsWorkspace.id,
+      );
+      if (linked) {
+        return linked;
+      }
+    }
+    return sessionWorkspaceOptions[0] ?? null;
+  }, [projectSessionWorkspaceId, selectedSettingsWorkspace, sessionWorkspaceOptions]);
   const mcpContextWorkspace = useMemo(
     () => activeWorkspace ?? projects[0] ?? null,
     [activeWorkspace, projects],
+  );
+  const selectedWorkspaceThreads = useMemo(() => {
+    if (!selectedProjectSessionWorkspace) {
+      return [];
+    }
+    const raw = workspaceThreadsById[selectedProjectSessionWorkspace.id] ?? [];
+    return [...raw].sort((left, right) => right.updatedAt - left.updatedAt);
+  }, [selectedProjectSessionWorkspace, workspaceThreadsById]);
+  const selectedWorkspaceThreadListLoading = selectedProjectSessionWorkspace
+    ? (workspaceThreadListLoadingById[selectedProjectSessionWorkspace.id] ?? false)
+    : false;
+  const handleDeleteWorkspaceThreadsInSettings = useCallback(
+    async (workspaceId: string, threadIds: string[]) => {
+      if (!onDeleteWorkspaceThreads) {
+        return {
+          succeededThreadIds: [],
+          failed: threadIds.map((threadId) => ({
+            threadId,
+            code: "UNAVAILABLE",
+            message: t("settings.projectSessionDeleteUnavailable"),
+          })),
+        } satisfies ProjectSessionDeleteResult;
+      }
+      return onDeleteWorkspaceThreads(workspaceId, threadIds);
+    },
+    [onDeleteWorkspaceThreads, t],
   );
   const shouldShowWorkspaceSelector =
     activeSection === "prompts" ||
@@ -710,6 +781,27 @@ export function SettingsView({
     media.addEventListener("change", syncTheme);
     return () => media.removeEventListener("change", syncTheme);
   }, []);
+
+  useEffect(() => {
+    if (
+      projectSessionWorkspaceId &&
+      sessionWorkspaceOptions.some((workspace) => workspace.id === projectSessionWorkspaceId)
+    ) {
+      return;
+    }
+    if (
+      selectedSettingsWorkspace &&
+      sessionWorkspaceOptions.some((workspace) => workspace.id === selectedSettingsWorkspace.id)
+    ) {
+      setProjectSessionWorkspaceId(selectedSettingsWorkspace.id);
+      return;
+    }
+    setProjectSessionWorkspaceId(sessionWorkspaceOptions[0]?.id ?? null);
+  }, [
+    projectSessionWorkspaceId,
+    selectedSettingsWorkspace,
+    sessionWorkspaceOptions,
+  ]);
 
   useEffect(() => {
     setCodexPathDraft(appSettings.codexBin ?? "");
@@ -805,6 +897,17 @@ export function SettingsView({
       );
     }
   }, [t]);
+
+  useEffect(() => {
+    if (
+      activeSection !== "other" ||
+      !selectedProjectSessionWorkspace ||
+      !onEnsureWorkspaceThreads
+    ) {
+      return;
+    }
+    onEnsureWorkspaceThreads(selectedProjectSessionWorkspace.id);
+  }, [activeSection, onEnsureWorkspaceThreads, selectedProjectSessionWorkspace]);
 
   useEffect(() => {
     setCodexBinOverrideDrafts((prev) =>
@@ -2575,6 +2678,24 @@ export function SettingsView({
                   {t("settings.otherDescription")}
                 </div>
                 <HistoryCompletionSettings />
+                <Separator className="my-4" />
+                <ProjectSessionManagementSection
+                  workspace={selectedProjectSessionWorkspace}
+                  workspaces={sessionWorkspaceOptions}
+                  groupedWorkspaces={groupedWorkspaces}
+                  selectedWorkspaceId={selectedProjectSessionWorkspace?.id ?? null}
+                  onWorkspaceChange={setProjectSessionWorkspaceId}
+                  threads={selectedWorkspaceThreads}
+                  loading={selectedWorkspaceThreadListLoading}
+                  onRefresh={
+                    onEnsureWorkspaceThreads
+                      ? (workspaceId) => {
+                          onEnsureWorkspaceThreads(workspaceId);
+                        }
+                      : undefined
+                  }
+                  onDeleteSessions={handleDeleteWorkspaceThreadsInSettings}
+                />
               </section>
             )}
             {activeSection === "community" && (

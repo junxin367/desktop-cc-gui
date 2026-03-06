@@ -323,12 +323,6 @@ type UseThreadMessagingOptions = {
   ) => Promise<string | null>;
   resolveOpenCodeAgent?: (threadId: string | null) => string | null;
   resolveOpenCodeVariant?: (threadId: string | null) => string | null;
-  autoNameThread?: (
-    workspaceId: string,
-    threadId: string,
-    sourceText: string,
-    options?: { force?: boolean; clearPendingOnSkip?: boolean },
-  ) => Promise<string | null>;
   onInputMemoryCaptured?: (payload: {
     workspaceId: string;
     threadId: string;
@@ -378,7 +372,6 @@ export function useThreadMessaging({
   startThreadForWorkspace,
   resolveOpenCodeAgent,
   resolveOpenCodeVariant,
-  autoNameThread,
   onInputMemoryCaptured,
   resolveCollaborationRuntimeMode,
 }: UseThreadMessagingOptions) {
@@ -934,30 +927,6 @@ export function useThreadMessaging({
           // and mark processing complete when turn/completed event arrives
           setActiveTurnId(threadId, turnId);
 
-          if (
-            cliEngine !== "opencode" &&
-            autoNameThread &&
-            !getCustomName(workspace.id, threadId)
-          ) {
-            onDebug?.({
-              id: `${Date.now()}-thread-title-trigger-${cliEngine}`,
-              timestamp: Date.now(),
-              source: "client",
-              label: "thread/title trigger",
-              payload: { workspaceId: workspace.id, threadId, engine: cliEngine },
-            });
-            void autoNameThread(workspace.id, threadId, visibleUserText, {
-              clearPendingOnSkip: true,
-            }).catch((error) => {
-              onDebug?.({
-                id: `${Date.now()}-thread-title-trigger-${cliEngine}-error`,
-                timestamp: Date.now(),
-                source: "error",
-                label: "thread/title trigger error",
-                payload: error instanceof Error ? error.message : String(error),
-              });
-            });
-          }
         } else {
           // Codex is event-driven and emits user/assistant events from backend.
           const preferredLanguage = i18n.language.toLowerCase().startsWith("zh")
@@ -1036,27 +1005,6 @@ export function useThreadMessaging({
               console.warn("[project-memory] auto capture failed:", err);
             }
           });
-
-        if (!cliEngine && autoNameThread && !getCustomName(workspace.id, threadId)) {
-          onDebug?.({
-            id: `${Date.now()}-thread-title-trigger-codex`,
-            timestamp: Date.now(),
-            source: "client",
-            label: "thread/title trigger",
-            payload: { workspaceId: workspace.id, threadId, engine: "codex" },
-          });
-          void autoNameThread(workspace.id, threadId, visibleUserText, {
-            clearPendingOnSkip: true,
-          }).catch((error) => {
-            onDebug?.({
-              id: `${Date.now()}-thread-title-trigger-codex-error`,
-              timestamp: Date.now(),
-              source: "error",
-              label: "thread/title trigger error",
-              payload: error instanceof Error ? error.message : String(error),
-            });
-          });
-        }
       } catch (error) {
         markProcessing(threadId, false);
         setActiveTurnId(threadId, null);
@@ -1093,7 +1041,6 @@ export function useThreadMessaging({
       resolveOpenCodeVariant,
       safeMessageActivity,
       setActiveTurnId,
-      autoNameThread,
       i18n,
       steerEnabled,
       t,

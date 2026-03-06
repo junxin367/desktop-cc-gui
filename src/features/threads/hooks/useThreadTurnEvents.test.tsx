@@ -208,6 +208,67 @@ describe("useThreadTurnEvents", () => {
     expect(safeMessageActivity).not.toHaveBeenCalled();
   });
 
+  it("suppresses Codex helper threads on thread started", () => {
+    const { result, dispatch, recordThreadActivity, safeMessageActivity } = makeOptions();
+
+    act(() => {
+      result.current.onThreadStarted("ws-1", {
+        id: "thread-helper-1",
+        preview:
+          "You are generating OpenSpec project context.\nReturn ONLY valid JSON with keys:",
+        updatedAt: 1_700_000_000_250,
+      });
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "hideThread",
+      workspaceId: "ws-1",
+      threadId: "thread-helper-1",
+    });
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "ensureThread",
+        workspaceId: "ws-1",
+        threadId: "thread-helper-1",
+      }),
+    );
+    expect(recordThreadActivity).not.toHaveBeenCalled();
+    expect(safeMessageActivity).not.toHaveBeenCalled();
+  });
+
+  it("does not suppress non-Codex threads even when preview resembles helper prompts", () => {
+    const { result, dispatch, recordThreadActivity, safeMessageActivity } = makeOptions();
+
+    act(() => {
+      result.current.onThreadStarted("ws-1", {
+        id: "claude:session-1",
+        preview:
+          "You are generating OpenSpec project context.\nReturn ONLY valid JSON with keys:",
+        updatedAt: 1_700_000_000_260,
+      });
+    });
+
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "hideThread",
+        workspaceId: "ws-1",
+        threadId: "claude:session-1",
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      engine: "claude",
+    });
+    expect(recordThreadActivity).toHaveBeenCalledWith(
+      "ws-1",
+      "claude:session-1",
+      1_700_000_000_260,
+    );
+    expect(safeMessageActivity).toHaveBeenCalled();
+  });
+
   it("marks processing and active turn on turn started", () => {
     const { result, dispatch, markProcessing, setActiveTurnId } = makeOptions();
 
@@ -770,6 +831,43 @@ describe("useThreadTurnEvents", () => {
     expect(safeMessageActivity).toHaveBeenCalled();
 
     nowSpy.mockRestore();
+  });
+
+  it("falls back to synthetic turn id when context compacted event has no turn id", () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(3333);
+    const { result, dispatch } = makeOptions();
+
+    act(() => {
+      result.current.onContextCompacted("ws-1", "thread-1", "");
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "appendContextCompacted",
+      threadId: "thread-1",
+      turnId: "auto-3333",
+    });
+
+    nowSpy.mockRestore();
+  });
+
+  it("pushes thread error when context compaction fails", () => {
+    const { result, dispatch, pushThreadErrorMessage, safeMessageActivity } = makeOptions();
+
+    act(() => {
+      result.current.onContextCompactionFailed("ws-1", "thread-1", "rpc failed");
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+      engine: "codex",
+    });
+    expect(pushThreadErrorMessage).toHaveBeenCalledWith(
+      "thread-1",
+      "threads.contextCompactionFailedWithMessage",
+    );
+    expect(safeMessageActivity).toHaveBeenCalled();
   });
 
   it("suppresses error message for user-interrupted threads", () => {

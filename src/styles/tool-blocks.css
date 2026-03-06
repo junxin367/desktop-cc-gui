@@ -332,15 +332,19 @@
 }
 
 .tool-change-details {
-  padding: 8px 10px;
+  padding: 6px 8px;
+}
+
+.tool-change-details .task-content-wrapper {
+  padding: 2px 0 0;
 }
 
 .tool-change-metrics {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 5px;
+  margin-bottom: 4px;
   font-size: 11px;
   color: var(--text-secondary);
 }
@@ -383,8 +387,13 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 0;
+  padding: 2px 4px;
+  border-radius: 6px;
   min-width: 0;
+}
+
+.tool-change-row:hover {
+  background: color-mix(in srgb, var(--surface-hover) 70%, transparent);
 }
 
 .tool-change-file-name {
@@ -396,6 +405,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tool-change-file-link {
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+}
+
+.tool-change-file-link:hover,
+.tool-change-file-link:focus-visible {
+  background: transparent !important;
+  box-shadow: none;
+  transform: none;
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  text-underline-offset: 2px;
 }
 
 .tool-change-file-diff-stats {

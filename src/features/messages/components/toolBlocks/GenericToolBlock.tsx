@@ -43,6 +43,7 @@ interface GenericToolBlockProps {
   isExpanded: boolean;
   onToggle: (id: string) => void;
   activeCollaborationModeId?: string | null;
+  onOpenDiffPath?: (path: string) => void;
 }
 
 // codicon 图标映射（匹配参考项目）
@@ -216,6 +217,10 @@ function extractSummary(
 
 function normalizeChangeKind(kind?: string): NormalizedChangeKind {
   const value = (kind ?? '').toLowerCase();
+  if (value === 'a') return 'added';
+  if (value === 'm') return 'modified';
+  if (value === 'd') return 'deleted';
+  if (value === 'r') return 'renamed';
   if (value.includes('add')) return 'added';
   if (value.includes('create')) return 'added';
   if (value.includes('new')) return 'added';
@@ -287,6 +292,7 @@ export const GenericToolBlock = memo(function GenericToolBlock({
   isExpanded: externalExpanded,
   onToggle,
   activeCollaborationModeId = null,
+  onOpenDiffPath,
 }: GenericToolBlockProps) {
   const { t } = useTranslation();
   const toolName = extractToolName(item.title);
@@ -444,9 +450,27 @@ export const GenericToolBlock = memo(function GenericToolBlock({
                   {change.kindCode}
                 </span>
                 <FileIcon fileName={getFileName(change.path)} size={14} />
-                <span className="tool-change-file-name" title={change.path}>
-                  {getFileName(change.path)}
-                </span>
+                {onOpenDiffPath ? (
+                  <button
+                    type="button"
+                    className="tool-change-file-name tool-change-file-link"
+                    title={change.path}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      try {
+                        onOpenDiffPath(change.path);
+                      } catch {
+                        // Keep conversation interactive even if diff entry routing fails.
+                      }
+                    }}
+                  >
+                    {getFileName(change.path)}
+                  </button>
+                ) : (
+                  <span className="tool-change-file-name" title={change.path}>
+                    {getFileName(change.path)}
+                  </span>
+                )}
                 <span className="tool-change-file-diff-stats">
                   <span className="diff-stat-add">+{change.diffStats.additions}</span>
                   <span className="diff-stat-del">-{change.diffStats.deletions}</span>

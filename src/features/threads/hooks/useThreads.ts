@@ -1378,7 +1378,6 @@ export function useThreads({
     forkThreadForWorkspace,
     updateThreadParent,
     startThreadForWorkspace,
-    autoNameThread,
     resolveOpenCodeAgent,
     resolveOpenCodeVariant,
     onInputMemoryCaptured: handleInputMemoryCaptured,

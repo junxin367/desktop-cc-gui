@@ -19,6 +19,9 @@ use crate::rules;
 use crate::shared::account::{build_account_response, read_auth_account};
 use crate::types::{AppSettings, WorkspaceEntry};
 
+const THREAD_COMPACTION_METHOD_CANDIDATES: [&str; 3] =
+    ["thread/compact/start", "thread/compactStart", "thread/compact"];
+
 fn normalize_preferred_language(preferred_language: Option<&str>) -> Option<&'static str> {
     match preferred_language
         .map(|value| value.trim().to_lowercase())
@@ -195,6 +198,44 @@ fn extract_error_message_from_response(value: &Value) -> Option<String> {
                 })
         })
         .map(ToString::to_string)
+}
+
+pub(crate) async fn thread_compact_core(
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    workspace_id: String,
+    thread_id: String,
+) -> Result<Value, String> {
+    let normalized_thread_id = thread_id.trim().to_string();
+    if normalized_thread_id.is_empty() {
+        return Err("thread_id is required".to_string());
+    }
+    let session = get_session_clone(sessions, &workspace_id).await?;
+
+    let mut attempts = Vec::new();
+    for method in THREAD_COMPACTION_METHOD_CANDIDATES {
+        let params = json!({ "threadId": normalized_thread_id });
+        match session.send_request(method, params).await {
+            Ok(response) => {
+                if let Some(error) = extract_error_message_from_response(&response) {
+                    attempts.push(format!("{method}: {error}"));
+                    continue;
+                }
+                return Ok(json!({
+                    "ok": true,
+                    "method": method
+                }));
+            }
+            Err(error) => {
+                attempts.push(format!("{method}: {error}"));
+            }
+        }
+    }
+
+    Err(format!(
+        "all compaction methods failed for thread {}: {}",
+        normalized_thread_id,
+        attempts.join(" | ")
+    ))
 }
 
 fn is_collaboration_mode_capability_error(value: &Value) -> bool {

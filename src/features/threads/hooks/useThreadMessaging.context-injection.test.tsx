@@ -96,7 +96,6 @@ function buildHook(engine: "claude" | "codex") {
       forkThreadForWorkspace: vi.fn(),
       updateThreadParent: vi.fn(),
       startThreadForWorkspace: vi.fn(),
-      autoNameThread: vi.fn(),
       onInputMemoryCaptured: vi.fn(),
     }),
   );

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ListChecks from "lucide-react/dist/esm/icons/list-checks";
 import Bot from "lucide-react/dist/esm/icons/bot";
@@ -59,11 +59,27 @@ export const StatusPanel = memo(function StatusPanel({
   const planCompleted =
     plan?.steps.filter((step) => step.status === "completed").length ?? 0;
   const showPlanTab = isPlanMode || Boolean(plan);
-
-  const hasLegacyContent =
-    todoTotal > 0 || subagentTotal > 0 || fileChanges.length > 0 || showPlanTab;
-  const hasCodexContent = hasLegacyContent || commandTotal > 0;
-  const hasContent = isCodexEngine ? hasCodexContent : true;
+  const showInlinePlanTab = showPlanTab && !isCodexEngine;
+  const codexTaskItems = useMemo(() => {
+    if (isCodexEngine && plan && plan.steps.length > 0) {
+      return plan.steps.map((step) => ({
+        content: step.step,
+        status:
+          step.status === "completed"
+            ? ("completed" as const)
+            : step.status === "inProgress"
+              ? ("in_progress" as const)
+              : ("pending" as const),
+      }));
+    }
+    return todos;
+  }, [isCodexEngine, plan, todos]);
+  const codexTaskCompleted = useMemo(
+    () => codexTaskItems.filter((item) => item.status === "completed").length,
+    [codexTaskItems],
+  );
+  const codexTaskTotal = codexTaskItems.length;
+  const codexTaskInProgress = codexTaskItems.some((item) => item.status === "in_progress");
 
   // 点击外部关闭 popover
   useEffect(() => {
@@ -98,7 +114,7 @@ export const StatusPanel = memo(function StatusPanel({
     [],
   );
 
-  if (!expanded || !hasContent) return null;
+  if (!expanded) return null;
 
   return (
     <div className="sp-root" ref={panelRef}>
@@ -106,7 +122,7 @@ export const StatusPanel = memo(function StatusPanel({
       {openTab && (
         <div className="sp-popover">
           <div className="sp-popover-content">
-            {openTab === "todo" && <TodoList todos={todos} />}
+            {openTab === "todo" && <TodoList todos={isCodexEngine ? codexTaskItems : todos} />}
             {openTab === "subagent" && <SubagentList subagents={subagents} />}
             {openTab === "files" && (
               <FileChangesList
@@ -134,7 +150,24 @@ export const StatusPanel = memo(function StatusPanel({
 
       {/* Tab 栏 */}
       <div className="sp-tabs">
-        {isCodexEngine && subagentTotal > 0 && (
+        {isCodexEngine && (
+          <button
+            type="button"
+            className={`sp-tab${openTab === "todo" ? " sp-tab-active" : ""}`}
+            onClick={() => handleTabClick("todo")}
+          >
+            <ListChecks size={14} className="sp-tab-icon" />
+            <span className="sp-tab-label">{t("statusPanel.tabTodos")}</span>
+            <span className="sp-tab-count">
+              {codexTaskCompleted}/{codexTaskTotal}
+            </span>
+            {isProcessing && codexTaskInProgress && (
+              <span className="sp-tab-loading" />
+            )}
+          </button>
+        )}
+
+        {isCodexEngine && (
           <button
             type="button"
             className={`sp-tab${openTab === "subagent" ? " sp-tab-active" : ""}`}
@@ -151,7 +184,7 @@ export const StatusPanel = memo(function StatusPanel({
           </button>
         )}
 
-        {isCodexEngine && fileChanges.length > 0 && (
+        {isCodexEngine && (
           <button
             type="button"
             className={`sp-tab${openTab === "files" ? " sp-tab-active" : ""}`}
@@ -164,24 +197,6 @@ export const StatusPanel = memo(function StatusPanel({
               <span className="sp-stat-add">+{totalAdditions}</span>
               <span className="sp-stat-mod">-{totalDeletions}</span>
             </span>
-          </button>
-        )}
-
-        {isCodexEngine && showPlanTab && (
-          <button
-            type="button"
-            className={`sp-tab${openTab === "plan" ? " sp-tab-active" : ""}`}
-            onClick={() => handleTabClick("plan")}
-            aria-expanded={openTab === "plan"}
-          >
-            <ListTodo size={14} className="sp-tab-icon" />
-            <span className="sp-tab-label">{t("statusPanel.tabPlan")}</span>
-            <span className="sp-tab-count">
-              {planCompleted}/{planTotal}
-            </span>
-            {isProcessing && isPlanMode && (
-              <span className="sp-tab-loading" />
-            )}
           </button>
         )}
 
@@ -253,7 +268,7 @@ export const StatusPanel = memo(function StatusPanel({
           </button>
         )}
 
-        {!isCodexEngine && showPlanTab && (
+        {!isCodexEngine && showInlinePlanTab && (
           <button
             type="button"
             className={`sp-tab${openTab === "plan" ? " sp-tab-active" : ""}`}

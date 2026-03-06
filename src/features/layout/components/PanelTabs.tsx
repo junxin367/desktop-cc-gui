@@ -4,8 +4,9 @@ import Folder from "lucide-react/dist/esm/icons/folder";
 import GitBranch from "lucide-react/dist/esm/icons/git-branch";
 import ScrollText from "lucide-react/dist/esm/icons/scroll-text";
 import Brain from "lucide-react/dist/esm/icons/brain";
+import Search from "lucide-react/dist/esm/icons/search";
 
-export type PanelTabId = "git" | "files" | "prompts" | "memory";
+export type PanelTabId = "git" | "files" | "search" | "prompts" | "memory";
 
 type PanelTab = {
   id: PanelTabId;
@@ -24,7 +25,7 @@ const SHOW_PROMPTS_TAB = false;
 // Toggle to show/hide git tab
 const SHOW_GIT_TAB = true;
 
-const tabIds: PanelTabId[] = (["git", "files", "prompts"] as const).filter(
+const tabIds: PanelTabId[] = (["git", "files", "search", "prompts"] as const).filter(
   (id) =>
     (id !== "prompts" || SHOW_PROMPTS_TAB) &&
     (id !== "git" || SHOW_GIT_TAB)
@@ -33,6 +34,7 @@ const tabIds: PanelTabId[] = (["git", "files", "prompts"] as const).filter(
 const tabIcons: Record<PanelTabId, ReactNode> = {
   git: <GitBranch aria-hidden />,
   files: <Folder aria-hidden />,
+  search: <Search aria-hidden />,
   memory: <Brain aria-hidden />,
   prompts: <ScrollText aria-hidden />,
 };
@@ -40,6 +42,7 @@ const tabIcons: Record<PanelTabId, ReactNode> = {
 const tabI18nKeys: Record<PanelTabId, string> = {
   git: "panels.git",
   files: "panels.files",
+  search: "panels.search",
   memory: "panels.memory",
   prompts: "panels.prompts",
 };
@@ -66,6 +69,7 @@ export function PanelTabs({ active, onSelect, tabs }: PanelTabsProps) {
             aria-current={isActive ? "page" : undefined}
             aria-label={tab.label}
             title={tab.label}
+            data-tauri-drag-region="false"
           >
             <span className="panel-tab-icon" aria-hidden>
               {tab.icon}

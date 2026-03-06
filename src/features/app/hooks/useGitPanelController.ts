@@ -74,7 +74,7 @@ export function useGitPanelController({
     () => readGitDiffListView(activeWorkspace?.id),
   );
   const [filePanelMode, setFilePanelMode] = useState<
-    "git" | "files" | "prompts" | "memory"
+    "git" | "files" | "search" | "prompts" | "memory"
   >("files");
   const [selectedPullRequest, setSelectedPullRequest] =
     useState<GitHubPullRequest | null>(null);
@@ -89,7 +89,9 @@ export function useGitPanelController({
     ? compactTab === "git"
     : centerMode === "diff" ||
       (!rightPanelCollapsed &&
-        (filePanelMode === "git" || filePanelMode === "files"));
+        (filePanelMode === "git" ||
+          filePanelMode === "files" ||
+          filePanelMode === "search"));
 
   const { status: gitStatus, refresh: refreshGitStatus } = useGitStatus(
     activeWorkspace,

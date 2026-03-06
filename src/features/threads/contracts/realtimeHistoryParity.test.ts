@@ -10,6 +10,7 @@ import { appendEvent, findConversationStateDiffs, hydrateHistory } from "./conve
 import {
   createConversationState,
   type ConversationEngine,
+  type NormalizedHistorySnapshot,
   type ConversationState,
 } from "./conversationCurtainContracts";
 
@@ -460,6 +461,138 @@ describe("realtime/history parity", () => {
     };
 
     expect(findConversationStateDiffs(alignedRealtime, historyState)).toEqual([]);
+  });
+
+  it("keeps fileChange realtime and history semantics aligned for codex/opencode", async () => {
+    const cases: Array<{
+      engine: "codex" | "opencode";
+      workspaceId: string;
+      threadId: string;
+      load: (threadId: string) => Promise<NormalizedHistorySnapshot>;
+    }> = [
+      {
+        engine: "codex",
+        workspaceId: "ws-codex-file",
+        threadId: "thread-codex-file",
+        load: createCodexHistoryLoader({
+          workspaceId: "ws-codex-file",
+          resumeThread: vi.fn().mockResolvedValue({
+            result: {
+              thread: {
+                turns: [
+                  {
+                    id: "turn-1",
+                    items: [
+                      {
+                        id: "file-1",
+                        type: "fileChange",
+                        status: "completed",
+                        changes: [
+                          {
+                            path: "src/App.tsx",
+                            kind: "A",
+                            diff: "@@ -0,0 +1 @@\n+const x = 1;",
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          }),
+        }).load,
+      },
+      {
+        engine: "opencode",
+        workspaceId: "ws-opencode-file",
+        threadId: "opencode:session-file",
+        load: createOpenCodeHistoryLoader({
+          workspaceId: "ws-opencode-file",
+          resumeThread: vi.fn().mockResolvedValue({
+            result: {
+              thread: {
+                turns: [
+                  {
+                    id: "turn-1",
+                    items: [
+                      {
+                        id: "file-1",
+                        type: "fileChange",
+                        status: "completed",
+                        changes: [
+                          {
+                            path: "src/App.tsx",
+                            kind: "A",
+                            diff: "@@ -0,0 +1 @@\n+const x = 1;",
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          }),
+        }).load,
+      },
+    ];
+
+    for (const entry of cases) {
+      const historySnapshot = await entry.load(entry.threadId);
+      const historyState = hydrateHistory(historySnapshot);
+      const realtimeState = createRealtimeState(entry.engine, entry.workspaceId, entry.threadId, [
+        {
+          method: "item/started",
+          params: {
+            threadId: entry.threadId,
+            item: {
+              id: "file-1",
+              type: "fileChange",
+              status: "started",
+              changes: [
+                {
+                  path: "src/App.tsx",
+                  kind: "A",
+                  diff: "@@ -0,0 +1 @@\n+const x = 1;",
+                },
+              ],
+            },
+          },
+        },
+        {
+          method: "item/fileChange/outputDelta",
+          params: { threadId: entry.threadId, itemId: "file-1", delta: "@@ -0,0 +1 @@\n+const x = 1;\n" },
+        },
+        {
+          method: "item/completed",
+          params: {
+            threadId: entry.threadId,
+            item: {
+              id: "file-1",
+              type: "fileChange",
+              status: "completed",
+              changes: [
+                {
+                  path: "src/App.tsx",
+                  kind: "A",
+                  diff: "@@ -0,0 +1 @@\n+const x = 1;",
+                },
+              ],
+            },
+          },
+        },
+      ]);
+
+      expect(findConversationStateDiffs(realtimeState, historyState)).toEqual([]);
+      const historyTool = pickById<Extract<ConversationItem, { kind: "tool" }>>(
+        historyState.items,
+        "file-1",
+        "tool",
+      );
+      expect(historyTool?.toolType).toBe("fileChange");
+      expect(historyTool?.changes?.[0]?.kind).toBe("add");
+    }
   });
 
   it("reports non-whitelisted realtime/history differences", () => {

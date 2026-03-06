@@ -22,7 +22,7 @@ import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { matchesShortcut } from "../../../utils/shortcuts";
 import { formatRelativeTime } from "../../../utils/time";
-import { PanelTabs, type PanelTabId } from "../../layout/components/PanelTabs";
+import type { PanelTabId } from "../../layout/components/PanelTabs";
 import FileIcon from "../../../components/FileIcon";
 import { GitDiffViewer } from "./GitDiffViewer";
 
@@ -1003,8 +1003,8 @@ export function GitDiffPanel({
   diffEntries = [],
   gitDiffListView = "flat",
   onGitDiffListViewChange,
-  filePanelMode,
-  onFilePanelModeChange,
+  filePanelMode: _filePanelMode,
+  onFilePanelModeChange: _onFilePanelModeChange,
   onOpenGitHistoryPanel,
   isGitHistoryOpen = false,
   worktreeApplyTitle = null,
@@ -1590,7 +1590,6 @@ export function GitDiffPanel({
   return (
     <aside className="diff-panel" ref={panelRef}>
       <div className="git-panel-header">
-        <PanelTabs active={filePanelMode} onSelect={onFilePanelModeChange} />
         <div className="git-panel-actions" role="group" aria-label="Git panel">
           {mode === "diff" && (
             <div className="diff-list-view-toggle" role="group" aria-label={t("git.listView")}>

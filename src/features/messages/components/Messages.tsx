@@ -6,9 +6,7 @@ import Check from "lucide-react/dist/esm/icons/check";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
 import Copy from "lucide-react/dist/esm/icons/copy";
-import Layers3 from "lucide-react/dist/esm/icons/layers-3";
 import Terminal from "lucide-react/dist/esm/icons/terminal";
-import Wrench from "lucide-react/dist/esm/icons/wrench";
 import X from "lucide-react/dist/esm/icons/x";
 import type {
   ConversationItem,
@@ -136,6 +134,67 @@ type MemoryContextSummary = {
   lines: string[];
 };
 
+function areMessageImagesEqual(
+  previous: Extract<ConversationItem, { kind: "message" }>["images"],
+  next: Extract<ConversationItem, { kind: "message" }>["images"],
+) {
+  if (previous === next) {
+    return true;
+  }
+  if (!previous?.length && !next?.length) {
+    return true;
+  }
+  if (!previous || !next || previous.length !== next.length) {
+    return false;
+  }
+  return previous.every((image, index) => image === next[index]);
+}
+
+function areMessageItemsEqual(
+  previous: Extract<ConversationItem, { kind: "message" }>,
+  next: Extract<ConversationItem, { kind: "message" }>,
+) {
+  return (
+    previous === next ||
+    (
+      previous.id === next.id &&
+      previous.role === next.role &&
+      previous.text === next.text &&
+      areMessageImagesEqual(previous.images, next.images)
+    )
+  );
+}
+
+function areMessageRowPropsEqual(
+  previous: MessageRowProps,
+  next: MessageRowProps,
+) {
+  return (
+    areMessageItemsEqual(previous.item, next.item) &&
+    previous.activeEngine === next.activeEngine &&
+    previous.enableCollaborationBadge === next.enableCollaborationBadge &&
+    previous.presentationProfile === next.presentationProfile &&
+    previous.isCopied === next.isCopied &&
+    previous.onCopy === next.onCopy &&
+    previous.codeBlockCopyUseModifier === next.codeBlockCopyUseModifier &&
+    previous.onOpenFileLink === next.onOpenFileLink &&
+    previous.onOpenFileLinkMenu === next.onOpenFileLinkMenu
+  );
+}
+
+function isSelectionInsideNode(selection: Selection | null, node: HTMLElement | null) {
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !node) {
+    return false;
+  }
+  for (let index = 0; index < selection.rangeCount; index += 1) {
+    const range = selection.getRangeAt(index);
+    if (node.contains(range.commonAncestorContainer)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 const SCROLL_THRESHOLD_PX = 120;
 const OPENCODE_NON_STREAMING_HINT_DELAY_MS = 12_000;
 const PARAGRAPH_BREAK_SPLIT_REGEX = /\r?\n[^\S\r\n]*\r?\n+/;
@@ -168,19 +227,6 @@ function logMessagesPerf(label: string, payload: Record<string, unknown>): void 
     return;
   }
   console.info(`[messages][perf] ${label}`, payload);
-}
-
-function normalizeCollaborationModeId(
-  value: unknown,
-): "plan" | "code" | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "plan" || normalized === "code") {
-    return normalized;
-  }
-  return null;
 }
 
 function extractModeFallbackUserInput(
@@ -986,25 +1032,6 @@ const MessageRow = memo(function MessageRow({
     const extracted = filteredCommandText.slice(markerIndex + markerLength).trim();
     return extracted.length > 0 ? extracted : filteredCommandText;
   }, [enableCollaborationBadge, item.role, item.text, memorySummary]);
-  const rowCollaborationMode = useMemo(() => {
-    if (!enableCollaborationBadge || item.role !== "user") {
-      return null;
-    }
-    const itemMode = normalizeCollaborationModeId(item.collaborationMode);
-    if (itemMode) {
-      return itemMode;
-    }
-    const fallbackMode = extractModeFallbackUserInput(item.text).mode;
-    if (fallbackMode) {
-      return fallbackMode;
-    }
-    return null;
-  }, [
-    enableCollaborationBadge,
-    item.collaborationMode,
-    item.role,
-    item.text,
-  ]);
   const hasText = displayText.trim().length > 0;
   const hideCopyButton = item.role === "assistant" && Boolean(memorySummary) && !hasText;
   const useCodexCanvasMarkdown = presentationProfile
@@ -1031,22 +1058,7 @@ const MessageRow = memo(function MessageRow({
 
   return (
     <div className={`message ${item.role}`}>
-      <div
-        className={`bubble message-bubble${rowCollaborationMode ? " has-collab-mode" : ""}${rowCollaborationMode ? ` is-${rowCollaborationMode}` : ""}`}
-        data-collab-mode={rowCollaborationMode ?? undefined}
-      >
-        {item.role === "user" && rowCollaborationMode && (
-          <span
-            className={`message-mode-badge is-${rowCollaborationMode}`}
-            aria-label={rowCollaborationMode === "code" ? "Code mode" : "Plan mode"}
-          >
-            {rowCollaborationMode === "code" ? (
-              <Wrench size={12} aria-hidden />
-            ) : (
-              <Layers3 size={12} aria-hidden />
-            )}
-          </span>
-        )}
+      <div className="bubble message-bubble">
         {imageItems.length > 0 && (
           <MessageImageGrid
             images={imageItems}
@@ -1123,7 +1135,7 @@ const MessageRow = memo(function MessageRow({
       </div>
     </div>
   );
-});
+}, areMessageRowPropsEqual);
 
 const ReasoningRow = memo(function ReasoningRow({
   item,
@@ -1356,10 +1368,17 @@ export const Messages = memo(function Messages({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [showAllHistoryItems, setShowAllHistoryItems] = useState(false);
+  const [isSelectionFrozen, setIsSelectionFrozen] = useState(false);
   const copyTimeoutRef = useRef<number | null>(null);
   const planPanelFocusRafRef = useRef<number | null>(null);
   const planPanelFocusTimeoutRef = useRef<number | null>(null);
   const planPanelFocusNodeRef = useRef<HTMLElement | null>(null);
+  const frozenItemsRef = useRef<ConversationItem[] | null>(null);
+  const latestItemsRef = useRef(items);
+  latestItemsRef.current = items;
+  const effectiveItems = isSelectionFrozen
+    ? frozenItemsRef.current ?? items
+    : items;
   const firstItemIdRef = useRef<string | null>(items[0]?.id ?? null);
   const activeUserInputRequestId =
     threadId && userInputRequests.length
@@ -1369,7 +1388,7 @@ export const Messages = memo(function Messages({
             (!workspaceId || request.workspace_id === workspaceId),
         )?.request_id ?? null)
       : null;
-  const rawScrollKey = `${scrollKeyForItems(items)}-${activeUserInputRequestId ?? "no-input"}`;
+  const rawScrollKey = `${scrollKeyForItems(effectiveItems)}-${activeUserInputRequestId ?? "no-input"}`;
   // Throttle scrollKey during streaming to avoid flooding the main thread
   // with smooth-scroll animations that block keyboard input.
   const [scrollKey, setScrollKey] = useState(rawScrollKey);
@@ -1448,14 +1467,36 @@ export const Messages = memo(function Messages({
   useEffect(() => {
     autoScrollRef.current = true;
     setExpandedItems(new Set());
+    setIsSelectionFrozen(false);
+    frozenItemsRef.current = null;
   }, [threadId]);
   useEffect(() => {
-    const currentFirstId = items[0]?.id ?? null;
+    const handleSelectionChange = () => {
+      const nextFrozen = isSelectionInsideNode(window.getSelection(), containerRef.current);
+      if (nextFrozen) {
+        frozenItemsRef.current = frozenItemsRef.current ?? latestItemsRef.current;
+      } else {
+        frozenItemsRef.current = null;
+      }
+      setIsSelectionFrozen((previous) => (previous === nextFrozen ? previous : nextFrozen));
+    };
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, []);
+  useEffect(() => {
+    if (!isSelectionFrozen) {
+      frozenItemsRef.current = null;
+    }
+  }, [isSelectionFrozen, items]);
+  useEffect(() => {
+    const currentFirstId = effectiveItems[0]?.id ?? null;
     if (currentFirstId !== firstItemIdRef.current) {
       setShowAllHistoryItems(false);
     }
     firstItemIdRef.current = currentFirstId;
-  }, [items]);
+  }, [effectiveItems]);
   const toggleExpanded = useCallback((id: string) => {
     setExpandedItems((prev) => {
       const next = new Set(prev);
@@ -1477,7 +1518,7 @@ export const Messages = memo(function Messages({
     }
 
     const reasoningIds: string[] = [];
-    for (const item of items) {
+    for (const item of effectiveItems) {
       if (item.kind === "reasoning") {
         reasoningIds.push(item.id);
       }
@@ -1503,21 +1544,21 @@ export const Messages = memo(function Messages({
       });
       lastAutoExpandedIdRef.current = lastReasoningId;
     }
-  }, [items, isThinking]);
+  }, [effectiveItems, isThinking]);
 
   const reasoningMetaById = useMemo(() => {
     const meta = new Map<string, ReturnType<typeof parseReasoning>>();
-    items.forEach((item) => {
+    effectiveItems.forEach((item) => {
       if (item.kind === "reasoning") {
         meta.set(item.id, parseReasoning(item));
       }
     });
     return meta;
-  }, [items]);
+  }, [effectiveItems]);
 
   const latestReasoningLabel = useMemo(() => {
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
+    for (let index = effectiveItems.length - 1; index >= 0; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind === "message") {
         break;
       }
@@ -1530,11 +1571,11 @@ export const Messages = memo(function Messages({
       }
     }
     return null;
-  }, [items, reasoningMetaById]);
+  }, [effectiveItems, reasoningMetaById]);
 
   const latestReasoningId = useMemo(() => {
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
+    for (let index = effectiveItems.length - 1; index >= 0; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind === "message") {
         break;
       }
@@ -1543,11 +1584,11 @@ export const Messages = memo(function Messages({
       }
     }
     return null;
-  }, [items]);
+  }, [effectiveItems]);
 
   const latestTitleOnlyReasoningId = useMemo(() => {
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
+    for (let index = effectiveItems.length - 1; index >= 0; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind !== "reasoning") {
         continue;
       }
@@ -1557,12 +1598,12 @@ export const Messages = memo(function Messages({
       }
     }
     return null;
-  }, [items, reasoningMetaById]);
+  }, [effectiveItems, reasoningMetaById]);
 
   const latestWorkingActivityLabel = useMemo(() => {
     let lastUserIndex = -1;
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
+    for (let index = effectiveItems.length - 1; index >= 0; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind === "message" && item.role === "user") {
         lastUserIndex = index;
         break;
@@ -1571,8 +1612,8 @@ export const Messages = memo(function Messages({
     if (lastUserIndex < 0) {
       return null;
     }
-    for (let index = items.length - 1; index > lastUserIndex; index -= 1) {
-      const item = items[index];
+    for (let index = effectiveItems.length - 1; index > lastUserIndex; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind === "message" && item.role === "assistant") {
         break;
       }
@@ -1582,15 +1623,15 @@ export const Messages = memo(function Messages({
       }
     }
     return null;
-  }, [activeEngine, items, presentationProfile]);
+  }, [activeEngine, effectiveItems, presentationProfile]);
 
   const waitingForFirstChunk = useMemo(() => {
-    if (!isThinking || items.length === 0) {
+    if (!isThinking || effectiveItems.length === 0) {
       return false;
     }
     let lastUserIndex = -1;
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
+    for (let index = effectiveItems.length - 1; index >= 0; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind === "message" && item.role === "user") {
         lastUserIndex = index;
         break;
@@ -1599,17 +1640,17 @@ export const Messages = memo(function Messages({
     if (lastUserIndex < 0) {
       return false;
     }
-    for (let index = lastUserIndex + 1; index < items.length; index += 1) {
-      const item = items[index];
+    for (let index = lastUserIndex + 1; index < effectiveItems.length; index += 1) {
+      const item = effectiveItems[index];
       if (item.kind === "message" && item.role === "assistant") {
         return false;
       }
     }
     return true;
-  }, [isThinking, items]);
+  }, [isThinking, effectiveItems]);
 
   const visibleItems = useMemo(() => {
-    const filtered = items.filter((item) => {
+    const filtered = effectiveItems.filter((item) => {
         if (item.kind !== "reasoning") {
           return true;
         }
@@ -1630,7 +1671,7 @@ export const Messages = memo(function Messages({
         return keepTitleOnlyReasoning || item.id === latestTitleOnlyReasoningId;
       });
     return dedupeAdjacentReasoningItems(filtered, reasoningMetaById);
-  }, [activeEngine, items, latestTitleOnlyReasoningId, presentationProfile, reasoningMetaById]);
+  }, [activeEngine, effectiveItems, latestTitleOnlyReasoningId, presentationProfile, reasoningMetaById]);
   const shouldCollapseHistoryItems =
     !showAllHistoryItems && visibleItems.length > VISIBLE_MESSAGE_WINDOW;
   const collapsedHistoryItemCount = shouldCollapseHistoryItems
@@ -1714,7 +1755,7 @@ export const Messages = memo(function Messages({
     const previous = lastRenderSnapshotRef.current;
     const changedKeys: string[] = [];
     if (previous) {
-      if (previous.items !== items) {
+      if (previous.items !== effectiveItems) {
         changedKeys.push("items");
       }
       if (previous.userInputRequests !== userInputRequests) {
@@ -1743,7 +1784,7 @@ export const Messages = memo(function Messages({
     ) {
       logMessagesPerf("render", {
         ms: Number(renderCostMs.toFixed(2)),
-        items: items.length,
+        items: effectiveItems.length,
         visibleItems: renderedItems.length,
         anchors: messageAnchors.length,
         threadId,
@@ -1751,7 +1792,7 @@ export const Messages = memo(function Messages({
       });
     }
     lastRenderSnapshotRef.current = {
-      items,
+      items: effectiveItems,
       userInputRequests,
       conversationState,
       presentationProfile,
@@ -1926,6 +1967,7 @@ export const Messages = memo(function Messages({
           onToggle={toggleExpanded}
           onRequestAutoScroll={requestAutoScroll}
           activeCollaborationModeId={activeCollaborationModeId}
+          onOpenDiffPath={onOpenDiffPath}
         />
       );
     }
@@ -2043,14 +2085,14 @@ export const Messages = memo(function Messages({
             processingStartedAt={processingStartedAt}
             lastDurationMs={lastDurationMs}
             heartbeatPulse={heartbeatPulse}
-            hasItems={items.length > 0}
+            hasItems={effectiveItems.length > 0}
             reasoningLabel={latestReasoningLabel}
             activityLabel={latestWorkingActivityLabel}
             activeEngine={activeEngine}
             waitingForFirstChunk={waitingForFirstChunk}
             presentationProfile={presentationProfile}
           />
-          {!items.length && !userInputNode && (
+          {!effectiveItems.length && !userInputNode && (
             <div className="empty messages-empty">
               {t("messages.emptyThread")}
             </div>

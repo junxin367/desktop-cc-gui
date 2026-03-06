@@ -662,7 +662,7 @@ describe("useThreadActions", () => {
     });
   });
 
-  it("filters archived and vscode thread entries", async () => {
+  it("filters archived and Codex helper thread entries while keeping vscode sessions", async () => {
     vi.mocked(listThreads).mockResolvedValue({
       result: {
         data: [
@@ -684,9 +684,25 @@ describe("useThreadActions", () => {
           {
             id: "thread-vscode",
             cwd: "/tmp/codex",
-            preview: "Should hide vscode",
+            preview: "Should keep vscode",
             updated_at: 6000,
             source: "vscode",
+          },
+          {
+            id: "thread-helper-title",
+            cwd: "/tmp/codex",
+            preview:
+              "Generate a concise title for a coding chat thread from the first user message. Return only title text.",
+            updated_at: 5900,
+            source: "cli",
+          },
+          {
+            id: "thread-helper-project-info",
+            cwd: "/tmp/codex",
+            preview:
+              "You are generating OpenSpec project context. Return ONLY valid JSON with keys:",
+            updated_at: 5800,
+            source: "cli",
           },
         ],
         nextCursor: null,
@@ -711,6 +727,12 @@ describe("useThreadActions", () => {
           id: "thread-valid",
           name: "Visible thread",
           updatedAt: 6200,
+          engineSource: "codex",
+        },
+        {
+          id: "thread-vscode",
+          name: "Should keep vscode",
+          updatedAt: 6000,
           engineSource: "codex",
         },
       ],

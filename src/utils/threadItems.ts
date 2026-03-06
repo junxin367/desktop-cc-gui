@@ -1006,6 +1006,26 @@ function normalizeStringList(value: unknown) {
   return single ? [single] : [];
 }
 
+function normalizeFileChangeKind(rawKind: unknown): string | undefined {
+  const normalized = asString(rawKind).trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+  if (["a", "add", "added", "create", "created", "new"].includes(normalized)) {
+    return "add";
+  }
+  if (["d", "del", "delete", "deleted", "remove", "removed"].includes(normalized)) {
+    return "delete";
+  }
+  if (["r", "rename", "renamed", "move", "moved"].includes(normalized)) {
+    return "rename";
+  }
+  if (["m", "mod", "modify", "modified", "update", "updated", "edit", "edited"].includes(normalized)) {
+    return "modified";
+  }
+  return normalized;
+}
+
 function formatCollabAgentStates(value: unknown) {
   if (!value || typeof value !== "object") {
     return "";
@@ -1603,24 +1623,51 @@ export function buildConversationItem(
       title: titleText ? `Command: ${titleText}` : "Command",
       detail: detailPayload || cwd,
       status: asString(item.status ?? ""),
-      output: asString(item.aggregatedOutput ?? ""),
+      output: asString(
+        item.aggregatedOutput ??
+          item.output ??
+          item.result ??
+          item.text ??
+          "",
+      ),
       durationMs,
     };
   }
   if (type === "fileChange") {
-    const changes = Array.isArray(item.changes) ? item.changes : [];
+    const changes = Array.isArray(item.changes)
+      ? item.changes
+      : Array.isArray(item.files)
+        ? item.files
+        : [];
     const normalizedChanges = changes
       .map((change) => {
-        const path = asString(change?.path ?? "");
+        const path = asString(
+          change?.path ??
+            change?.file_path ??
+            change?.filePath ??
+            change?.filename ??
+            "",
+        );
         const kind = change?.kind as Record<string, unknown> | string | undefined;
-        const kindType =
+        const rawKind =
           typeof kind === "string"
             ? kind
             : typeof kind === "object" && kind
-              ? asString((kind as Record<string, unknown>).type ?? "")
-              : "";
-        const normalizedKind = kindType ? kindType.toLowerCase() : "";
-        const diff = asString(change?.diff ?? "");
+              ? asString(
+                  (kind as Record<string, unknown>).type ??
+                    (kind as Record<string, unknown>).status ??
+                    "",
+                )
+              : asString(change?.status ?? change?.type ?? "");
+        const normalizedKind = normalizeFileChangeKind(rawKind);
+        const diff = asString(
+          change?.diff ??
+            change?.patch ??
+            change?.unifiedDiff ??
+            change?.unified_diff ??
+            change?.output ??
+            "",
+        );
         return { path, kind: normalizedKind || undefined, diff: diff || undefined };
       })
       .filter((change) => change.path);
@@ -1631,6 +1678,8 @@ export function buildConversationItem(
             ? "A"
             : change.kind === "delete"
               ? "D"
+              : change.kind === "rename"
+                ? "R"
               : change.kind
                 ? "M"
                 : "";
@@ -1649,7 +1698,7 @@ export function buildConversationItem(
       title: "File changes",
       detail: paths || "Pending changes",
       status: asString(item.status ?? ""),
-      output: diffOutput,
+      output: diffOutput || asString(item.aggregatedOutput ?? item.output ?? item.text ?? ""),
       changes: normalizedChanges,
     };
   }

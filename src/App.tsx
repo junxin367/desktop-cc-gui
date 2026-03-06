@@ -102,6 +102,7 @@ import { useComposerController } from "./features/app/hooks/useComposerControlle
 import { useComposerInsert } from "./features/app/hooks/useComposerInsert";
 import { useEngineController } from "./features/engine/hooks/useEngineController";
 import { useRenameThreadPrompt } from "./features/threads/hooks/useRenameThreadPrompt";
+import { useDeleteThreadPrompt } from "./features/threads/hooks/useDeleteThreadPrompt";
 import { useWorktreePrompt } from "./features/workspaces/hooks/useWorktreePrompt";
 import { useClonePrompt } from "./features/workspaces/hooks/useClonePrompt";
 import { useWorkspaceController } from "./features/app/hooks/useWorkspaceController";
@@ -745,10 +746,12 @@ function MainApp() {
   const [editorSplitLayout, setEditorSplitLayout] = useState<"vertical" | "horizontal">(
     "vertical",
   );
+  const [isEditorFileMaximized, setIsEditorFileMaximized] = useState(false);
 
   useEffect(() => {
     if (!activeEditorFilePath) {
       setActiveEditorLineRange(null);
+      setIsEditorFileMaximized(false);
     }
   }, [activeEditorFilePath]);
 
@@ -1599,6 +1602,12 @@ function MainApp() {
     },
     [listThreadsForWorkspaceTracked, workspacesById],
   );
+  const handleEnsureWorkspaceThreadsForSettings = useCallback(
+    (workspaceId: string) => {
+      ensureWorkspaceThreadListLoaded(workspaceId, { preserveState: true });
+    },
+    [ensureWorkspaceThreadListLoaded],
+  );
   const {
     activeAccount,
     accountSwitching,
@@ -1731,6 +1740,24 @@ function MainApp() {
   } = useRenameThreadPrompt({
     threadsByWorkspace,
     renameThread,
+  });
+
+  const {
+    deletePrompt: deleteThreadPrompt,
+    isDeleting: isDeleteThreadPromptBusy,
+    openDeletePrompt: openDeleteThreadPrompt,
+    handleDeletePromptCancel: handleDeleteThreadPromptCancel,
+    handleDeletePromptConfirm: handleDeleteThreadPromptConfirm,
+  } = useDeleteThreadPrompt({
+    threadsByWorkspace,
+    removeThread,
+    onDeleteSuccess: (threadId) => {
+      clearDraftForThread(threadId);
+      removeImagesForThread(threadId);
+    },
+    onDeleteError: (message) => {
+      alertError(message ?? t("workspace.deleteConversationFailed"));
+    },
   });
 
   const {
@@ -2248,7 +2275,7 @@ function MainApp() {
     filesLoading: false,
     files: 0,
     directories: 0,
-    filePanelMode: "git" as "git" | "files" | "prompts" | "memory",
+    filePanelMode: "git" as "git" | "files" | "search" | "prompts" | "memory",
     rightPanelCollapsed: false,
     isCompact: false,
     draftLength: 0,
@@ -3513,6 +3540,37 @@ function MainApp() {
     },
     [activeWorkspace, alertError, clearDraftForThread, removeImagesForThread, removeThread, t],
   );
+  const handleDeleteWorkspaceConversationsInSettings = useCallback(
+    async (workspaceId: string, threadIds: string[]) => {
+      if (!workspaceId || threadIds.length === 0) {
+        return {
+          succeededThreadIds: [],
+          failed: [],
+        };
+      }
+      const succeededThreadIds: string[] = [];
+      const failed: Array<{ threadId: string; code: string; message: string }> = [];
+      for (const threadId of threadIds) {
+        const result = await removeThread(workspaceId, threadId);
+        if (result.success) {
+          succeededThreadIds.push(threadId);
+          clearDraftForThread(threadId);
+          removeImagesForThread(threadId);
+          continue;
+        }
+        failed.push({
+          threadId,
+          code: result.code ?? "UNKNOWN",
+          message: result.message ?? t("workspace.deleteConversationFailed"),
+        });
+      }
+      return {
+        succeededThreadIds,
+        failed,
+      };
+    },
+    [clearDraftForThread, removeImagesForThread, removeThread, t],
+  );
 
   // --- Kanban conversation handlers ---
   const handleOpenTaskConversation = useCallback(
@@ -4035,6 +4093,7 @@ function MainApp() {
     desktopTopbarLeftNode,
     tabletNavNode,
     tabBarNode,
+    rightPanelToolbarNode,
     gitDiffPanelNode,
     gitDiffViewerNode,
     fileViewPanelNode,
@@ -4142,13 +4201,14 @@ function MainApp() {
       }
     },
     onDeleteThread: async (workspaceId, threadId) => {
-      const result = await removeThread(workspaceId, threadId);
-      if (!result.success) {
-        alertError(result.message ?? t("workspace.deleteConversationFailed"));
-        return;
-      }
-      clearDraftForThread(threadId);
-      removeImagesForThread(threadId);
+      openDeleteThreadPrompt(workspaceId, threadId);
+    },
+    deleteConfirmThreadId: deleteThreadPrompt?.threadId ?? null,
+    deleteConfirmWorkspaceId: deleteThreadPrompt?.workspaceId ?? null,
+    deleteConfirmBusy: isDeleteThreadPromptBusy,
+    onCancelDeleteConfirm: handleDeleteThreadPromptCancel,
+    onConfirmDeleteConfirm: () => {
+      void handleDeleteThreadPromptConfirm();
     },
     onSyncThread: (workspaceId, threadId) => {
       void refreshThread(workspaceId, threadId);
@@ -4295,6 +4355,9 @@ function MainApp() {
     editorSplitLayout,
     onToggleEditorSplitLayout: () =>
       setEditorSplitLayout((prev) => (prev === "vertical" ? "horizontal" : "vertical")),
+    isEditorFileMaximized,
+    onToggleEditorFileMaximized: () =>
+      setIsEditorFileMaximized((prev) => !prev),
     editorFilePath: activeEditorFilePath,
     editorNavigationTarget,
     openEditorTabs: openFileTabs,
@@ -4443,6 +4506,7 @@ function MainApp() {
     onReviewPromptUpdateCustomInstructions: updateCustomInstructions,
     onReviewPromptConfirmCustom: confirmCustom,
     activeTokenUsage,
+    contextDualViewEnabled: activeEngine === "codex",
     activeQueue,
     draftText: activeDraft,
     onDraftChange: handleDraftChange,
@@ -4773,6 +4837,7 @@ function MainApp() {
         tabletTab={tabletTab}
         centerMode={centerMode}
         editorSplitLayout={editorSplitLayout}
+        isEditorFileMaximized={isEditorFileMaximized}
         hasActivePlan={hasActivePlan}
         activeWorkspace={Boolean(activeWorkspace)}
         sidebarNode={sidebarNodeWithTopbar}
@@ -4786,6 +4851,7 @@ function MainApp() {
         desktopTopbarLeftNode={desktopTopbarLeftNodeWithToggle}
         tabletNavNode={tabletNavNode}
         tabBarNode={tabBarNode}
+        rightPanelToolbarNode={rightPanelToolbarNode}
         gitDiffPanelNode={gitDiffPanelNode}
         gitDiffViewerNode={gitDiffViewerNode}
         fileViewPanelNode={fileViewPanelNode}
@@ -4805,6 +4871,7 @@ function MainApp() {
               <SettingsView
                 workspaceGroups={workspaceGroups}
                 groupedWorkspaces={groupedWorkspaces}
+                allWorkspaces={workspaces}
                 ungroupedLabel={ungroupedLabel}
                 onMoveWorkspace={handleMoveWorkspace}
                 onDeleteWorkspace={(workspaceId) => {
@@ -4831,6 +4898,10 @@ function MainApp() {
                 onUpdateWorkspaceSettings={async (id, settings) => {
                   await updateWorkspaceSettings(id, settings);
                 }}
+                workspaceThreadsById={threadsByWorkspace}
+                workspaceThreadListLoadingById={threadListLoadingByWorkspace}
+                onEnsureWorkspaceThreads={handleEnsureWorkspaceThreadsForSettings}
+                onDeleteWorkspaceThreads={handleDeleteWorkspaceConversationsInSettings}
                 scaleShortcutTitle={scaleShortcutTitle}
                 scaleShortcutText={scaleShortcutText}
                 onTestNotificationSound={handleTestNotificationSound}

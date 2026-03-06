@@ -40,6 +40,11 @@
   min-height: 26px;
 }
 
+.git-panel-header {
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 .git-panel-title {
   display: inline-flex;
   align-items: center;

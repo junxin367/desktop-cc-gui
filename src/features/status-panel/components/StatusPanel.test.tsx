@@ -152,7 +152,7 @@ describe("StatusPanel", () => {
     expect(screen.queryByText("README.md")).toBeNull();
   });
 
-  it("shows codex activity tabs with commands and no half split", () => {
+  it("shows codex activity tabs without inline plan tab", () => {
     render(
       <StatusPanel
         items={[editToolItem, commandToolItem, taskToolItem]}
@@ -163,18 +163,20 @@ describe("StatusPanel", () => {
       />,
     );
 
+    expect(screen.getByText("statusPanel.tabTodos")).toBeTruthy();
+    expect(screen.getByText("1/2")).toBeTruthy();
     expect(screen.getByText("statusPanel.tabAgents")).toBeTruthy();
     expect(screen.getByText("statusPanel.tabEdits")).toBeTruthy();
-    expect(screen.getByText("Plan")).toBeTruthy();
+    expect(screen.queryByText("Plan")).toBeNull();
     expect(screen.getByText("statusPanel.tabCommands")).toBeTruthy();
     const allTabs = document.querySelectorAll(".sp-tab-half");
     expect(allTabs.length).toBe(0);
   });
 
-  it("shows plan details in codex mode even when collaboration mode is code", () => {
+  it("keeps codex status panel visible even when only plan data exists", () => {
     render(
       <StatusPanel
-        items={[editToolItem]}
+        items={[]}
         isProcessing={false}
         plan={planSample}
         isPlanMode={false}
@@ -182,9 +184,41 @@ describe("StatusPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByText("Plan"));
+    expect(screen.getByText("statusPanel.tabTodos")).toBeTruthy();
+    expect(screen.getByText("statusPanel.tabAgents")).toBeTruthy();
+    expect(screen.getByText("statusPanel.tabEdits")).toBeTruthy();
+    expect(screen.queryByText("Plan")).toBeNull();
+  });
+
+  it("renders plan steps inside codex todo tab", () => {
+    render(
+      <StatusPanel
+        items={[]}
+        isProcessing={false}
+        plan={planSample}
+        isPlanMode={false}
+        isCodexEngine
+      />,
+    );
+
+    fireEvent.click(screen.getByText("statusPanel.tabTodos"));
     expect(screen.getByText("step 1")).toBeTruthy();
     expect(screen.getByText("step 2")).toBeTruthy();
+  });
+
+  it("shows zero-state codex tabs when there is no status data", () => {
+    render(
+      <StatusPanel
+        items={[]}
+        isProcessing={false}
+        isCodexEngine
+      />,
+    );
+
+    expect(screen.getByText("statusPanel.tabTodos")).toBeTruthy();
+    expect(screen.getAllByText("0/0").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("statusPanel.tabAgents")).toBeTruthy();
+    expect(screen.getByText("statusPanel.tabEdits")).toBeTruthy();
   });
 
   it("opens commands popover in codex mode", () => {

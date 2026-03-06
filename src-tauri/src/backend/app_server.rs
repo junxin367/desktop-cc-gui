@@ -6,7 +6,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
@@ -34,6 +34,12 @@ const PLAN_APPLY_ACTION_QUESTION_ID: &str = "plan_apply_action";
 const PLAN_BLOCKER_GENERIC_REASON: &str = "Plan 模式检测到阻断条件，需要你先确认下一步后再继续。";
 const PLAN_BLOCKER_USER_INPUT_REQUIRED_REASON: &str =
     "Plan 模式检测到需要你补充关键信息，继续前请先确认输入。";
+const AUTO_COMPACTION_THRESHOLD_PERCENT: f64 = 92.0;
+const AUTO_COMPACTION_TARGET_PERCENT: f64 = 70.0;
+const AUTO_COMPACTION_COOLDOWN_MS: u64 = 90_000;
+const AUTO_COMPACTION_INFLIGHT_TIMEOUT_MS: u64 = 120_000;
+const AUTO_COMPACTION_METHOD_CANDIDATES: [&str; 3] =
+    ["thread/compact/start", "thread/compactStart", "thread/compact"];
 
 #[derive(Debug, Default, Clone)]
 struct PlanTurnState {
@@ -45,6 +51,29 @@ struct PlanTurnState {
     has_tool_activity: bool,
     has_failed_tool_activity: bool,
     agent_message_buffer: String,
+}
+
+#[derive(Debug, Default, Clone)]
+struct AutoCompactionThreadState {
+    is_processing: bool,
+    in_flight: bool,
+    pending_high: bool,
+    last_usage_percent: f64,
+    last_triggered_at_ms: u64,
+    last_failure_at_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+struct AutoCompactionTrigger {
+    thread_id: String,
+    usage_percent: f64,
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_millis(0))
+        .as_millis() as u64
 }
 
 fn extract_thread_id(value: &Value) -> Option<String> {
@@ -68,6 +97,201 @@ fn extract_thread_id(value: &Value) -> Option<String> {
 
 fn extract_event_method(value: &Value) -> Option<&str> {
     value.get("method").and_then(Value::as_str)
+}
+
+fn read_number_field(obj: &Value, keys: &[&str]) -> Option<f64> {
+    keys.iter().find_map(|key| {
+        obj.get(*key).and_then(|value| {
+            value
+                .as_f64()
+                .or_else(|| value.as_i64().map(|v| v as f64))
+                .or_else(|| value.as_u64().map(|v| v as f64))
+                .or_else(|| value.as_str().and_then(|v| v.trim().parse::<f64>().ok()))
+        })
+    })
+}
+
+fn extract_compaction_usage_percent(value: &Value) -> Option<f64> {
+    let method = extract_event_method(value)?;
+    let params = value.get("params")?;
+    let (used_tokens, context_window) = if method == "token_count" {
+        let info = params.get("info")?;
+        let last_usage = info
+            .get("last_token_usage")
+            .or_else(|| info.get("lastTokenUsage"))
+            .filter(|usage| usage.is_object());
+        // Require last/current snapshot for compaction decisions.
+        // total_* fields are cumulative session stats and can stay high after compaction.
+        let usage = last_usage?;
+        let input_tokens = read_number_field(usage, &["input_tokens", "inputTokens"]).unwrap_or(0.0);
+        let cached_tokens = read_number_field(
+            usage,
+            &[
+                "cached_input_tokens",
+                "cache_read_input_tokens",
+                "cachedInputTokens",
+                "cacheReadInputTokens",
+            ],
+        )
+        .unwrap_or(0.0);
+        let used_tokens = input_tokens + cached_tokens;
+        let context_window = read_number_field(
+            usage,
+            &["model_context_window", "modelContextWindow", "context_window"],
+        )
+        .or_else(|| read_number_field(info, &["model_context_window", "modelContextWindow"]))
+        .unwrap_or(200_000.0);
+        (used_tokens, context_window)
+    } else if method == "thread/tokenUsage/updated" {
+        let usage = params
+            .get("tokenUsage")
+            .or_else(|| params.get("token_usage"))
+            .unwrap_or(&Value::Null);
+        // Require last/current snapshot for auto-compaction decisions.
+        let snapshot = usage.get("last").filter(|value| value.is_object())?;
+        let input_tokens = read_number_field(snapshot, &["inputTokens", "input_tokens"]).unwrap_or(0.0);
+        let cached_tokens = read_number_field(
+            snapshot,
+            &[
+                "cachedInputTokens",
+                "cached_input_tokens",
+                "cacheReadInputTokens",
+                "cache_read_input_tokens",
+            ],
+        )
+        .unwrap_or(0.0);
+        let used_tokens = input_tokens + cached_tokens;
+        let context_window = read_number_field(
+            usage,
+            &["modelContextWindow", "model_context_window", "context_window"],
+        )
+        .unwrap_or(200_000.0);
+        (used_tokens, context_window)
+    } else {
+        return None;
+    };
+    if context_window <= 0.0 {
+        return None;
+    }
+    Some((used_tokens / context_window) * 100.0)
+}
+
+fn build_thread_compacting_event(thread_id: &str, usage_percent: f64) -> Value {
+    json!({
+        "method": "thread/compacting",
+        "params": {
+            "threadId": thread_id,
+            "thread_id": thread_id,
+            "auto": true,
+            "usagePercent": usage_percent,
+            "usage_percent": usage_percent,
+            "thresholdPercent": AUTO_COMPACTION_THRESHOLD_PERCENT,
+            "threshold_percent": AUTO_COMPACTION_THRESHOLD_PERCENT,
+            "targetPercent": AUTO_COMPACTION_TARGET_PERCENT,
+            "target_percent": AUTO_COMPACTION_TARGET_PERCENT
+        }
+    })
+}
+
+fn build_thread_compaction_failed_event(thread_id: &str, reason: &str) -> Value {
+    json!({
+        "method": "thread/compactionFailed",
+        "params": {
+            "threadId": thread_id,
+            "thread_id": thread_id,
+            "auto": true,
+            "reason": reason
+        }
+    })
+}
+
+fn response_error_message(value: &Value) -> Option<String> {
+    value
+        .get("error")
+        .and_then(|error| {
+            error
+                .get("message")
+                .and_then(Value::as_str)
+                .or_else(|| error.as_str())
+        })
+        .or_else(|| {
+            value
+                .get("result")
+                .and_then(|result| result.get("error"))
+                .and_then(|error| {
+                    error
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .or_else(|| error.as_str())
+                })
+        })
+        .map(ToString::to_string)
+}
+
+fn is_codex_thread_id(thread_id: &str) -> bool {
+    let normalized = thread_id.trim();
+    if normalized.is_empty() {
+        return false;
+    }
+    !normalized.starts_with("claude:")
+        && !normalized.starts_with("claude-pending-")
+        && !normalized.starts_with("opencode:")
+        && !normalized.starts_with("opencode-pending-")
+        && !normalized.starts_with("gemini:")
+        && !normalized.starts_with("gemini-pending-")
+}
+
+fn evaluate_auto_compaction_state(
+    state: &mut AutoCompactionThreadState,
+    method: &str,
+    usage_percent: Option<f64>,
+    now: u64,
+) -> bool {
+    match method {
+        "turn/started" => {
+            state.is_processing = true;
+        }
+        "turn/completed" | "turn/error" => {
+            state.is_processing = false;
+        }
+        "thread/compacted" => {
+            state.is_processing = false;
+            state.in_flight = false;
+            state.pending_high = false;
+        }
+        "thread/compactionFailed" => {
+            state.in_flight = false;
+            state.last_failure_at_ms = now;
+        }
+        _ => {}
+    }
+
+    if let Some(percent) = usage_percent {
+        state.last_usage_percent = percent;
+        if percent <= AUTO_COMPACTION_TARGET_PERCENT {
+            state.pending_high = false;
+            state.in_flight = false;
+        } else {
+            state.pending_high = percent >= AUTO_COMPACTION_THRESHOLD_PERCENT;
+        }
+    }
+
+    if state.in_flight
+        && now.saturating_sub(state.last_triggered_at_ms) > AUTO_COMPACTION_INFLIGHT_TIMEOUT_MS
+    {
+        state.in_flight = false;
+    }
+
+    if !state.pending_high || state.in_flight || state.is_processing {
+        return false;
+    }
+    if now.saturating_sub(state.last_triggered_at_ms) < AUTO_COMPACTION_COOLDOWN_MS {
+        return false;
+    }
+
+    state.in_flight = true;
+    state.last_triggered_at_ms = now;
+    true
 }
 
 fn should_block_request_user_input(
@@ -788,6 +1012,7 @@ pub(crate) struct WorkspaceSession {
     pub(crate) mode_enforcement_enabled: AtomicBool,
     pub(crate) collaboration_mode_supported: AtomicBool,
     plan_turn_state: Mutex<HashMap<String, PlanTurnState>>,
+    auto_compaction_state: Mutex<HashMap<String, AutoCompactionThreadState>>,
     local_user_input_requests: Mutex<HashMap<String, String>>,
     local_request_seq: AtomicU64,
 }
@@ -883,6 +1108,7 @@ impl WorkspaceSession {
     pub(crate) async fn clear_thread_effective_mode(&self, thread_id: &str) {
         self.thread_mode_state.remove(thread_id).await;
         self.plan_turn_state.lock().await.remove(thread_id);
+        self.auto_compaction_state.lock().await.remove(thread_id);
     }
 
     pub(crate) async fn consume_local_user_input_request(&self, request_id: &str) -> bool {
@@ -923,6 +1149,67 @@ impl WorkspaceSession {
             thread_id,
             turn_id
         );
+    }
+
+    async fn evaluate_auto_compaction_trigger(&self, value: &Value) -> Option<AutoCompactionTrigger> {
+        let method = extract_event_method(value)?;
+        let thread_id = extract_thread_id(value)?;
+        if !is_codex_thread_id(&thread_id) {
+            return None;
+        }
+        let now = now_millis();
+        let mut states = self.auto_compaction_state.lock().await;
+        if matches!(method, "thread/archived" | "thread/closed") {
+            states.remove(&thread_id);
+            return None;
+        }
+        let state = states.entry(thread_id.clone()).or_default();
+        let usage_percent = extract_compaction_usage_percent(value);
+        if !evaluate_auto_compaction_state(state, method, usage_percent, now) {
+            return None;
+        }
+
+        Some(AutoCompactionTrigger {
+            thread_id,
+            usage_percent: state.last_usage_percent.max(AUTO_COMPACTION_THRESHOLD_PERCENT),
+        })
+    }
+
+    async fn mark_auto_compaction_failed(&self, thread_id: &str) {
+        let now = now_millis();
+        let mut states = self.auto_compaction_state.lock().await;
+        let state = states.entry(thread_id.to_string()).or_default();
+        state.in_flight = false;
+        state.last_failure_at_ms = now;
+    }
+
+    async fn request_thread_auto_compaction(&self, thread_id: &str) -> Result<(), String> {
+        let mut attempts = Vec::new();
+        for method in AUTO_COMPACTION_METHOD_CANDIDATES {
+            let params = json!({ "threadId": thread_id });
+            match self.send_request(method, params).await {
+                Ok(response) => {
+                    if let Some(error) = response_error_message(&response) {
+                        attempts.push(format!("{method}: {error}"));
+                        continue;
+                    }
+                    log::info!(
+                        "[codex_auto_compaction] started thread_id={} method={}",
+                        thread_id,
+                        method
+                    );
+                    return Ok(());
+                }
+                Err(error) => {
+                    attempts.push(format!("{method}: {error}"));
+                }
+            }
+        }
+        Err(format!(
+            "all compaction methods failed for thread {}: {}",
+            thread_id,
+            attempts.join(" | ")
+        ))
     }
 
     async fn intercept_request_user_input_if_needed(&self, value: &Value) -> Option<Value> {
@@ -1790,6 +2077,7 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
         mode_enforcement_enabled: AtomicBool::new(true),
         collaboration_mode_supported: AtomicBool::new(true),
         plan_turn_state: Mutex::new(HashMap::new()),
+        auto_compaction_state: Mutex::new(HashMap::new()),
         local_user_input_requests: Mutex::new(HashMap::new()),
         local_request_seq: AtomicU64::new(1),
     });
@@ -1835,6 +2123,8 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
                 .await;
             let synthetic_plan_apply_event =
                 session_clone.maybe_emit_plan_apply_user_input(&value).await;
+            let auto_compaction_trigger =
+                session_clone.evaluate_auto_compaction_trigger(&value).await;
             if session_clone
                 .should_suppress_after_synthetic_plan_block(&value)
                 .await
@@ -1908,6 +2198,65 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
                     };
                     event_sink_clone.emit_app_server_event(payload);
                 }
+            }
+
+            if let Some(trigger) = auto_compaction_trigger {
+                let compacting_event =
+                    build_thread_compacting_event(&trigger.thread_id, trigger.usage_percent);
+                let extra_thread_id = extract_thread_id(&compacting_event);
+                let mut sent_to_background = false;
+                if let Some(ref tid) = extra_thread_id {
+                    let callbacks = session_clone.background_thread_callbacks.lock().await;
+                    if let Some(tx) = callbacks.get(tid) {
+                        let _ = tx.send(compacting_event.clone());
+                        sent_to_background = true;
+                    }
+                }
+                if !sent_to_background {
+                    let payload = AppServerEvent {
+                        workspace_id: workspace_id.clone(),
+                        message: compacting_event,
+                    };
+                    event_sink_clone.emit_app_server_event(payload);
+                }
+
+                let session_for_compaction = Arc::clone(&session_clone);
+                let event_sink_for_compaction = event_sink_clone.clone();
+                let workspace_id_for_compaction = workspace_id.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = session_for_compaction
+                        .request_thread_auto_compaction(&trigger.thread_id)
+                        .await
+                    {
+                        log::warn!(
+                            "[codex_auto_compaction] request failed thread_id={} error={}",
+                            trigger.thread_id,
+                            error
+                        );
+                        session_for_compaction
+                            .mark_auto_compaction_failed(&trigger.thread_id)
+                            .await;
+                        let failed_event =
+                            build_thread_compaction_failed_event(&trigger.thread_id, &error);
+                        let extra_thread_id = extract_thread_id(&failed_event);
+                        let mut sent_to_background = false;
+                        if let Some(ref tid) = extra_thread_id {
+                            let callbacks =
+                                session_for_compaction.background_thread_callbacks.lock().await;
+                            if let Some(tx) = callbacks.get(tid) {
+                                let _ = tx.send(failed_event.clone());
+                                sent_to_background = true;
+                            }
+                        }
+                        if !sent_to_background {
+                            let payload = AppServerEvent {
+                                workspace_id: workspace_id_for_compaction,
+                                message: failed_event,
+                            };
+                            event_sink_for_compaction.emit_app_server_event(payload);
+                        }
+                    }
+                });
             }
 
             if let Some(extra_event) = synthetic_plan_event {
@@ -2018,11 +2367,14 @@ mod tests {
     use super::{
         build_mode_blocked_event, build_plan_blocker_user_input_event,
         codex_args_override_instructions, codex_external_spec_priority_config_arg,
-        detect_plan_blocker_reason, detect_repo_mutating_blocked_method, extract_plan_step_count,
-        extract_stream_delta_text, extract_thread_id, is_plan_blocker_stream_method,
+        detect_plan_blocker_reason, detect_repo_mutating_blocked_method,
+        evaluate_auto_compaction_state, extract_compaction_usage_percent, extract_plan_step_count,
+        extract_stream_delta_text, extract_thread_id, is_codex_thread_id,
+        is_plan_blocker_stream_method,
         is_repo_mutating_command_tokens, looks_like_executable_plan_text,
         looks_like_plan_blocker_prompt, looks_like_user_info_followup_prompt,
-        normalize_command_tokens_from_item, should_block_request_user_input, PlanTurnState,
+        normalize_command_tokens_from_item, should_block_request_user_input,
+        AutoCompactionThreadState, PlanTurnState,
         MODE_BLOCKED_PLAN_REASON, MODE_BLOCKED_PLAN_SUGGESTION, MODE_BLOCKED_REASON,
         MODE_BLOCKED_REASON_CODE_PLAN_READONLY, MODE_BLOCKED_REASON_CODE_REQUEST_USER_INPUT,
         MODE_BLOCKED_SUGGESTION,
@@ -2053,6 +2405,188 @@ mod tests {
     fn extract_thread_id_returns_none_when_missing() {
         let value = json!({ "params": {} });
         assert_eq!(extract_thread_id(&value), None);
+    }
+
+    #[test]
+    fn extract_compaction_usage_percent_reads_token_count_last_payload() {
+        let value = json!({
+            "method": "token_count",
+            "params": {
+                "info": {
+                    "last_token_usage": {
+                        "input_tokens": 160000,
+                        "cached_input_tokens": 40000,
+                        "model_context_window": 200000
+                    }
+                }
+            }
+        });
+        let percent = extract_compaction_usage_percent(&value).unwrap_or_default();
+        assert!((percent - 100.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn extract_compaction_usage_percent_returns_none_when_token_count_last_missing() {
+        let value = json!({
+            "method": "token_count",
+            "params": {
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 160000,
+                        "cached_input_tokens": 40000,
+                        "model_context_window": 200000
+                    }
+                }
+            }
+        });
+        assert!(extract_compaction_usage_percent(&value).is_none());
+    }
+
+    #[test]
+    fn extract_compaction_usage_percent_prefers_last_token_count_snapshot() {
+        let value = json!({
+            "method": "token_count",
+            "params": {
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 180000,
+                        "cached_input_tokens": 0,
+                        "model_context_window": 200000
+                    },
+                    "last_token_usage": {
+                        "input_tokens": 20000,
+                        "cached_input_tokens": 0,
+                        "model_context_window": 200000
+                    }
+                }
+            }
+        });
+        let percent = extract_compaction_usage_percent(&value).unwrap_or_default();
+        assert!((percent - 10.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn extract_compaction_usage_percent_reads_thread_last_usage_payload() {
+        let value = json!({
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "tokenUsage": {
+                    "last": {
+                        "inputTokens": 92000,
+                        "cachedInputTokens": 0
+                    },
+                    "modelContextWindow": 100000
+                }
+            }
+        });
+        let percent = extract_compaction_usage_percent(&value).unwrap_or_default();
+        assert!((percent - 92.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn extract_compaction_usage_percent_returns_none_when_thread_last_missing() {
+        let value = json!({
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "tokenUsage": {
+                    "total": {
+                        "inputTokens": 92000,
+                        "cachedInputTokens": 0
+                    },
+                    "modelContextWindow": 100000
+                }
+            }
+        });
+        assert!(extract_compaction_usage_percent(&value).is_none());
+    }
+
+    #[test]
+    fn extract_compaction_usage_percent_prefers_thread_last_snapshot() {
+        let value = json!({
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "tokenUsage": {
+                    "total": {
+                        "inputTokens": 190000,
+                        "cachedInputTokens": 0
+                    },
+                    "last": {
+                        "inputTokens": 20000,
+                        "cachedInputTokens": 0
+                    },
+                    "modelContextWindow": 200000
+                }
+            }
+        });
+        let percent = extract_compaction_usage_percent(&value).unwrap_or_default();
+        assert!((percent - 10.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn is_codex_thread_id_filters_non_codex_prefixes() {
+        assert!(is_codex_thread_id("thread-1"));
+        assert!(is_codex_thread_id("codex-abc"));
+        assert!(!is_codex_thread_id("claude:session-1"));
+        assert!(!is_codex_thread_id("claude-pending-1"));
+        assert!(!is_codex_thread_id("opencode:session-1"));
+        assert!(!is_codex_thread_id("gemini:session-1"));
+        assert!(!is_codex_thread_id(""));
+    }
+
+    #[test]
+    fn evaluate_auto_compaction_state_applies_processing_cooldown_and_trigger() {
+        let mut state = AutoCompactionThreadState::default();
+
+        assert!(!evaluate_auto_compaction_state(
+            &mut state,
+            "turn/started",
+            Some(95.0),
+            10_000,
+        ));
+        assert!(state.is_processing);
+        assert!(!evaluate_auto_compaction_state(
+            &mut state,
+            "token_count",
+            Some(95.0),
+            20_000,
+        ));
+        assert!(!evaluate_auto_compaction_state(
+            &mut state,
+            "turn/completed",
+            None,
+            30_000,
+        ));
+        assert!(evaluate_auto_compaction_state(
+            &mut state,
+            "token_count",
+            Some(95.0),
+            100_000,
+        ));
+        assert!(state.in_flight);
+        assert!(!evaluate_auto_compaction_state(
+            &mut state,
+            "token_count",
+            Some(96.0),
+            100_500,
+        ));
+        assert!(!evaluate_auto_compaction_state(
+            &mut state,
+            "thread/compacted",
+            None,
+            101_000,
+        ));
+        assert!(!evaluate_auto_compaction_state(
+            &mut state,
+            "token_count",
+            Some(95.0),
+            110_000,
+        ));
+        assert!(evaluate_auto_compaction_state(
+            &mut state,
+            "token_count",
+            Some(95.0),
+            200_000,
+        ));
     }
 
     #[test]

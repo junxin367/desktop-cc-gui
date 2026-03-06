@@ -783,6 +783,28 @@ go lang`,
     }
   });
 
+  it("normalizes file change fallback fields from files payload", () => {
+    const item = buildConversationItem({
+      type: "fileChange",
+      id: "change-2",
+      status: "done",
+      files: [
+        {
+          filePath: "src/App.tsx",
+          status: "A",
+          patch: "@@ -0,0 +1 @@\n+const x = 1;",
+        },
+      ],
+      output: "fallback-diff",
+    });
+    expect(item).not.toBeNull();
+    if (item && item.kind === "tool") {
+      expect(item.detail).toBe("A src/App.tsx");
+      expect(item.output).toContain("const x = 1");
+      expect(item.changes?.[0]?.kind).toBe("add");
+    }
+  });
+
   it("builds commandExecution items with structured detail payload", () => {
     const item = buildConversationItem({
       type: "commandExecution",
@@ -818,6 +840,20 @@ go lang`,
       const parsed = JSON.parse(item.detail) as Record<string, string>;
       expect(parsed.description).toBe("Commit staged changes");
       expect(parsed.cwd).toBe("/repo");
+    }
+  });
+
+  it("uses commandExecution output fallback fields when aggregatedOutput is absent", () => {
+    const item = buildConversationItem({
+      type: "commandExecution",
+      id: "cmd-structured-3",
+      description: "Run fallback output",
+      output: "stdout-line",
+      status: "completed",
+    });
+    expect(item).not.toBeNull();
+    if (item && item.kind === "tool") {
+      expect(item.output).toBe("stdout-line");
     }
   });
 

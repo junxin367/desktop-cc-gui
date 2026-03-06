@@ -25,6 +25,31 @@ function inferEngineFromThreadId(threadId: string): "claude" | "codex" | "openco
   return "codex";
 }
 
+const CODEX_BACKGROUND_HELPER_PREVIEW_PREFIXES = [
+  "Generate a concise title for a coding chat thread from the first user message.",
+  "You create concise run metadata for a coding task.",
+  "You are generating OpenSpec project context.",
+  "Generate a concise git commit message for the following changes.",
+] as const;
+
+function isCodexBackgroundHelperThread(
+  threadId: string,
+  thread: Record<string, unknown>,
+): boolean {
+  if (inferEngineFromThreadId(threadId) !== "codex") {
+    return false;
+  }
+  const previewCandidates = [
+    asString(thread.preview).trim(),
+    asString(thread.title).trim(),
+  ].filter(Boolean);
+  return previewCandidates.some((preview) =>
+    CODEX_BACKGROUND_HELPER_PREVIEW_PREFIXES.some((prefix) =>
+      preview.startsWith(prefix),
+    ),
+  );
+}
+
 type UseThreadTurnEventsOptions = {
   dispatch: Dispatch<ThreadAction>;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
@@ -111,6 +136,10 @@ export function useThreadTurnEvents({
       if (!threadId) {
         return;
       }
+      if (isCodexBackgroundHelperThread(threadId, thread)) {
+        dispatch({ type: "hideThread", workspaceId, threadId });
+        return;
+      }
       if (isThreadHidden(workspaceId, threadId)) {
         return;
       }
@@ -146,6 +175,7 @@ export function useThreadTurnEvents({
         threadId,
         engine: inferEngineFromThreadId(threadId),
       });
+      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
       if (pendingInterruptsRef.current.has(threadId)) {
         pendingInterruptsRef.current.delete(threadId);
         if (turnId) {
@@ -172,6 +202,11 @@ export function useThreadTurnEvents({
           type: "finalizePendingToolStatuses",
           threadId: targetThreadId,
           status: "completed",
+        });
+        dispatch({
+          type: "markContextCompacting",
+          threadId: targetThreadId,
+          isCompacting: false,
         });
         markProcessing(targetThreadId, false);
         setActiveTurnId(targetThreadId, null);
@@ -256,6 +291,7 @@ export function useThreadTurnEvents({
         threadId,
         status: "failed",
       });
+      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
       markProcessing(threadId, false);
       markReviewing(threadId, false);
       setActiveTurnId(threadId, null);
@@ -265,6 +301,11 @@ export function useThreadTurnEvents({
           type: "finalizePendingToolStatuses",
           threadId: aliasThreadId,
           status: "failed",
+        });
+        dispatch({
+          type: "markContextCompacting",
+          threadId: aliasThreadId,
+          isCompacting: false,
         });
         markProcessing(aliasThreadId, false);
         markReviewing(aliasThreadId, false);
@@ -298,15 +339,44 @@ export function useThreadTurnEvents({
   const onContextCompacted = useCallback(
     (workspaceId: string, threadId: string, turnId: string) => {
       dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      if (!turnId) {
-        return;
-      }
-      dispatch({ type: "appendContextCompacted", threadId, turnId });
+      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
       const timestamp = Date.now();
+      const resolvedTurnId = turnId || `auto-${timestamp}`;
+      dispatch({ type: "appendContextCompacted", threadId, turnId: resolvedTurnId });
       recordThreadActivity(workspaceId, threadId, timestamp);
       safeMessageActivity();
     },
     [dispatch, recordThreadActivity, safeMessageActivity],
+  );
+
+  const onContextCompacting = useCallback(
+    (
+      workspaceId: string,
+      threadId: string,
+      _payload: {
+        usagePercent: number | null;
+        thresholdPercent: number | null;
+        targetPercent: number | null;
+      },
+    ) => {
+      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
+      dispatch({ type: "markContextCompacting", threadId, isCompacting: true });
+      safeMessageActivity();
+    },
+    [dispatch, safeMessageActivity],
+  );
+
+  const onContextCompactionFailed = useCallback(
+    (workspaceId: string, threadId: string, reason: string) => {
+      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
+      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
+      const message = reason
+        ? t("threads.contextCompactionFailedWithMessage", { message: reason })
+        : t("threads.contextCompactionFailed");
+      pushThreadErrorMessage(threadId, message);
+      safeMessageActivity();
+    },
+    [dispatch, pushThreadErrorMessage, safeMessageActivity, t],
   );
 
   const onThreadSessionIdUpdated = useCallback(
@@ -393,7 +463,9 @@ export function useThreadTurnEvents({
     onThreadTokenUsageUpdated,
     onAccountRateLimitsUpdated,
     onTurnError,
+    onContextCompacting,
     onContextCompacted,
+    onContextCompactionFailed,
     onThreadSessionIdUpdated,
   };
 }

@@ -1214,6 +1214,19 @@ where
     write_file(&root, path, content)
 }
 
+pub(crate) async fn create_workspace_directory_core<F>(
+    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
+    workspace_id: &str,
+    path: &str,
+    create_directory: F,
+) -> Result<(), String>
+where
+    F: Fn(&PathBuf, &str) -> Result<(), String>,
+{
+    let root = resolve_workspace_root(workspaces, workspace_id).await?;
+    create_directory(&root, path)
+}
+
 pub(crate) async fn trash_workspace_item_core<F>(
     workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
     workspace_id: &str,

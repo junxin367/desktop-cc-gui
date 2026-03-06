@@ -53,6 +53,11 @@ type WorktreeSectionProps = {
     threadId: string,
     canPin: boolean,
   ) => void;
+  deleteConfirmThreadId?: string | null;
+  deleteConfirmWorkspaceId?: string | null;
+  deleteConfirmBusy?: boolean;
+  onCancelDeleteConfirm?: () => void;
+  onConfirmDeleteConfirm?: () => void;
   onShowWorktreeMenu: (event: MouseEvent, workspaceId: string) => void;
   onToggleExpanded: (workspaceId: string) => void;
   onLoadOlderThreads: (workspaceId: string) => void;
@@ -82,6 +87,11 @@ export function WorktreeSection({
   onToggleWorkspaceCollapse,
   onSelectThread,
   onShowThreadMenu,
+  deleteConfirmThreadId = null,
+  deleteConfirmWorkspaceId = null,
+  deleteConfirmBusy = false,
+  onCancelDeleteConfirm,
+  onConfirmDeleteConfirm,
   onShowWorktreeMenu,
   onToggleExpanded,
   onLoadOlderThreads,
@@ -198,6 +208,11 @@ export function WorktreeSection({
                     onLoadOlderThreads={onLoadOlderThreads}
                     onSelectThread={onSelectThread}
                     onShowThreadMenu={onShowThreadMenu}
+                    deleteConfirmThreadId={deleteConfirmThreadId}
+                    deleteConfirmWorkspaceId={deleteConfirmWorkspaceId}
+                    deleteConfirmBusy={deleteConfirmBusy}
+                    onCancelDeleteConfirm={onCancelDeleteConfirm}
+                    onConfirmDeleteConfirm={onConfirmDeleteConfirm}
                   />
                 )}
                 {showWorktreeLoader && <ThreadLoading nested />}

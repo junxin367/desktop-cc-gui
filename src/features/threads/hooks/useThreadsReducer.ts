@@ -124,6 +124,7 @@ type ThreadActivityStatus = {
   isProcessing: boolean;
   hasUnread: boolean;
   isReviewing: boolean;
+  isContextCompacting?: boolean;
   processingStartedAt: number | null;
   lastDurationMs: number | null;
   heartbeatPulse?: number;
@@ -167,6 +168,11 @@ export type ThreadAction =
       threadId: string;
       isProcessing: boolean;
       timestamp: number;
+    }
+  | {
+      type: "markContextCompacting";
+      threadId: string;
+      isCompacting: boolean;
     }
   | { type: "markHeartbeat"; threadId: string; pulse: number }
   | {
@@ -1137,6 +1143,9 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
                 hasUnread: false,
                 isReviewing:
                   state.threadStatusById[action.threadId]?.isReviewing ?? false,
+                isContextCompacting:
+                  state.threadStatusById[action.threadId]?.isContextCompacting ??
+                  false,
                 processingStartedAt:
                   state.threadStatusById[action.threadId]?.processingStartedAt ??
                   null,
@@ -1360,6 +1369,7 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             isProcessing: false,
             hasUnread: false,
             isReviewing: false,
+            isContextCompacting: false,
             processingStartedAt: null,
             lastDurationMs: null,
             heartbeatPulse: 0,
@@ -1472,6 +1482,7 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               isProcessing: true,
               hasUnread: previous?.hasUnread ?? false,
               isReviewing: previous?.isReviewing ?? false,
+              isContextCompacting: previous?.isContextCompacting ?? false,
               processingStartedAt:
                 wasProcessing && startedAt ? startedAt : action.timestamp,
               lastDurationMs,
@@ -1492,9 +1503,32 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             isProcessing: false,
             hasUnread: previous?.hasUnread ?? false,
             isReviewing: previous?.isReviewing ?? false,
+            isContextCompacting: previous?.isContextCompacting ?? false,
             processingStartedAt: null,
             lastDurationMs: nextDuration,
             heartbeatPulse: 0,
+          },
+        },
+      };
+    }
+    case "markContextCompacting": {
+      const previous = state.threadStatusById[action.threadId];
+      const currentIsCompacting = previous?.isContextCompacting ?? false;
+      if (currentIsCompacting === action.isCompacting) {
+        return state;
+      }
+      return {
+        ...state,
+        threadStatusById: {
+          ...state.threadStatusById,
+          [action.threadId]: {
+            isProcessing: previous?.isProcessing ?? false,
+            hasUnread: previous?.hasUnread ?? false,
+            isReviewing: previous?.isReviewing ?? false,
+            isContextCompacting: action.isCompacting,
+            processingStartedAt: previous?.processingStartedAt ?? null,
+            lastDurationMs: previous?.lastDurationMs ?? null,
+            heartbeatPulse: previous?.heartbeatPulse ?? 0,
           },
         },
       };
@@ -1576,6 +1610,9 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               state.threadStatusById[action.threadId]?.isProcessing ?? false,
             hasUnread: state.threadStatusById[action.threadId]?.hasUnread ?? false,
             isReviewing: action.isReviewing,
+            isContextCompacting:
+              state.threadStatusById[action.threadId]?.isContextCompacting ??
+              false,
             processingStartedAt:
               state.threadStatusById[action.threadId]?.processingStartedAt ?? null,
             lastDurationMs:
@@ -1596,6 +1633,9 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             hasUnread: action.hasUnread,
             isReviewing:
               state.threadStatusById[action.threadId]?.isReviewing ?? false,
+            isContextCompacting:
+              state.threadStatusById[action.threadId]?.isContextCompacting ??
+              false,
             processingStartedAt:
               state.threadStatusById[action.threadId]?.processingStartedAt ?? null,
             lastDurationMs:
@@ -1940,6 +1980,9 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               isProcessing: oldStatus.isProcessing || existingStatus.isProcessing,
               hasUnread: oldStatus.hasUnread || existingStatus.hasUnread,
               isReviewing: oldStatus.isReviewing || existingStatus.isReviewing,
+              isContextCompacting:
+                (oldStatus.isContextCompacting ?? false)
+                || (existingStatus.isContextCompacting ?? false),
               processingStartedAt:
                 oldStatus.processingStartedAt ?? existingStatus.processingStartedAt,
               lastDurationMs:

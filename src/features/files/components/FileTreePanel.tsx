@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -15,14 +14,22 @@ import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { confirm } from "@tauri-apps/plugin-dialog";
+import FilePlus from "lucide-react/dist/esm/icons/file-plus";
+import FolderPlus from "lucide-react/dist/esm/icons/folder-plus";
 import Plus from "lucide-react/dist/esm/icons/plus";
-import ChevronsUpDown from "lucide-react/dist/esm/icons/chevrons-up-down";
-import Construction from "lucide-react/dist/esm/icons/construction";
-import LayoutDashboard from "lucide-react/dist/esm/icons/layout-dashboard";
-import Search from "lucide-react/dist/esm/icons/search";
+import SquareMinus from "lucide-react/dist/esm/icons/square-minus";
+import Trash2 from "lucide-react/dist/esm/icons/trash-2";
+import TreePine from "lucide-react/dist/esm/icons/tree-pine";
 import FileIcon from "../../../components/FileIcon";
-import { PanelTabs, type PanelTabId } from "../../layout/components/PanelTabs";
-import { copyWorkspaceItem, readWorkspaceFile, trashWorkspaceItem, writeWorkspaceFile } from "../../../services/tauri";
+import type { PanelTabId } from "../../layout/components/PanelTabs";
+import {
+  createWorkspaceDirectory,
+  copyWorkspaceItem,
+  getWorkspaceDirectoryChildren,
+  readWorkspaceFile,
+  trashWorkspaceItem,
+  writeWorkspaceFile,
+} from "../../../services/tauri";
 import type { GitFileStatus, OpenAppTarget } from "../../../types";
 import { languageFromPath } from "../../../utils/syntax";
 import { FilePreviewPopover } from "./FilePreviewPopover";
@@ -32,10 +39,12 @@ type FileTreeNode = {
   path: string;
   type: "file" | "folder";
   children: FileTreeNode[];
+  isLazyLoadable?: boolean;
 };
 
 type FileTreePanelProps = {
   workspaceId: string;
+  workspaceName?: string;
   workspacePath: string;
   files: string[];
   directories?: string[];
@@ -43,7 +52,7 @@ type FileTreePanelProps = {
   filePanelMode: PanelTabId;
   onFilePanelModeChange: (mode: PanelTabId) => void;
   onInsertText?: (text: string) => void;
-  onOpenFile?: (path: string) => void;
+  onOpenFile?: (path: string, location?: FileOpenLocation) => void;
   openTargets: OpenAppTarget[];
   openAppIconById: Record<string, string>;
   selectedOpenAppId: string;
@@ -58,18 +67,77 @@ type FileTreePanelProps = {
   onRefreshFiles?: () => void;
 };
 
+type FileOpenLocation = {
+  line: number;
+  column: number;
+};
+
 type FileTreeBuildNode = {
   name: string;
   path: string;
   type: "file" | "folder";
   children: Map<string, FileTreeBuildNode>;
+  isLazyLoadable: boolean;
 };
 
 const EMPTY_DIRECTORIES: string[] = [];
+const EMPTY_SET: Set<string> = new Set();
+const SPECIAL_DEPENDENCY_DIRECTORIES = new Set([
+  "node_modules",
+  ".pnpm-store",
+  ".yarn",
+  "bower_components",
+  "vendor",
+  ".venv",
+  "venv",
+  "env",
+  "__pypackages__",
+  "Pods",
+  "Carthage",
+  ".m2",
+  ".ivy2",
+  ".cargo",
+]);
+const SPECIAL_BUILD_ARTIFACT_DIRECTORIES = new Set([
+  "target",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  ".next",
+  ".nuxt",
+  ".svelte-kit",
+  ".angular",
+  ".parcel-cache",
+  ".turbo",
+  ".cache",
+  ".gradle",
+  "CMakeFiles",
+  "bin",
+  "obj",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".tox",
+  ".dart_tool",
+]);
+
+function isSpecialDirectoryPath(path: string) {
+  const leaf = path.split("/").filter(Boolean).pop() ?? "";
+  if (!leaf) {
+    return false;
+  }
+  return (
+    SPECIAL_DEPENDENCY_DIRECTORIES.has(leaf) ||
+    SPECIAL_BUILD_ARTIFACT_DIRECTORIES.has(leaf) ||
+    leaf.startsWith("cmake-build-")
+  );
+}
 
 function buildTree(
   files: string[],
   directories: string[],
+  lazyLoadableDirectories: Set<string>,
 ): { nodes: FileTreeNode[]; folderPaths: Set<string> } {
   const root = new Map<string, FileTreeBuildNode>();
   const addNode = (
@@ -77,11 +145,15 @@ function buildTree(
     name: string,
     path: string,
     type: "file" | "folder",
+    isLazyLoadable = false,
   ) => {
     const existing = map.get(name);
     if (existing) {
       if (type === "folder") {
         existing.type = "folder";
+      }
+      if (isLazyLoadable) {
+        existing.isLazyLoadable = true;
       }
       return existing;
     }
@@ -90,6 +162,7 @@ function buildTree(
       path,
       type,
       children: new Map(),
+      isLazyLoadable,
     };
     map.set(name, node);
     return node;
@@ -106,7 +179,13 @@ function buildTree(
       const isLeaf = index === parts.length - 1;
       const nextPath = currentPath ? `${currentPath}/${segment}` : segment;
       const nodeType: "file" | "folder" = isLeaf ? leafType : "folder";
-      const node = addNode(currentMap, segment, nextPath, nodeType);
+      const node = addNode(
+        currentMap,
+        segment,
+        nextPath,
+        nodeType,
+        nodeType === "folder" && lazyLoadableDirectories.has(nextPath),
+      );
       if (nodeType === "folder") {
         currentMap = node.children;
         currentPath = nextPath;
@@ -137,7 +216,8 @@ function buildTree(
       const children = Array.from(node.children.values());
       const hasDirectFile = children.some((child) => child.type === "file");
       const directFolders = children.filter((child) => child.type === "folder");
-      if (hasDirectFile || directFolders.length !== 1) {
+      const hasLazyLoadableChild = directFolders.some((child) => child.isLazyLoadable);
+      if (node.isLazyLoadable || hasDirectFile || hasLazyLoadableChild || directFolders.length !== 1) {
         break;
       }
       const next = directFolders[0];
@@ -165,6 +245,7 @@ function buildTree(
             path: collapsed.path,
             type: "folder" as const,
             children: toArray(collapsed.node.children),
+            isLazyLoadable: collapsed.node.isLazyLoadable,
           };
         }
         return {
@@ -200,33 +281,46 @@ function isImagePath(path: string) {
   return imageExtensions.has(ext);
 }
 
+function resolveWorkspaceRootLabel(workspacePath: string, workspaceName?: string) {
+  const fromName = workspaceName?.trim();
+  if (fromName) {
+    return fromName;
+  }
+  const normalizedPath = workspacePath.replace(/[\\/]+$/, "");
+  const segments = normalizedPath.split(/[\\/]/).filter(Boolean);
+  return segments.at(-1) || normalizedPath || "workspace";
+}
+
 export function FileTreePanel({
   workspaceId,
+  workspaceName,
   workspacePath,
   files,
   directories,
   isLoading,
-  filePanelMode,
-  onFilePanelModeChange,
+  filePanelMode: _filePanelMode,
+  onFilePanelModeChange: _onFilePanelModeChange,
   onInsertText,
   onOpenFile,
   openTargets,
   openAppIconById,
   selectedOpenAppId,
   onSelectOpenAppId,
-  onToggleRuntimeConsole,
-  isRuntimeConsoleVisible = false,
-  onOpenSpecHub,
-  isSpecHubActive = false,
+  onToggleRuntimeConsole: _onToggleRuntimeConsole,
+  isRuntimeConsoleVisible: _isRuntimeConsoleVisible = false,
+  onOpenSpecHub: _onOpenSpecHub,
+  isSpecHubActive: _isSpecHubActive = false,
   gitStatusFiles,
   gitignoredFiles,
   gitignoredDirectories,
   onRefreshFiles,
 }: FileTreePanelProps) {
   const directoryEntries = directories ?? EMPTY_DIRECTORIES;
+  const ignoredFileEntries = gitignoredFiles ?? EMPTY_SET;
+  const ignoredDirectoryEntries = gitignoredDirectories ?? EMPTY_SET;
   const { t } = useTranslation();
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [query, setQuery] = useState("");
+  const [rootExpanded, setRootExpanded] = useState(true);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [previewAnchor, setPreviewAnchor] = useState<{
     top: number;
@@ -251,14 +345,65 @@ export function FileTreePanel({
   const [newFileParent, setNewFileParent] = useState<string | null>(null);
   const [newFileName, setNewFileName] = useState("");
   const newFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
+  const [newFolderName, setNewFolderName] = useState("");
+  const newFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const [lazyFiles, setLazyFiles] = useState<Set<string>>(new Set());
+  const [lazyDirectories, setLazyDirectories] = useState<Set<string>>(new Set());
+  const [lazyGitignoredFiles, setLazyGitignoredFiles] = useState<Set<string>>(new Set());
+  const [lazyGitignoredDirectories, setLazyGitignoredDirectories] = useState<Set<string>>(new Set());
+  const [lazyLoadableDirectories, setLazyLoadableDirectories] = useState<Set<string>>(new Set());
+  const [loadedLazyDirectories, setLoadedLazyDirectories] = useState<Set<string>>(new Set());
+  const [loadingLazyDirectories, setLoadingLazyDirectories] = useState<Set<string>>(new Set());
+  const [lazyDirectoryLoadErrors, setLazyDirectoryLoadErrors] = useState<Map<string, string>>(
+    new Map(),
+  );
+  const loadedLazyDirectoriesRef = useRef<Set<string>>(new Set());
+  const loadingLazyDirectoriesRef = useRef<Set<string>>(new Set());
 
-  const showLoading = isLoading && files.length === 0;
-  const deferredQuery = useDeferredValue(query);
-  const normalizedQuery = deferredQuery.trim().toLowerCase();
+  const workspaceRootLabel = useMemo(
+    () => resolveWorkspaceRootLabel(workspacePath, workspaceName),
+    [workspaceName, workspacePath],
+  );
   const previewKind = useMemo(
     () => (previewPath && isImagePath(previewPath) ? "image" : "text"),
     [previewPath],
   );
+  const mergedFiles = useMemo(() => {
+    const next = new Set<string>(files);
+    lazyFiles.forEach((path) => next.add(path));
+    return Array.from(next);
+  }, [files, lazyFiles]);
+  const mergedDirectories = useMemo(() => {
+    const next = new Set<string>(directoryEntries);
+    lazyDirectories.forEach((path) => next.add(path));
+    return Array.from(next);
+  }, [directoryEntries, lazyDirectories]);
+  const mergedGitignoredFiles = useMemo(() => {
+    const next = new Set<string>(ignoredFileEntries);
+    lazyGitignoredFiles.forEach((path) => next.add(path));
+    return next;
+  }, [ignoredFileEntries, lazyGitignoredFiles]);
+  const mergedGitignoredDirectories = useMemo(() => {
+    const next = new Set<string>(ignoredDirectoryEntries);
+    lazyGitignoredDirectories.forEach((path) => next.add(path));
+    return next;
+  }, [ignoredDirectoryEntries, lazyGitignoredDirectories]);
+  const seededLazyLoadableDirectories = useMemo(() => {
+    const result = new Set<string>();
+    mergedDirectories.forEach((path) => {
+      if (isSpecialDirectoryPath(path)) {
+        result.add(path);
+      }
+    });
+    return result;
+  }, [mergedDirectories]);
+  const effectiveLazyLoadableDirectories = useMemo(() => {
+    const result = new Set(seededLazyLoadableDirectories);
+    lazyLoadableDirectories.forEach((path) => result.add(path));
+    return result;
+  }, [seededLazyLoadableDirectories, lazyLoadableDirectories]);
+  const showLoading = isLoading && mergedFiles.length === 0;
 
   const gitStatusMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -270,26 +415,17 @@ export function FileTreePanel({
     return map;
   }, [gitStatusFiles]);
 
-  const filteredFiles = useMemo(() => {
-    if (!normalizedQuery) {
-      return files;
-    }
-    return files.filter((path) => path.toLowerCase().includes(normalizedQuery));
-  }, [files, normalizedQuery]);
-
-  const filteredDirectories = useMemo(() => {
-    if (!normalizedQuery) {
-      return directoryEntries;
-    }
-    return directoryEntries.filter((path) => path.toLowerCase().includes(normalizedQuery));
-  }, [directoryEntries, normalizedQuery]);
-
   const { nodes, folderPaths } = useMemo(
     () => buildTree(
-      normalizedQuery ? filteredFiles : files,
-      normalizedQuery ? filteredDirectories : directoryEntries,
+      mergedFiles,
+      mergedDirectories,
+      effectiveLazyLoadableDirectories,
     ),
-    [directoryEntries, files, filteredDirectories, filteredFiles, normalizedQuery],
+    [
+      effectiveLazyLoadableDirectories,
+      mergedDirectories,
+      mergedFiles,
+    ],
   );
 
   const folderGitStatusMap = useMemo(() => {
@@ -326,12 +462,10 @@ export function FileTreePanel({
   const hasFolders = visibleFolderPaths.size > 0;
   const allVisibleExpanded =
     hasFolders && Array.from(visibleFolderPaths).every((path) => expandedFolders.has(path));
+  const isRootVisibleExpanded = rootExpanded;
 
   useEffect(() => {
     setExpandedFolders((prev) => {
-      if (normalizedQuery) {
-        return new Set(folderPaths);
-      }
       // Keep only folders that still exist; default is all collapsed.
       const next = new Set<string>();
       prev.forEach((path) => {
@@ -341,7 +475,15 @@ export function FileTreePanel({
       });
       return next;
     });
-  }, [folderPaths, normalizedQuery]);
+  }, [folderPaths]);
+
+  useEffect(() => {
+    loadedLazyDirectoriesRef.current = loadedLazyDirectories;
+  }, [loadedLazyDirectories]);
+
+  useEffect(() => {
+    loadingLazyDirectoriesRef.current = loadingLazyDirectories;
+  }, [loadingLazyDirectories]);
 
   useEffect(() => {
     setPreviewPath(null);
@@ -354,6 +496,21 @@ export function FileTreePanel({
     setIsDragSelecting(false);
     dragAnchorLineRef.current = null;
     dragMovedRef.current = false;
+    setLazyFiles(new Set());
+    setLazyDirectories(new Set());
+    setLazyGitignoredFiles(new Set());
+    setLazyGitignoredDirectories(new Set());
+    setLazyLoadableDirectories(new Set());
+    setLoadedLazyDirectories(new Set());
+    setLoadingLazyDirectories(new Set());
+    setLazyDirectoryLoadErrors(new Map());
+    setNewFileParent(null);
+    setNewFileName("");
+    setNewFolderParent(null);
+    setNewFolderName("");
+    setRootExpanded(true);
+    loadedLazyDirectoriesRef.current = new Set();
+    loadingLazyDirectoriesRef.current = new Set();
   }, [workspaceId]);
 
   const closePreview = useCallback(() => {
@@ -368,6 +525,83 @@ export function FileTreePanel({
     dragAnchorLineRef.current = null;
     dragMovedRef.current = false;
   }, []);
+
+  const loadLazyDirectoryChildren = useCallback(
+    async (path: string) => {
+      if (
+        loadedLazyDirectoriesRef.current.has(path) ||
+        loadingLazyDirectoriesRef.current.has(path)
+      ) {
+        return;
+      }
+      setLoadingLazyDirectories((prev) => {
+        const next = new Set(prev);
+        next.add(path);
+        return next;
+      });
+      setLazyDirectoryLoadErrors((prev) => {
+        const next = new Map(prev);
+        next.delete(path);
+        return next;
+      });
+      try {
+        const response = await getWorkspaceDirectoryChildren(workspaceId, path);
+        const nextFiles = Array.isArray(response.files) ? response.files : [];
+        const nextDirectories = Array.isArray(response.directories) ? response.directories : [];
+        const nextGitignoredFiles = Array.isArray(response.gitignored_files)
+          ? response.gitignored_files
+          : [];
+        const nextGitignoredDirectories = Array.isArray(response.gitignored_directories)
+          ? response.gitignored_directories
+          : [];
+
+        setLazyFiles((prev) => {
+          const next = new Set(prev);
+          nextFiles.forEach((entry) => next.add(entry));
+          return next;
+        });
+        setLazyDirectories((prev) => {
+          const next = new Set(prev);
+          nextDirectories.forEach((entry) => next.add(entry));
+          return next;
+        });
+        setLazyLoadableDirectories((prev) => {
+          const next = new Set(prev);
+          nextDirectories.forEach((entry) => next.add(entry));
+          return next;
+        });
+        setLazyGitignoredFiles((prev) => {
+          const next = new Set(prev);
+          nextGitignoredFiles.forEach((entry) => next.add(entry));
+          return next;
+        });
+        setLazyGitignoredDirectories((prev) => {
+          const next = new Set(prev);
+          nextGitignoredDirectories.forEach((entry) => next.add(entry));
+          return next;
+        });
+        setLoadedLazyDirectories((prev) => {
+          const next = new Set(prev);
+          next.add(path);
+          return next;
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setLazyDirectoryLoadErrors((prev) => {
+          const next = new Map(prev);
+          next.set(path, message);
+          return next;
+        });
+      } finally {
+        setLoadingLazyDirectories((prev) => {
+          const next = new Set(prev);
+          next.delete(path);
+          return next;
+        });
+      }
+    },
+    [workspaceId],
+  );
 
   useEffect(() => {
     if (!previewPath) {
@@ -696,22 +930,79 @@ export function FileTreePanel({
     setNewFileName("");
   }, []);
 
+  const openNewFolderPrompt = useCallback(
+    (parentFolder: string) => {
+      setNewFolderParent(parentFolder);
+      setNewFolderName("");
+      requestAnimationFrame(() => {
+        newFolderInputRef.current?.focus();
+      });
+    },
+    [],
+  );
+
+  const confirmNewFolder = useCallback(async () => {
+    const name = newFolderName.trim();
+    if (!name || newFolderParent === null) {
+      setNewFolderParent(null);
+      setNewFolderName("");
+      return;
+    }
+    const relativePath = newFolderParent ? `${newFolderParent}/${name}` : name;
+    try {
+      await createWorkspaceDirectory(workspaceId, relativePath);
+      onRefreshFiles?.();
+    } catch {
+      // create folder failed
+    }
+    setNewFolderParent(null);
+    setNewFolderName("");
+  }, [newFolderName, newFolderParent, workspaceId, onRefreshFiles]);
+
+  const cancelNewFolder = useCallback(() => {
+    setNewFolderParent(null);
+    setNewFolderName("");
+  }, []);
+
+  const resolveParentFolderForNode = useCallback(
+    (relativePath: string | null, nodeType: "file" | "folder" | null) => {
+      if (!relativePath) {
+        return "";
+      }
+      if (nodeType === "folder") {
+        return relativePath;
+      }
+      const separatorIndex = relativePath.lastIndexOf("/");
+      return separatorIndex >= 0 ? relativePath.slice(0, separatorIndex) : "";
+    },
+    [],
+  );
+
+  const selectedParentFolder = useMemo(
+    () => resolveParentFolderForNode(selectedNodePath, selectedNodeType),
+    [resolveParentFolderForNode, selectedNodePath, selectedNodeType],
+  );
+  const canTrashSelectedNode =
+    selectedNodeType !== null && selectedNodePath !== null && selectedNodePath.length > 0;
+
   const showContextMenu = useCallback(
     async (event: MouseEvent<HTMLButtonElement>, relativePath: string, isFolder: boolean) => {
       event.preventDefault();
       event.stopPropagation();
 
-      const parentFolder = isFolder
-        ? relativePath
-        : relativePath.includes("/")
-          ? relativePath.substring(0, relativePath.lastIndexOf("/"))
-          : "";
+      const parentFolder = resolveParentFolderForNode(relativePath, isFolder ? "folder" : "file");
 
       const menuItems = [
         await MenuItem.new({
           text: t("files.newFile"),
           action: () => {
             openNewFilePrompt(parentFolder);
+          },
+        }),
+        await MenuItem.new({
+          text: t("files.newFolder"),
+          action: () => {
+            openNewFolderPrompt(parentFolder);
           },
         }),
         await MenuItem.new({
@@ -761,7 +1052,16 @@ export function FileTreePanel({
       const position = new LogicalPosition(event.clientX, event.clientY);
       await menu.popup(position, window);
     },
-    [resolvePath, copyPath, trashItem, duplicateItem, openNewFilePrompt, t],
+    [
+      resolvePath,
+      copyPath,
+      trashItem,
+      duplicateItem,
+      openNewFilePrompt,
+      openNewFolderPrompt,
+      resolveParentFolderForNode,
+      t,
+    ],
   );
 
   useEffect(() => {
@@ -801,8 +1101,12 @@ export function FileTreePanel({
 
   const renderNode = (node: FileTreeNode, depth: number) => {
     const isFolder = node.type === "folder";
+    const isLazyFolder = isFolder && (node.isLazyLoadable ?? false);
     const hasChildren = isFolder && node.children.length > 0;
-    const isExpanded = hasChildren && expandedFolders.has(node.path);
+    const canExpand = isFolder && (hasChildren || isLazyFolder);
+    const isExpanded = canExpand && expandedFolders.has(node.path);
+    const isLazyLoading = isLazyFolder && loadingLazyDirectories.has(node.path);
+    const lazyLoadError = isLazyFolder ? lazyDirectoryLoadErrors.get(node.path) ?? null : null;
     const fileGitStatus = isFolder
       ? folderGitStatusMap.get(node.path) ?? null
       : gitStatusMap.get(node.path) ?? null;
@@ -810,8 +1114,8 @@ export function FileTreePanel({
       ? ` git-${fileGitStatus.toLowerCase()}`
       : "";
     const isGitignored = isFolder
-      ? gitignoredDirectories?.has(node.path) ?? false
-      : gitignoredFiles?.has(node.path) ?? false;
+      ? mergedGitignoredDirectories.has(node.path)
+      : mergedGitignoredFiles.has(node.path);
     return (
       <div key={node.path}>
         <div className="file-tree-row-wrap">
@@ -823,8 +1127,12 @@ export function FileTreePanel({
               setSelectedNodePath(node.path);
               setSelectedNodeType(node.type);
               if (isFolder) {
-                if (hasChildren) {
+                if (canExpand) {
+                  const shouldExpand = !expandedFolders.has(node.path);
                   toggleFolder(node.path);
+                  if (shouldExpand && isLazyFolder) {
+                    void loadLazyDirectoryChildren(node.path);
+                  }
                 }
                 return;
               }
@@ -840,7 +1148,7 @@ export function FileTreePanel({
               void showContextMenu(event, node.path, isFolder);
             }}
           >
-            {isFolder && hasChildren ? (
+            {isFolder && canExpand ? (
               <span className={`file-tree-chevron${isExpanded ? " is-open" : ""}`}>
                 ›
               </span>
@@ -883,69 +1191,102 @@ export function FileTreePanel({
             {node.children.map((child) => renderNode(child, depth + 1))}
           </div>
         )}
+        {isLazyFolder && isExpanded && node.children.length === 0 && (
+          <div className="file-tree-children">
+            {isLazyLoading ? (
+              <div className="file-tree-lazy-state">{t("files.loadingFiles")}</div>
+            ) : lazyLoadError ? (
+              <button
+                type="button"
+                className="file-tree-lazy-retry"
+                onClick={() => void loadLazyDirectoryChildren(node.path)}
+                title={lazyLoadError}
+              >
+                加载失败，点击重试
+              </button>
+            ) : (
+              <div className="file-tree-lazy-state">{t("files.noFilesAvailable")}</div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
 
   return (
     <aside className="diff-panel file-tree-panel" ref={panelRef}>
-      <div className="git-panel-header">
-        <PanelTabs active={filePanelMode} onSelect={onFilePanelModeChange} />
-        <div className="file-tree-meta">
-          <div className="file-tree-count">
-          {filteredFiles.length
-            ? normalizedQuery
-              ? t("files.matchCount", { count: filteredFiles.length })
-              : t("files.fileCount", { count: filteredFiles.length })
-            : showLoading
-              ? t("files.loadingFiles")
-              : t("files.noFiles")}
-        </div>
-          {onToggleRuntimeConsole ? (
+      <div className="file-tree-top-zone">
+        <div className="file-tree-root-row">
+          <div className="file-tree-root-wrap">
             <button
               type="button"
-              className={`ghost icon-button file-tree-toggle file-tree-toggle-runtime${isRuntimeConsoleVisible ? " is-active" : ""}`}
-              onClick={onToggleRuntimeConsole}
-              aria-label={t("files.openRunConsole")}
-              title={t("files.openRunConsole")}
+              className={`file-tree-row is-folder is-root${selectedNodePath === "" ? " is-selected" : ""}`}
+              onClick={() => {
+                setSelectedNodePath("");
+                setSelectedNodeType("folder");
+                setRootExpanded((prev) => !prev);
+              }}
+              onContextMenu={(event) => {
+                setSelectedNodePath("");
+                setSelectedNodeType("folder");
+                void showContextMenu(event, "", true);
+              }}
             >
-              <Construction aria-hidden />
+              <span className={`file-tree-chevron${isRootVisibleExpanded ? " is-open" : ""}`}>
+                ›
+              </span>
+              <span className="file-tree-icon file-tree-icon-root-special" aria-hidden>
+                <TreePine size={13} />
+              </span>
+              <span className="file-tree-name">{workspaceRootLabel}</span>
             </button>
-          ) : null}
-          {onOpenSpecHub ? (
+          </div>
+          <div className="file-tree-root-actions">
             <button
               type="button"
-              className={`ghost icon-button file-tree-toggle file-tree-toggle-spec-hub${isSpecHubActive ? " is-active" : ""}`}
-              onClick={onOpenSpecHub}
-              aria-label={t("sidebar.specHub")}
-              title={t("sidebar.specHub")}
+              className="ghost icon-button file-tree-root-action"
+              onClick={() => openNewFilePrompt(selectedParentFolder)}
+              aria-label={t("files.newFile")}
+              title={t("files.newFile")}
             >
-              <LayoutDashboard aria-hidden />
+              <FilePlus aria-hidden />
             </button>
-          ) : null}
-          {hasFolders ? (
             <button
               type="button"
-              className="ghost icon-button file-tree-toggle"
+              className="ghost icon-button file-tree-root-action"
+              onClick={() => openNewFolderPrompt(selectedParentFolder)}
+              aria-label={t("files.newFolder")}
+              title={t("files.newFolder")}
+            >
+              <FolderPlus aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="ghost icon-button file-tree-root-action"
               onClick={toggleAllFolders}
+              disabled={!hasFolders}
               aria-label={allVisibleExpanded ? t("files.collapseAllFolders") : t("files.expandAllFolders")}
               title={allVisibleExpanded ? t("files.collapseAllFolders") : t("files.expandAllFolders")}
             >
-              <ChevronsUpDown aria-hidden />
+              <SquareMinus aria-hidden />
             </button>
-          ) : null}
+            <button
+              type="button"
+              className="ghost icon-button file-tree-root-action file-tree-root-action-danger"
+              onClick={() => {
+                if (!canTrashSelectedNode || !selectedNodePath || !selectedNodeType) {
+                  return;
+                }
+                void trashItem(selectedNodePath, selectedNodeType === "folder");
+              }}
+              disabled={!canTrashSelectedNode}
+              aria-label={t("files.deleteItem")}
+              title={t("files.deleteItem")}
+            >
+              <Trash2 aria-hidden />
+            </button>
+          </div>
         </div>
-      </div>
-      <div className="file-tree-search">
-        <Search className="file-tree-search-icon" aria-hidden />
-        <input
-          className="file-tree-search-input"
-          type="search"
-          placeholder={t("files.filterPlaceholder")}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label={t("files.filterPlaceholder")}
-        />
       </div>
       <div className="file-tree-list">
         {showLoading ? (
@@ -958,12 +1299,12 @@ export function FileTreePanel({
               />
             ))}
           </div>
-        ) : nodes.length === 0 ? (
+        ) : !isRootVisibleExpanded ? null : nodes.length === 0 ? (
           <div className="file-tree-empty">
-            {normalizedQuery ? t("files.noMatchesFound") : t("files.noFilesAvailable")}
+            {t("files.noFilesAvailable")}
           </div>
         ) : (
-          nodes.map((node) => renderNode(node, 0))
+          nodes.map((node) => renderNode(node, 1))
         )}
       </div>
       {previewPath && previewAnchor
@@ -1039,6 +1380,48 @@ export function FileTreePanel({
                 onClick={() => void confirmNewFile()}
               >
                 {t("files.newFile")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {newFolderParent !== null && (
+        <div className="new-file-prompt" role="dialog" aria-modal="true">
+          <div className="new-file-prompt-backdrop" onClick={cancelNewFolder} />
+          <div className="new-file-prompt-card">
+            <div className="new-file-prompt-title">{t("files.newFolder")}</div>
+            {newFolderParent && (
+              <div className="new-file-prompt-path">{newFolderParent}/</div>
+            )}
+            <input
+              id="new-folder-name"
+              ref={newFolderInputRef}
+              className="new-file-prompt-input"
+              placeholder={t("files.newFolderNamePlaceholder")}
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelNewFolder();
+                }
+                if (e.key === "Enter" && newFolderName.trim()) {
+                  e.preventDefault();
+                  void confirmNewFolder();
+                }
+              }}
+            />
+            <div className="new-file-prompt-actions">
+              <button type="button" className="ghost" onClick={cancelNewFolder}>
+                {t("files.cancel")}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={!newFolderName.trim()}
+                onClick={() => void confirmNewFolder()}
+              >
+                {t("files.newFolder")}
               </button>
             </div>
           </div>

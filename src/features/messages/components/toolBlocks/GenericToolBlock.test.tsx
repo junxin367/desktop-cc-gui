@@ -142,6 +142,41 @@ describe("GenericToolBlock", () => {
     expect(screen.queryByText("@@ -1 +1 @@")).toBeNull();
   });
 
+  it("opens diff path when clicking file-change row link without toggling card", () => {
+    const onOpenDiffPath = vi.fn();
+    const onToggle = vi.fn();
+    render(
+      <GenericToolBlock
+        item={fileChangeItem}
+        isExpanded
+        onToggle={onToggle}
+        onOpenDiffPath={onOpenDiffPath}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "App.tsx" }));
+    expect(onOpenDiffPath).toHaveBeenCalledWith("src/App.tsx");
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("contains diff-route callback errors and keeps card interactive", () => {
+    const onOpenDiffPath = vi.fn(() => {
+      throw new Error("route failed");
+    });
+    const onToggle = vi.fn();
+    render(
+      <GenericToolBlock
+        item={fileChangeItem}
+        isExpanded
+        onToggle={onToggle}
+        onOpenDiffPath={onOpenDiffPath}
+      />,
+    );
+
+    expect(() => fireEvent.click(screen.getByRole("button", { name: "App.tsx" }))).not.toThrow();
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
   it("keeps markdown-like output in raw text mode", () => {
     render(
       <GenericToolBlock

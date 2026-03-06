@@ -11,6 +11,9 @@ import Columns2 from "lucide-react/dist/esm/icons/columns-2";
 import Pencil from "lucide-react/dist/esm/icons/pencil";
 import Eye from "lucide-react/dist/esm/icons/eye";
 import Code from "lucide-react/dist/esm/icons/code";
+import FileSearch from "lucide-react/dist/esm/icons/file-search";
+import Maximize2 from "lucide-react/dist/esm/icons/maximize-2";
+import Minimize2 from "lucide-react/dist/esm/icons/minimize-2";
 import Rows2 from "lucide-react/dist/esm/icons/rows-2";
 import Save from "lucide-react/dist/esm/icons/save";
 import Search from "lucide-react/dist/esm/icons/search";
@@ -23,6 +26,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
+import { openSearchPanel, search } from "@codemirror/search";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { RangeSetBuilder, type Extension } from "@codemirror/state";
 import {
@@ -65,6 +69,8 @@ type FileViewPanelProps = {
   onSelectOpenAppId: (id: string) => void;
   editorSplitLayout?: "vertical" | "horizontal";
   onToggleEditorSplitLayout?: () => void;
+  isEditorFileMaximized?: boolean;
+  onToggleEditorFileMaximized?: () => void;
   navigationTarget?: {
     path: string;
     line: number;
@@ -540,6 +546,8 @@ export function FileViewPanel({
   onSelectOpenAppId,
   editorSplitLayout = "vertical",
   onToggleEditorSplitLayout,
+  isEditorFileMaximized = false,
+  onToggleEditorFileMaximized,
   navigationTarget = null,
   onNavigateToLocation,
   onClose,
@@ -591,6 +599,7 @@ export function FileViewPanel({
   const [fileReferenceShouldRender, setFileReferenceShouldRender] = useState(false);
   const [fileReferenceVisible, setFileReferenceVisible] = useState(false);
   const splitResizeCleanupRef = useRef<(() => void) | null>(null);
+  const pendingOpenFindPanelRef = useRef(false);
 
   const isDirty = content !== savedContentRef.current;
   const gitStatusMap = useMemo(() => {
@@ -744,6 +753,7 @@ export function FileViewPanel({
   // Reset mode when file changes
   useEffect(() => {
     lspRequestIdRef.current += 1;
+    pendingOpenFindPanelRef.current = false;
     recentDefinitionTriggerRef.current = null;
     recentReferencesTriggerRef.current = null;
     setMode(initialMode);
@@ -809,6 +819,7 @@ export function FileViewPanel({
       ]),
     [],
   );
+  const persistentSearchExtension = useMemo(() => search({ top: true }), []);
 
   // Keyboard shortcut: Cmd+S / Ctrl+S (works in any mode, including preview)
   useEffect(() => {
@@ -1131,6 +1142,30 @@ export function FileViewPanel({
     [runDefinitionFromCursor, runReferencesFromCursor],
   );
 
+  const openFindPanelInEditor = useCallback(() => {
+    const view = cmRef.current?.view;
+    if (!view) {
+      return false;
+    }
+    openSearchPanel(view as unknown as EditorView);
+    view.focus();
+    return true;
+  }, []);
+
+  const handleOpenFindPanel = useCallback(() => {
+    if (isBinary || truncated) {
+      return;
+    }
+    pendingOpenFindPanelRef.current = true;
+    if (mode !== "edit") {
+      setMode("edit");
+      return;
+    }
+    if (openFindPanelInEditor()) {
+      pendingOpenFindPanelRef.current = false;
+    }
+  }, [isBinary, mode, openFindPanelInEditor, truncated]);
+
   const ctrlClickDefinitionExt = useMemo(
     () =>
       EditorView.domEventHandlers({
@@ -1195,6 +1230,33 @@ export function FileViewPanel({
     navigationTarget,
   ]);
 
+  useEffect(() => {
+    if (!pendingOpenFindPanelRef.current) {
+      return;
+    }
+    if (mode !== "edit" || isLoading || truncated) {
+      return;
+    }
+    let rafId = 0;
+    let attemptCount = 0;
+    const attemptOpen = () => {
+      attemptCount += 1;
+      if (openFindPanelInEditor()) {
+        pendingOpenFindPanelRef.current = false;
+        return;
+      }
+      if (attemptCount < 10) {
+        rafId = window.requestAnimationFrame(attemptOpen);
+      }
+    };
+    rafId = window.requestAnimationFrame(attemptOpen);
+    return () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [isLoading, mode, openFindPanelInEditor, truncated]);
+
   // Syntax highlighted lines for code preview
   const language = useMemo(() => languageFromPath(filePath), [filePath]);
   const lines = useMemo(() => content.split("\n"), [content]);
@@ -1205,6 +1267,22 @@ export function FileViewPanel({
         return html || "&nbsp;";
       }),
     [lines, language],
+  );
+  const editorExtensions = useMemo(
+    () => [
+      saveKeymapExt,
+      editorNavigationKeymapExt,
+      ctrlClickDefinitionExt,
+      persistentSearchExtension,
+      ...cmExtensions,
+    ],
+    [
+      cmExtensions,
+      ctrlClickDefinitionExt,
+      editorNavigationKeymapExt,
+      persistentSearchExtension,
+      saveKeymapExt,
+    ],
   );
 
   const visibleTabs = openTabs && openTabs.length > 0 ? openTabs : [filePath];
@@ -1412,39 +1490,41 @@ export function FileViewPanel({
       <div className="fvp-topbar-right">
         {!isBinary && (
           <>
-            {isMarkdown && mode === "preview" && (
-              <div className="fvp-toggle-group">
+            {mode === "preview" ? (
+              <div className="fvp-action-group fvp-preview-tools" role="group">
+                {isMarkdown && (
+                  <>
+                    <button
+                      type="button"
+                      className={`fvp-action-btn ${mdViewMode === "rendered" ? "is-active" : ""}`}
+                      onClick={() => setMdViewMode("rendered")}
+                    >
+                      <Eye size={14} aria-hidden />
+                      <span>{t("files.preview")}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`fvp-action-btn ${mdViewMode === "source" ? "is-active" : ""}`}
+                      onClick={() => setMdViewMode("source")}
+                    >
+                      <Code size={14} aria-hidden />
+                      <span>{t("files.source")}</span>
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
-                  className={`ghost fvp-toggle-btn ${mdViewMode === "rendered" ? "is-active" : ""}`}
-                  onClick={() => setMdViewMode("rendered")}
+                  className="fvp-action-btn"
+                  onClick={handleEnterEdit}
+                  disabled={truncated}
+                  title={truncated ? t("files.fileTooLarge") : t("files.edit")}
                 >
-                  <Eye size={14} aria-hidden />
-                  <span>{t("files.preview")}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`ghost fvp-toggle-btn ${mdViewMode === "source" ? "is-active" : ""}`}
-                  onClick={() => setMdViewMode("source")}
-                >
-                  <Code size={14} aria-hidden />
-                  <span>{t("files.source")}</span>
+                  <Pencil size={14} aria-hidden />
+                  <span>{t("files.edit")}</span>
                 </button>
               </div>
-            )}
-            {mode === "preview" ? (
-              <button
-                type="button"
-                className="ghost fvp-action-btn"
-                onClick={handleEnterEdit}
-                disabled={truncated}
-                title={truncated ? t("files.fileTooLarge") : t("files.edit")}
-              >
-                <Pencil size={14} aria-hidden />
-                <span>{t("files.edit")}</span>
-              </button>
             ) : (
-              <>
+              <div className="fvp-action-group" role="group">
                 <button
                   type="button"
                   className="ghost fvp-action-btn"
@@ -1490,7 +1570,7 @@ export function FileViewPanel({
                   <Save size={14} aria-hidden />
                   <span>{isSaving ? t("files.saving") : isDirty ? t("files.save") : t("files.saved")}</span>
                 </button>
-              </>
+              </div>
             )}
           </>
         )}
@@ -1623,12 +1703,7 @@ export function FileViewPanel({
                   lastReportedLineRangeRef.current = rangeKey;
                   onActiveFileLineRangeChange?.({ startLine, endLine });
                 }}
-                extensions={[
-                  saveKeymapExt,
-                  editorNavigationKeymapExt,
-                  ctrlClickDefinitionExt,
-                  ...cmExtensions,
-                ]}
+                extensions={editorExtensions}
                 theme="dark"
                 className="fvp-cm"
                 basicSetup={{
@@ -1676,12 +1751,7 @@ export function FileViewPanel({
               lastReportedLineRangeRef.current = rangeKey;
               onActiveFileLineRangeChange?.({ startLine, endLine });
             }}
-            extensions={[
-              saveKeymapExt,
-              editorNavigationKeymapExt,
-              ctrlClickDefinitionExt,
-              ...cmExtensions,
-            ]}
+            extensions={editorExtensions}
             theme="dark"
             className="fvp-cm"
             basicSetup={{
@@ -1799,6 +1869,32 @@ export function FileViewPanel({
             {t("files.addToChat")}
           </button>
         )}
+        {!isBinary && !truncated ? (
+          <button
+            type="button"
+            className="ghost fvp-action-btn fvp-find-toggle"
+            aria-label={t("files.openFind")}
+            title={t("files.openFind")}
+            onClick={handleOpenFindPanel}
+          >
+            <FileSearch size={12} aria-hidden />
+          </button>
+        ) : null}
+        {onToggleEditorFileMaximized ? (
+          <button
+            type="button"
+            className="ghost fvp-action-btn fvp-maximize-toggle"
+            aria-label={isEditorFileMaximized ? t("common.restore") : t("menu.maximize")}
+            title={isEditorFileMaximized ? t("common.restore") : t("menu.maximize")}
+            onClick={onToggleEditorFileMaximized}
+          >
+            {isEditorFileMaximized ? (
+              <Minimize2 size={12} aria-hidden />
+            ) : (
+              <Maximize2 size={12} aria-hidden />
+            )}
+          </button>
+        ) : null}
         {onToggleEditorSplitLayout ? (
           <button
             type="button"

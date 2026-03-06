@@ -35,6 +35,7 @@ import FileText from "lucide-react/dist/esm/icons/file-text";
 import GitBranch from "lucide-react/dist/esm/icons/git-branch";
 import LayoutDashboard from "lucide-react/dist/esm/icons/layout-dashboard";
 import LayoutGrid from "lucide-react/dist/esm/icons/layout-grid";
+import Lock from "lucide-react/dist/esm/icons/lock";
 import MessageSquareMore from "lucide-react/dist/esm/icons/message-square-more";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import Search from "lucide-react/dist/esm/icons/search";
@@ -92,6 +93,11 @@ type SidebarProps = {
   onToggleWorkspaceCollapse: (workspaceId: string, collapsed: boolean) => void;
   onSelectThread: (workspaceId: string, threadId: string) => void;
   onDeleteThread: (workspaceId: string, threadId: string) => void;
+  deleteConfirmThreadId?: string | null;
+  deleteConfirmWorkspaceId?: string | null;
+  deleteConfirmBusy?: boolean;
+  onCancelDeleteConfirm?: () => void;
+  onConfirmDeleteConfirm?: () => void;
   onSyncThread: (workspaceId: string, threadId: string) => void;
   pinThread: (workspaceId: string, threadId: string) => boolean;
   unpinThread: (workspaceId: string, threadId: string) => void;
@@ -115,6 +121,7 @@ type SidebarProps = {
   appMode: AppMode;
   onAppModeChange: (mode: AppMode) => void;
   onOpenMemory: () => void;
+  onLockPanel?: () => void;
   onOpenProjectMemory: () => void;
   onOpenReleaseNotes: () => void;
   onOpenSpecHub: () => void;
@@ -156,6 +163,11 @@ export function Sidebar({
   onToggleWorkspaceCollapse,
   onSelectThread,
   onDeleteThread,
+  deleteConfirmThreadId = null,
+  deleteConfirmWorkspaceId = null,
+  deleteConfirmBusy = false,
+  onCancelDeleteConfirm,
+  onConfirmDeleteConfirm,
   onSyncThread,
   pinThread,
   unpinThread,
@@ -179,6 +191,7 @@ export function Sidebar({
   appMode,
   onAppModeChange,
   onOpenMemory,
+  onLockPanel,
   onOpenProjectMemory,
   onOpenReleaseNotes,
   onOpenSpecHub,
@@ -741,6 +754,11 @@ export function Sidebar({
                   isThreadAutoNaming={isThreadAutoNaming}
                   onSelectThread={onSelectThread}
                   onShowThreadMenu={showThreadMenu}
+                  deleteConfirmThreadId={deleteConfirmThreadId}
+                  deleteConfirmWorkspaceId={deleteConfirmWorkspaceId}
+                  deleteConfirmBusy={deleteConfirmBusy}
+                  onCancelDeleteConfirm={onCancelDeleteConfirm}
+                  onConfirmDeleteConfirm={onConfirmDeleteConfirm}
                 />
               </div>
             )}
@@ -858,6 +876,11 @@ export function Sidebar({
                           onToggleWorkspaceCollapse={onToggleWorkspaceCollapse}
                           onSelectThread={onSelectThread}
                           onShowThreadMenu={showThreadMenu}
+                          deleteConfirmThreadId={deleteConfirmThreadId}
+                          deleteConfirmWorkspaceId={deleteConfirmWorkspaceId}
+                          deleteConfirmBusy={deleteConfirmBusy}
+                          onCancelDeleteConfirm={onCancelDeleteConfirm}
+                          onConfirmDeleteConfirm={onConfirmDeleteConfirm}
                           onShowWorktreeMenu={showWorktreeMenu}
                           onToggleExpanded={handleToggleExpanded}
                           onLoadOlderThreads={onLoadOlderThreads}
@@ -882,6 +905,11 @@ export function Sidebar({
                           onLoadOlderThreads={onLoadOlderThreads}
                           onSelectThread={onSelectThread}
                           onShowThreadMenu={showThreadMenu}
+                          deleteConfirmThreadId={deleteConfirmThreadId}
+                          deleteConfirmWorkspaceId={deleteConfirmWorkspaceId}
+                          deleteConfirmBusy={deleteConfirmBusy}
+                          onCancelDeleteConfirm={onCancelDeleteConfirm}
+                          onConfirmDeleteConfirm={onConfirmDeleteConfirm}
                         />
                       )}
                       {showThreadLoader && (
@@ -922,6 +950,18 @@ export function Sidebar({
                   >
                     <BriefcaseBusiness size={14} aria-hidden />
                     <span>{t("sidebar.quickSkills")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="sidebar-settings-dropdown-item"
+                    onClick={() => {
+                      setIsSettingsMenuOpen(false);
+                      onLockPanel?.();
+                    }}
+                  >
+                    <Lock size={14} aria-hidden />
+                    <span>{t("lockScreen.lock")}</span>
                   </button>
                   <button
                     type="button"

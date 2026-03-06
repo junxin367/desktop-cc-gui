@@ -46,6 +46,28 @@ describe("realtime adapters", () => {
     expect(event?.delta).toBe("checking files...");
   });
 
+  it("maps fileChange outputDelta to normalized tool output delta event", () => {
+    const event = codexRealtimeAdapter.mapEvent({
+      workspaceId: "ws-file",
+      message: {
+        method: "item/fileChange/outputDelta",
+        params: {
+          threadId: "thread-file",
+          itemId: "file-1",
+          delta: "@@ -0,0 +1 @@\n+const x = 1;",
+        },
+      },
+    });
+    expect(event).toBeTruthy();
+    expect(event?.operation).toBe("appendToolOutputDelta");
+    expect(event?.item.kind).toBe("tool");
+    if (event?.item.kind === "tool") {
+      expect(event.item.toolType).toBe("fileChange");
+      expect(event.item.title).toBe("File changes");
+      expect(event.item.output).toContain("const x = 1");
+    }
+  });
+
   it("maps opencode text:delta to assistant delta and ignores heartbeat", () => {
     const deltaEvent = opencodeRealtimeAdapter.mapEvent({
       workspaceId: "ws-3",

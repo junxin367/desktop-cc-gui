@@ -51,6 +51,19 @@ type LinkBlockProps = {
   urls: string[];
 };
 
+function areMarkdownPropsEqual(prev: MarkdownProps, next: MarkdownProps) {
+  return (
+    prev.value === next.value &&
+    prev.className === next.className &&
+    prev.codeBlock === next.codeBlock &&
+    prev.codeBlockStyle === next.codeBlockStyle &&
+    prev.codeBlockCopyUseModifier === next.codeBlockCopyUseModifier &&
+    prev.codexLeadMarkerConfig === next.codexLeadMarkerConfig &&
+    prev.onOpenFileLink === next.onOpenFileLink &&
+    prev.onOpenFileLinkMenu === next.onOpenFileLinkMenu
+  );
+}
+
 function extractLanguageTag(className?: string) {
   if (!className) {
     return null;
@@ -985,4 +998,4 @@ export const Markdown = memo(function Markdown({
       </ReactMarkdown>
     </div>
   );
-});
+}, areMarkdownPropsEqual);

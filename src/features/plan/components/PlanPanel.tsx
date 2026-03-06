@@ -1,5 +1,4 @@
 import { useTranslation } from "react-i18next";
-import X from "lucide-react/dist/esm/icons/x";
 import type { TurnPlan } from "../../../types";
 
 type PlanPanelProps = {
@@ -58,12 +57,12 @@ export function PlanPanel({
           {onClose && (
             <button
               type="button"
-              className="plan-close-btn"
+              className="plan-toggle-btn"
               onClick={onClose}
               aria-label={t("tools.closePlanPanel")}
               title={t("tools.closePlanPanel")}
             >
-              <X size={14} aria-hidden />
+              <span className="plan-toggle-thumb" aria-hidden />
             </button>
           )}
         </div>

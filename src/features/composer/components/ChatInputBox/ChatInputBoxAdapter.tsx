@@ -20,6 +20,7 @@ import type {
   ChatInputBoxHandle,
   Attachment,
   ContextSelectionChip,
+  DualContextUsageViewModel,
   PermissionMode,
   ReasoningEffort,
   SelectedAgent,
@@ -128,6 +129,9 @@ export interface ChatInputBoxAdapterProps {
 
   // Context usage
   contextUsage?: { used: number; total: number } | null;
+  contextDualViewEnabled?: boolean;
+  dualContextUsage?: DualContextUsageViewModel | null;
+  onRequestContextCompaction?: () => Promise<void> | void;
   accountRateLimits?: RateLimitSnapshot | null;
   usageShowRemaining?: boolean;
   onRefreshAccountRateLimits?: () => Promise<void> | void;
@@ -334,6 +338,9 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
       onAddAttachment,
       onRemoveAttachment,
       contextUsage,
+      contextDualViewEnabled = false,
+      dualContextUsage,
+      onRequestContextCompaction,
       accountRateLimits,
       usageShowRemaining,
       onRefreshAccountRateLimits,
@@ -806,6 +813,9 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
         usageUsedTokens={contextUsage?.used}
         usageMaxTokens={contextUsage?.total}
         showUsage={true}
+        contextDualViewEnabled={contextDualViewEnabled}
+        dualContextUsage={dualContextUsage}
+        onRequestContextCompaction={onRequestContextCompaction}
         accountRateLimits={accountRateLimits}
         usageShowRemaining={usageShowRemaining}
         onRefreshAccountRateLimits={onRefreshAccountRateLimits}

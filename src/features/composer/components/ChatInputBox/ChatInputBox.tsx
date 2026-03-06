@@ -108,6 +108,9 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       usageUsedTokens,
       usageMaxTokens,
       showUsage = true,
+      contextDualViewEnabled = false,
+      dualContextUsage = null,
+      onRequestContextCompaction,
       accountRateLimits,
       usageShowRemaining = false,
       onRefreshAccountRateLimits,
@@ -1036,6 +1039,10 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
             usedTokens={usageUsedTokens}
             maxTokens={usageMaxTokens}
             showUsage={showUsage}
+            contextDualViewEnabled={contextDualViewEnabled}
+            dualContextUsage={dualContextUsage}
+            onRequestContextCompaction={onRequestContextCompaction}
+            isLoading={isLoading}
             onClearFile={onClearContext}
             onAddAttachment={handleAddAttachment}
             selectedAgent={selectedAgent}

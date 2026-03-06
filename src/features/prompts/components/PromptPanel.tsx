@@ -8,7 +8,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { CustomPromptOption } from "../../../types";
 import { expandCustomPromptText, getPromptArgumentHint } from "../../../utils/customPrompts";
-import { PanelTabs, type PanelTabId } from "../../layout/components/PanelTabs";
+import type { PanelTabId } from "../../layout/components/PanelTabs";
 import { Menu, MenuItem } from "@tauri-apps/api/menu";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -69,8 +69,8 @@ function isWorkspacePrompt(prompt: CustomPromptOption) {
 export function PromptPanel({
   prompts,
   workspacePath,
-  filePanelMode,
-  onFilePanelModeChange,
+  filePanelMode: _filePanelMode,
+  onFilePanelModeChange: _onFilePanelModeChange,
   onSendPrompt,
   onSendPromptToNewAgent,
   onCreatePrompt,
@@ -404,7 +404,6 @@ export function PromptPanel({
   return (
     <aside className="diff-panel prompt-panel">
       <div className="git-panel-header">
-        <PanelTabs active={filePanelMode} onSelect={onFilePanelModeChange} />
         <div className="prompt-panel-meta">
           {hasPrompts ? t("prompts.promptCount", { count: totalCount }) : t("prompts.noPrompts")}
         </div>

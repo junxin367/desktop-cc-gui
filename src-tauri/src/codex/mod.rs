@@ -803,6 +803,75 @@ pub(crate) async fn turn_interrupt(
 }
 
 #[tauri::command]
+pub(crate) async fn thread_compact(
+    workspace_id: String,
+    thread_id: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Value, String> {
+    let normalized_thread_id = thread_id.trim().to_string();
+    if normalized_thread_id.is_empty() {
+        return Err("thread_id is required".to_string());
+    }
+
+    if remote_backend::is_remote_mode(&*state).await {
+        return remote_backend::call_remote(
+            &*state,
+            app,
+            "thread_compact",
+            json!({ "workspaceId": workspace_id, "threadId": normalized_thread_id }),
+        )
+        .await;
+    }
+
+    ensure_codex_session(&workspace_id, &state, &app).await?;
+    let _ = app.emit(
+        "app-server-event",
+        AppServerEvent {
+            workspace_id: workspace_id.clone(),
+            message: json!({
+                "method": "thread/compacting",
+                "params": {
+                    "threadId": normalized_thread_id,
+                    "thread_id": normalized_thread_id,
+                    "auto": false,
+                    "manual": true
+                }
+            }),
+        },
+    );
+
+    match codex_core::thread_compact_core(
+        &state.sessions,
+        workspace_id.clone(),
+        normalized_thread_id.clone(),
+    )
+    .await
+    {
+        Ok(result) => Ok(result),
+        Err(error) => {
+            let _ = app.emit(
+                "app-server-event",
+                AppServerEvent {
+                    workspace_id,
+                    message: json!({
+                        "method": "thread/compactionFailed",
+                        "params": {
+                            "threadId": normalized_thread_id,
+                            "thread_id": normalized_thread_id,
+                            "auto": false,
+                            "manual": true,
+                            "reason": error
+                        }
+                    }),
+                },
+            );
+            Err(error)
+        }
+    }
+}
+
+#[tauri::command]
 pub(crate) async fn start_review(
     workspace_id: String,
     thread_id: String,

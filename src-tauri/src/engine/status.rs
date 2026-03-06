@@ -252,7 +252,7 @@ fn get_codex_models() -> Vec<ModelInfo> {
             .as_default()
             .with_provider("openai"),
         ModelInfo::new("gpt-5.2-codex", "GPT-5.2 Codex").with_provider("openai"),
-        ModelInfo::new("gpt-5.2", "GPT-5.2").with_provider("openai"),
+        ModelInfo::new("gpt-5.4", "GPT-5.4").with_provider("openai"),
         ModelInfo::new("gpt-5.1-codex-max", "GPT-5.1 Codex Max").with_provider("openai"),
         ModelInfo::new("gpt-5.1-codex-mini", "GPT-5.1 Codex Mini").with_provider("openai"),
     ]
@@ -512,13 +512,14 @@ mod tests {
     fn opencode_models_have_defaults() {
         let output = r#"
 openai/gpt-5.3-codex
-openai/gpt-5.2
+openai/gpt-5.4
 opencode/gpt-5-nano
 "#;
         let models = parse_opencode_models_output(output);
         assert!(!models.is_empty());
         assert!(models.iter().any(|m| m.default));
         assert!(models.iter().any(|m| m.id == "openai/gpt-5.3-codex"));
+        assert!(models.iter().any(|m| m.id == "openai/gpt-5.4"));
     }
 
     #[test]

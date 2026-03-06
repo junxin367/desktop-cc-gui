@@ -217,6 +217,9 @@ export function useComposerAutocomplete({
     if (!source) {
       return [];
     }
+    if (state.trigger === "@") {
+      return source.items.slice(0, Math.max(0, maxResults));
+    }
     const ranked = rankItems(source.items, state.query);
     return ranked.slice(0, Math.max(0, maxResults));
   }, [state.active, state.query, state.trigger, triggers, maxResults]);
