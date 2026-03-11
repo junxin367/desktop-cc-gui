@@ -212,6 +212,43 @@ export function normalizePlanUpdate(
   };
 }
 
+export function settlePlanInProgressSteps(
+  plan: TurnPlan | null,
+  targetStatus: Exclude<TurnPlanStepStatus, "inProgress">,
+): TurnPlan | null {
+  if (!plan) {
+    return plan;
+  }
+  let changed = false;
+  const nextSteps = plan.steps.map((step) => {
+    if (step.status !== "inProgress") {
+      return step;
+    }
+    changed = true;
+    return {
+      ...step,
+      status: targetStatus,
+    };
+  });
+  if (!changed) {
+    return plan;
+  }
+  return {
+    ...plan,
+    steps: nextSteps,
+  };
+}
+
+export function resolvePlanStepStatusForDisplay(
+  status: TurnPlanStepStatus,
+  isProcessing: boolean,
+): TurnPlanStepStatus {
+  if (!isProcessing && status === "inProgress") {
+    return "pending";
+  }
+  return status;
+}
+
 export function parseReviewTarget(input: string): ReviewTarget {
   const trimmed = input.trim();
   const rest = trimmed.replace(/^\/review\b/i, "").trim();

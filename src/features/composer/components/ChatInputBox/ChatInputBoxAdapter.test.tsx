@@ -194,6 +194,62 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
     expect(onTextChange).toHaveBeenCalledWith('hello', null);
   });
 
+  it('forwards dual context usage model and flag to ChatInputBox', async () => {
+    renderAdapter({
+      contextUsage: { used: 120_000, total: 256_000 },
+      contextDualViewEnabled: true,
+      dualContextUsage: {
+        usedTokens: 80_000,
+        contextWindow: 256_000,
+        percent: 31.25,
+        hasUsage: true,
+        compactionState: 'idle',
+      },
+    });
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+
+    const latest = mockState.latestProps as {
+      contextDualViewEnabled?: boolean;
+      dualContextUsage?: {
+        usedTokens: number;
+        contextWindow: number;
+        percent: number;
+        hasUsage: boolean;
+        compactionState: string;
+      } | null;
+      usageUsedTokens?: number;
+      usageMaxTokens?: number;
+    };
+
+    expect(latest.contextDualViewEnabled).toBe(true);
+    expect(latest.dualContextUsage).toMatchObject({
+      usedTokens: 80_000,
+      contextWindow: 256_000,
+      percent: 31.25,
+      hasUsage: true,
+      compactionState: 'idle',
+    });
+    expect(latest.usageUsedTokens).toBe(120_000);
+    expect(latest.usageMaxTokens).toBe(256_000);
+  });
+
+  it('forwards manual context compaction callback to ChatInputBox', async () => {
+    const onRequestContextCompaction = vi.fn();
+    renderAdapter({
+      selectedEngine: 'codex',
+      contextDualViewEnabled: true,
+      onRequestContextCompaction,
+    });
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+
+    const latest = mockState.latestProps as {
+      onRequestContextCompaction?: () => Promise<void> | void;
+    };
+    expect(latest.onRequestContextCompaction).toBe(onRequestContextCompaction);
+  });
+
   it('bridges @@ manual memory provider and selection callback', async () => {
     const onManualMemorySelect = vi.fn();
     mockState.projectMemoryList.mockResolvedValue({

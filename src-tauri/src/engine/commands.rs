@@ -2606,20 +2606,20 @@ pub async fn engine_send_message(
                 .get_claude_session(&workspace_id, &workspace_path)
                 .await;
 
-            // Use explicit session_id from frontend (for Claude history resume),
-            // or fall back to the session's tracked session_id ONLY when continuing
-            // BUG FIX: When creating a new agent (continue_session=false), we must NOT
-            // auto-use the old session_id, otherwise the new conversation inherits
-            // the old conversation's context!
-            let resolved_session_id = if session_id.is_some() {
-                // Frontend explicitly provided a session_id (resuming from history)
-                session_id
-            } else if continue_session {
-                // Frontend wants to continue the current session
-                session.get_session_id().await
+            // Resolve session id according to mode:
+            // 1) continue_session=true  -> explicit session_id or tracked session id
+            // 2) continue_session=false -> force a fresh unique session id so concurrent
+            //    Claude turns never collapse into one shared persisted session.
+            let resolved_session_id = if continue_session {
+                if session_id.is_some() {
+                    session_id
+                } else {
+                    session.get_session_id().await
+                }
             } else {
-                // New agent/conversation - do NOT reuse old session_id
-                None
+                Some(
+                    session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                )
             };
 
             let sanitized_model = model
@@ -2646,7 +2646,7 @@ pub async fn engine_send_message(
                 effort,
                 access_mode,
                 images,
-                continue_session: resolved_session_id.is_some(),
+                continue_session,
                 session_id: resolved_session_id,
                 agent: None,
                 variant: None,
@@ -2805,12 +2805,14 @@ pub async fn engine_send_message(
                 .get_or_create_opencode_session(&workspace_id, &workspace_path)
                 .await;
 
-            let resolved_session_id = if session_id.is_some() {
-                session_id
-            } else if continue_session {
-                session.get_session_id().await
+            let resolved_session_id = if continue_session {
+                if session_id.is_some() {
+                    session_id
+                } else {
+                    session.get_session_id().await
+                }
             } else {
-                None
+                Some(session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()))
             };
 
             let sanitized_model = model
@@ -2839,7 +2841,7 @@ pub async fn engine_send_message(
                 effort,
                 access_mode,
                 images,
-                continue_session: resolved_session_id.is_some(),
+                continue_session,
                 session_id: resolved_session_id,
                 agent,
                 variant,
@@ -2993,7 +2995,7 @@ pub async fn engine_send_message_sync(
                 effort,
                 access_mode,
                 images,
-                continue_session: resolved_session_id.is_some(),
+                continue_session,
                 session_id: resolved_session_id,
                 agent: None,
                 variant: None,
@@ -3026,12 +3028,14 @@ pub async fn engine_send_message_sync(
             let session = manager
                 .get_or_create_opencode_session(&workspace_id, &workspace_path)
                 .await;
-            let resolved_session_id = if session_id.is_some() {
-                session_id
-            } else if continue_session {
-                session.get_session_id().await
+            let resolved_session_id = if continue_session {
+                if session_id.is_some() {
+                    session_id
+                } else {
+                    session.get_session_id().await
+                }
             } else {
-                None
+                Some(session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()))
             };
 
             let sanitized_model = model
@@ -3054,7 +3058,7 @@ pub async fn engine_send_message_sync(
                 effort,
                 access_mode,
                 images,
-                continue_session: resolved_session_id.is_some(),
+                continue_session,
                 session_id: resolved_session_id,
                 agent,
                 variant,

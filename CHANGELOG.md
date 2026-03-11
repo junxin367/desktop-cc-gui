@@ -2,6 +2,108 @@
 
 ---
 
+##### **2026年3月10日（v0.2.5）**
+
+English:
+
+✨ Features
+- Unify file tree visual semantics across Git Diff / History / Worktree panels: add hierarchical guide lines, directory FileIcon support, and `__repo_root__` display logic
+- Redesign Diff/History panel interaction: collapsible commit section, external control bar via header portal, sticky header with loading states, and mode-switch icons
+- Redesign Pull/Push/Worktree branch selectors: grouped tabs, search filtering, custom dropdown panels with scope buckets, improving multi-branch usability
+- Integrate Codex Fast/Review quick actions: Speed sub-menu (Standard/Fast) and Review entry in ConfigSelect, Review Inline Prompt with base-branch and commit search/filter
+- Redesign home page with HomeChat as unified entry, auto-ensure default workspace directory, and pin default workspace to sidebar top
+- Enhance search block display and link interaction with webSearch data format compatibility
+
+🐛 Fixes
+- Fix Codex engine first-session timing causing missing model: add backend model fallback (frontend → workspace config → model/list default)
+- Fix Codex first-session thread creation compatibility: support multiple threadId response formats, add optimistic user message to eliminate send delay
+- Fix Codex first-send approval dialog not appearing timely: unify approval/request event routing and request_id parsing
+- Unify network error handling: add structured first-packet timeout error, network error classification and localized user hints, enhance proxy environment propagation
+- Fix /review execution path under Claude engine and enhance thread compatibility fallback (legacy thread id auto-rebind retry)
+- Fix Composer false compacting state on first response
+- Fix Win/Mac dropdown menu scroll compatibility
+- Fix macOS titlebar offset trigger condition and enhance platform detection (add macOS detection, narrow to specific layout combination state)
+- Fix workspace title scroll overlap and background color mismatch in sidebar
+- Remove unstable proxy environment injection and startup proxy synchronization logic
+
+中文：
+
+✨ Features
+- 统一 Git Diff / History / Worktree 文件树视觉语义：新增层级竖向引导线、目录 FileIcon 支持与 `__repo_root__` 根目录显示逻辑
+- 重构 Diff/History 面板交互：新增提交区折叠、通过 portal 实现的外置控制栏、sticky header（含加载状态文案）与模式切换图标增强
+- 重构 Pull/Push/Worktree 分支选择器：支持分组 Tab、搜索过滤、自定义下拉面板与 scope 分桶展示，提升多分支场景可用性
+- 集成 Codex Fast/Review 快捷入口：ConfigSelect 新增 Speed 二级菜单（Standard/Fast）与 Review 入口，Review Inline Prompt 支持基线分支与提交搜索过滤
+- 重构首页会话入口：引入 HomeChat 作为统一入口，自动解析并确保默认工作区目录存在，侧边栏默认工作区固定置顶
+- 优化搜索块展示与链接交互，兼容 webSearch 数据格式
+
+🐛 Fixes
+- 修复 Codex 引擎首会话时序导致 model 缺失：增加后端模型兜底解析（优先前端传入 → workspace config → model/list 默认）
+- 修复 Codex 首次会话线程创建兼容性：兼容多种 threadId 返回形态，新增 optimistic user message 消除首次发送延迟
+- 修复 Codex 首发审批弹窗未及时出现：兼容 approval/request 事件路由，统一 request_id 解析
+- 统一网络异常处理：新增首包超时结构化错误、网络错误分类与本地化提示，增强代理环境透传
+- 修复 /review 在 Claude 场景下的执行链路并增强线程兼容兜底（legacy thread id 自动重绑重试）
+- 修复 Composer 首次响应时错误触发 compacting 状态
+- 修复 Win/Mac 下拉菜单滚动兼容性
+- 修复 macOS 标题栏偏移触发条件并增强平台识别（新增 macOS 判断，收敛仅在特定布局组合态下生效）
+- 修复工作区标题滚动重叠与背景色差
+- 移除不稳定的代理环境注入与启动期代理同步逻辑
+
+---
+
+##### **2026年3月6日（v0.2.4）**
+
+English:
+
+✨ Features
+- Add Codex context dual-view with automatic compaction flow: backend auto-trigger state machine (92% threshold, 70% target), manual compaction RPC, dual-view usage indicator (input+cached tokens), and full event/error propagation across app layers
+- Add file tree root node with recursive lazy loading for special directories: workspace root node with expand/collapse, sticky toolbar, new file/folder actions, and multi-level lazy loading for `node_modules` and similar directories
+- Add workspace full-text search with case-sensitive, whole-word, and regex options backed by a new Rust search command
+- Add thread delete confirmation popover to prevent accidental deletions
+- Add file panel maximize capability and enhance find panel interaction
+- Add project session management in settings with project/worktree switching, bulk selection, and delete confirmation
+- Restyle file panel action area to icon+text toolbar
+
+⚡ Performance
+- Increase workspace file scan limit from 20,000 to 100,000 in both Tauri and daemon paths
+
+🎨 UI Improvements
+- Optimize message list rendering with custom memo comparator; freeze displayed items during active text selection to preserve highlights during streaming
+- Optimize file changes panel display density and hover background behavior
+
+🐛 Fixes
+- Fix `@@` manual memory selector scroll not working in composer
+- Fix file changes panel to support click-to-diff and improve display density
+- Fix Codex context compaction state and manual compaction interaction consistency: unify context usage calculation (last snapshot), fix compacting state event chain, prevent double-click on manual compaction button
+- Fix Codex background helper thread causing session list to disappear after workspace switch
+- Fix Codex sessions with `source=vscode` being incorrectly filtered out, causing history loss after restart
+
+中文：
+
+✨ Features
+- 新增 Codex 上下文双视图与自动压缩链路：后端自动触发状态机（92% 阈值、70% 目标），手动压缩 RPC，双视图用量指示器（input+cached token），完整事件与错误传播链路
+- 新增文件树根节点与特殊目录递归懒加载：工作区根节点支持展开/收起、Sticky 工具栏、新建文件/文件夹操作，`node_modules` 等特殊目录支持多层级逐级懒加载
+- 新增工作区全文搜索：支持区分大小写、全词匹配和正则表达式，由新增 Rust 搜索命令支撑
+- 新增线程删除二次确认弹窗，防止误操作
+- 新增文件面板最大化能力，优化查找面板交互
+- 新增设置页项目会话管理：支持按项目/工作树切换、批量选择与二次确认删除
+- 文件面板操作区改为图标+文本工具栏样式
+
+⚡ Performance
+- 工作区文件扫描上限从 20,000 提升至 100,000（Tauri 和 daemon 路径同步升级）
+
+🎨 UI Improvements
+- 消息列表渲染优化：自定义 memo 比较器，用户选中文本时冻结列表渲染，避免流式更新打断文字选取
+- 优化会话幕布文件变更面板展示密度与悬停背景表现
+
+🐛 Fixes
+- 修复 Composer 中 `@@` 手动记忆选择器上下滚动失效
+- 修复会话幕布 File changes 支持点击查看 diff，并优化展示密度
+- 修复 Codex 上下文压缩状态与手动压缩交互一致性：统一上下文占用统计口径（last 快照）、补齐压缩状态事件驱动链路、修复手动压缩按钮防连点
+- 修复 Codex 后台 helper 线程导致会话侧栏切换后消失
+- 修复 Codex `source=vscode` 会话被误过滤，导致重启后历史丢失
+
+---
+
 ##### **2026年3月5日（v0.2.3）**
 
 English:

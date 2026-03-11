@@ -6,9 +6,7 @@ import Check from "lucide-react/dist/esm/icons/check";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
 import Copy from "lucide-react/dist/esm/icons/copy";
-import Layers3 from "lucide-react/dist/esm/icons/layers-3";
 import Terminal from "lucide-react/dist/esm/icons/terminal";
-import Wrench from "lucide-react/dist/esm/icons/wrench";
 import X from "lucide-react/dist/esm/icons/x";
 import type {
   ConversationItem,
@@ -26,7 +24,11 @@ import { CollapsibleUserTextBlock } from "./CollapsibleUserTextBlock";
 import { DiffBlock } from "../../git/components/DiffBlock";
 import { languageFromPath } from "../../../utils/syntax";
 import { useFileLinkOpener } from "../hooks/useFileLinkOpener";
-import { groupToolItems, type GroupedEntry } from "../utils/groupToolItems";
+import {
+  groupToolItems,
+  shouldHideToolItemForRender,
+  type GroupedEntry,
+} from "../utils/groupToolItems";
 import { extractCommandMessageDisplayText } from "../utils/commandMessageTags";
 import {
   ToolBlockRenderer,
@@ -86,6 +88,7 @@ type WorkingIndicatorProps = {
 
 type MessageRowProps = {
   item: Extract<ConversationItem, { kind: "message" }>;
+  isStreaming?: boolean;
   activeEngine?: "claude" | "codex" | "gemini" | "opencode";
   activeCollaborationModeId?: string | null;
   enableCollaborationBadge?: boolean;
@@ -136,6 +139,68 @@ type MemoryContextSummary = {
   lines: string[];
 };
 
+function areMessageImagesEqual(
+  previous: Extract<ConversationItem, { kind: "message" }>["images"],
+  next: Extract<ConversationItem, { kind: "message" }>["images"],
+) {
+  if (previous === next) {
+    return true;
+  }
+  if (!previous?.length && !next?.length) {
+    return true;
+  }
+  if (!previous || !next || previous.length !== next.length) {
+    return false;
+  }
+  return previous.every((image, index) => image === next[index]);
+}
+
+function areMessageItemsEqual(
+  previous: Extract<ConversationItem, { kind: "message" }>,
+  next: Extract<ConversationItem, { kind: "message" }>,
+) {
+  return (
+    previous === next ||
+    (
+      previous.id === next.id &&
+      previous.role === next.role &&
+      previous.text === next.text &&
+      areMessageImagesEqual(previous.images, next.images)
+    )
+  );
+}
+
+function areMessageRowPropsEqual(
+  previous: MessageRowProps,
+  next: MessageRowProps,
+) {
+  return (
+    areMessageItemsEqual(previous.item, next.item) &&
+    previous.isStreaming === next.isStreaming &&
+    previous.activeEngine === next.activeEngine &&
+    previous.enableCollaborationBadge === next.enableCollaborationBadge &&
+    previous.presentationProfile === next.presentationProfile &&
+    previous.isCopied === next.isCopied &&
+    previous.onCopy === next.onCopy &&
+    previous.codeBlockCopyUseModifier === next.codeBlockCopyUseModifier &&
+    previous.onOpenFileLink === next.onOpenFileLink &&
+    previous.onOpenFileLinkMenu === next.onOpenFileLinkMenu
+  );
+}
+
+function isSelectionInsideNode(selection: Selection | null, node: HTMLElement | null) {
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !node) {
+    return false;
+  }
+  for (let index = 0; index < selection.rangeCount; index += 1) {
+    const range = selection.getRangeAt(index);
+    if (node.contains(range.commonAncestorContainer)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 const SCROLL_THRESHOLD_PX = 120;
 const OPENCODE_NON_STREAMING_HINT_DELAY_MS = 12_000;
 const PARAGRAPH_BREAK_SPLIT_REGEX = /\r?\n[^\S\r\n]*\r?\n+/;
@@ -149,6 +214,7 @@ const MODE_FALLBACK_MARKER_REGEX = /User request\s*:\s*/i;
 const MODE_FALLBACK_PREFIX_REGEX =
   /^(?:collaboration mode:\s*code\.|execution policy \(default mode\):|execution policy \(plan mode\):)/i;
 const MESSAGES_PERF_DEBUG_FLAG_KEY = "mossx.debug.messages.perf";
+const CLAUDE_HIDE_REASONING_MODULE_FLAG_KEY = "mossx.claude.hideReasoningModule";
 const MESSAGES_SLOW_RENDER_WARN_MS = 18;
 const MESSAGES_SLOW_ANCHOR_WARN_MS = 8;
 const VISIBLE_MESSAGE_WINDOW = 30;
@@ -163,24 +229,27 @@ function isMessagesPerfDebugEnabled(): boolean {
   return window.localStorage.getItem(MESSAGES_PERF_DEBUG_FLAG_KEY) === "1";
 }
 
+function shouldHideClaudeReasoningModule(): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  try {
+    const value = window.localStorage.getItem(CLAUDE_HIDE_REASONING_MODULE_FLAG_KEY);
+    if (!value) {
+      return true;
+    }
+    const normalized = value.trim().toLowerCase();
+    return !(normalized === "0" || normalized === "false" || normalized === "off");
+  } catch {
+    return true;
+  }
+}
+
 function logMessagesPerf(label: string, payload: Record<string, unknown>): void {
   if (!isMessagesPerfDebugEnabled()) {
     return;
   }
   console.info(`[messages][perf] ${label}`, payload);
-}
-
-function normalizeCollaborationModeId(
-  value: unknown,
-): "plan" | "code" | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "plan" || normalized === "code") {
-    return normalized;
-  }
-  return null;
 }
 
 function extractModeFallbackUserInput(
@@ -210,6 +279,36 @@ function toConversationEngine(
     return engine;
   }
   return "codex";
+}
+
+function resolveRenderableItems({
+  legacyItems,
+  legacyThreadId,
+  legacyWorkspaceId,
+  conversationState,
+}: {
+  legacyItems: ConversationItem[];
+  legacyThreadId: string | null;
+  legacyWorkspaceId: string | null;
+  conversationState: ConversationState | null;
+}) {
+  if (!conversationState) {
+    return legacyItems;
+  }
+  const stateItems = conversationState.items;
+  const stateThreadId = conversationState.meta.threadId || null;
+  const stateWorkspaceId = conversationState.meta.workspaceId || null;
+  const isSameThread =
+    (legacyThreadId ?? null) === stateThreadId &&
+    (legacyWorkspaceId ?? null) === stateWorkspaceId;
+  const stateEngine = conversationState.meta.engine;
+  // Claude streaming path relies on the latest legacy items to avoid
+  // delayed body flush in the UI. Keep other engines on conversation state
+  // to preserve their existing markdown rendering behavior.
+  if (isSameThread && stateEngine === "claude") {
+    return legacyItems;
+  }
+  return stateItems;
 }
 
 function sanitizeReasoningTitle(title: string) {
@@ -287,6 +386,30 @@ function stripLeadingReasoningTitleOverlap(
   }
 
   return trimmedContent;
+}
+
+function splitComparableReasoningClauses(value: string) {
+  return value
+    .split(/[。！？!?；;\n]+/)
+    .map((entry) => compactComparableReasoningText(entry.trim()))
+    .filter((entry) => entry.length >= 6);
+}
+
+function hasSharedReasoningClauseSuffix(left: string, right: string) {
+  const leftClauses = splitComparableReasoningClauses(left);
+  const rightClauses = splitComparableReasoningClauses(right);
+  if (leftClauses.length < 3 || rightClauses.length < 3) {
+    return false;
+  }
+  const max = Math.min(leftClauses.length, rightClauses.length);
+  let shared = 0;
+  for (let offset = 1; offset <= max; offset += 1) {
+    if (leftClauses[leftClauses.length - offset] !== rightClauses[rightClauses.length - offset]) {
+      break;
+    }
+    shared += 1;
+  }
+  return shared >= 2;
 }
 
 function dedupeAdjacentReasoningParagraphs(value: string) {
@@ -440,6 +563,8 @@ function parseReasoning(item: Extract<ConversationItem, { kind: "reasoning" }>) 
       bodyParts = [normalizedContentBody];
     } else if (compactSummaryBody.startsWith(compactContentBody)) {
       bodyParts = [normalizedSummaryBody];
+    } else if (hasSharedReasoningClauseSuffix(normalizedSummaryBody, normalizedContentBody)) {
+      bodyParts = [chooseBetterReasoningText(normalizedSummaryBody, normalizedContentBody)];
     } else {
       bodyParts = [normalizedSummaryBody, normalizedContentBody];
     }
@@ -462,22 +587,6 @@ function isReasoningDuplicate(
   previous: ReturnType<typeof parseReasoning>,
   next: ReturnType<typeof parseReasoning>,
 ) {
-  const previousTitle = compactComparableReasoningText(
-    previous.summaryTitle || previous.workingLabel || "",
-  );
-  const nextTitle = compactComparableReasoningText(
-    next.summaryTitle || next.workingLabel || "",
-  );
-  if (
-    previousTitle &&
-    nextTitle &&
-    previousTitle.length >= 6 &&
-    nextTitle.length >= 6 &&
-    previousTitle !== nextTitle
-  ) {
-    return false;
-  }
-
   const previousBody = compactComparableReasoningText(previous.bodyText || "");
   const nextBody = compactComparableReasoningText(next.bodyText || "");
   if (previousBody && nextBody) {
@@ -493,10 +602,33 @@ function isReasoningDuplicate(
     return false;
   }
 
+  const previousTitle = compactComparableReasoningText(
+    previous.summaryTitle || previous.workingLabel || "",
+  );
+  const nextTitle = compactComparableReasoningText(
+    next.summaryTitle || next.workingLabel || "",
+  );
+
   if (!previousBody && !nextBody) {
-    const previousLabel = compactComparableReasoningText(previous.workingLabel || "");
-    const nextLabel = compactComparableReasoningText(next.workingLabel || "");
-    return previousLabel.length >= 8 && previousLabel === nextLabel;
+    if (
+      previousTitle &&
+      nextTitle &&
+      previousTitle.length >= 8 &&
+      nextTitle.length >= 8
+    ) {
+      return previousTitle === nextTitle;
+    }
+    return false;
+  }
+
+  if (
+    previousTitle &&
+    nextTitle &&
+    previousTitle.length >= 6 &&
+    nextTitle.length >= 6 &&
+    previousTitle !== nextTitle
+  ) {
+    return false;
   }
 
   return false;
@@ -527,6 +659,53 @@ function dedupeAdjacentReasoningItems(
     };
   }
   return deduped;
+}
+
+function collapseConsecutiveReasoningRuns(
+  list: ConversationItem[],
+  enabled: boolean,
+) {
+  if (!enabled || list.length <= 1) {
+    return list;
+  }
+  const collapsed: ConversationItem[] = [];
+  let index = 0;
+  while (index < list.length) {
+    const item = list[index];
+    if (item.kind !== "reasoning") {
+      collapsed.push(item);
+      index += 1;
+      continue;
+    }
+
+    let end = index + 1;
+    while (end < list.length && list[end].kind === "reasoning") {
+      end += 1;
+    }
+
+    if (end - index === 1) {
+      collapsed.push(item);
+      index = end;
+      continue;
+    }
+
+    const run = list.slice(index, end) as Array<Extract<ConversationItem, { kind: "reasoning" }>>;
+    const latest = run[run.length - 1];
+    let mergedSummary = run[0].summary;
+    let mergedContent = run[0].content;
+    for (let runIndex = 1; runIndex < run.length; runIndex += 1) {
+      const candidate = run[runIndex];
+      mergedSummary = chooseBetterReasoningText(mergedSummary, candidate.summary);
+      mergedContent = chooseBetterReasoningText(mergedContent, candidate.content);
+    }
+    collapsed.push({
+      ...latest,
+      summary: mergedSummary,
+      content: mergedContent,
+    });
+    index = end;
+  }
+  return collapsed;
 }
 
 function normalizeMessageImageSrc(path: string) {
@@ -823,6 +1002,53 @@ function resolveWorkingActivityLabel(
   return null;
 }
 
+function findLastUserMessageIndex(items: ConversationItem[]) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind === "message" && item.role === "user") {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function findLastAssistantMessageIndex(items: ConversationItem[]) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind === "message" && item.role === "assistant") {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function shouldDisplayWorkingActivityLabel(
+  reasoningLabel: string | null,
+  activityLabel: string | null,
+) {
+  if (!activityLabel) {
+    return false;
+  }
+  if (!reasoningLabel) {
+    return true;
+  }
+  const compactReasoning = compactComparableReasoningText(reasoningLabel);
+  const compactActivity = compactComparableReasoningText(activityLabel);
+  if (!compactReasoning || !compactActivity) {
+    return true;
+  }
+  if (compactReasoning === compactActivity) {
+    return false;
+  }
+  if (compactReasoning.length >= 12 && compactActivity.includes(compactReasoning)) {
+    return false;
+  }
+  if (compactActivity.length >= 12 && compactReasoning.includes(compactActivity)) {
+    return false;
+  }
+  return true;
+}
+
 const WorkingIndicator = memo(function WorkingIndicator({
   isThinking,
   processingStartedAt = null,
@@ -855,6 +1081,10 @@ const WorkingIndicator = memo(function WorkingIndicator({
     isThinking &&
     waitingForFirstChunk &&
     elapsedMs >= OPENCODE_NON_STREAMING_HINT_DELAY_MS;
+  const showActivityLabel = shouldDisplayWorkingActivityLabel(
+    reasoningLabel,
+    activityLabel,
+  );
   const nonStreamingHintText = t("messages.nonStreamingHint");
   const resolvedNonStreamingHint =
     nonStreamingHintText === "messages.nonStreamingHint"
@@ -917,7 +1147,7 @@ const WorkingIndicator = memo(function WorkingIndicator({
             <span className="working-timer-clock">{formatDurationMs(elapsedMs)}</span>
           </div>
           <span className="working-text">{reasoningLabel || t("messages.generatingResponse")}</span>
-          {activityLabel && <span className="working-activity">{activityLabel}</span>}
+          {showActivityLabel && <span className="working-activity">{activityLabel}</span>}
           {showNonStreamingHint && (
             <span className="working-hint">
               {heartbeatHintText || resolvedNonStreamingHint}
@@ -940,6 +1170,7 @@ const WorkingIndicator = memo(function WorkingIndicator({
 
 const MessageRow = memo(function MessageRow({
   item,
+  isStreaming = false,
   activeEngine = "claude",
   enableCollaborationBadge = false,
   presentationProfile = null,
@@ -986,25 +1217,6 @@ const MessageRow = memo(function MessageRow({
     const extracted = filteredCommandText.slice(markerIndex + markerLength).trim();
     return extracted.length > 0 ? extracted : filteredCommandText;
   }, [enableCollaborationBadge, item.role, item.text, memorySummary]);
-  const rowCollaborationMode = useMemo(() => {
-    if (!enableCollaborationBadge || item.role !== "user") {
-      return null;
-    }
-    const itemMode = normalizeCollaborationModeId(item.collaborationMode);
-    if (itemMode) {
-      return itemMode;
-    }
-    const fallbackMode = extractModeFallbackUserInput(item.text).mode;
-    if (fallbackMode) {
-      return fallbackMode;
-    }
-    return null;
-  }, [
-    enableCollaborationBadge,
-    item.collaborationMode,
-    item.role,
-    item.text,
-  ]);
   const hasText = displayText.trim().length > 0;
   const hideCopyButton = item.role === "assistant" && Boolean(memorySummary) && !hasText;
   const useCodexCanvasMarkdown = presentationProfile
@@ -1014,6 +1226,9 @@ const MessageRow = memo(function MessageRow({
     item.role === "assistant" && useCodexCanvasMarkdown
       ? "markdown markdown-codex-canvas"
       : "markdown";
+  const resolvedMarkdownClassName = isStreaming
+    ? `${markdownClassName} markdown-live-streaming`
+    : markdownClassName;
   const imageItems = useMemo(() => {
     if (!item.images || item.images.length === 0) {
       return [];
@@ -1031,22 +1246,7 @@ const MessageRow = memo(function MessageRow({
 
   return (
     <div className={`message ${item.role}`}>
-      <div
-        className={`bubble message-bubble${rowCollaborationMode ? " has-collab-mode" : ""}${rowCollaborationMode ? ` is-${rowCollaborationMode}` : ""}`}
-        data-collab-mode={rowCollaborationMode ?? undefined}
-      >
-        {item.role === "user" && rowCollaborationMode && (
-          <span
-            className={`message-mode-badge is-${rowCollaborationMode}`}
-            aria-label={rowCollaborationMode === "code" ? "Code mode" : "Plan mode"}
-          >
-            {rowCollaborationMode === "code" ? (
-              <Wrench size={12} aria-hidden />
-            ) : (
-              <Layers3 size={12} aria-hidden />
-            )}
-          </span>
-        )}
+      <div className="bubble message-bubble">
         {imageItems.length > 0 && (
           <MessageImageGrid
             images={imageItems}
@@ -1091,7 +1291,7 @@ const MessageRow = memo(function MessageRow({
           ) : (
             <Markdown
               value={displayText}
-              className={markdownClassName}
+              className={resolvedMarkdownClassName}
               codeBlockStyle="message"
               codeBlockCopyUseModifier={codeBlockCopyUseModifier}
               onOpenFileLink={onOpenFileLink}
@@ -1123,7 +1323,7 @@ const MessageRow = memo(function MessageRow({
       </div>
     </div>
   );
-});
+}, areMessageRowPropsEqual);
 
 const ReasoningRow = memo(function ReasoningRow({
   item,
@@ -1318,7 +1518,17 @@ export const Messages = memo(function Messages({
     ],
   );
   const effectiveState = conversationState ?? fallbackConversationState;
-  const items = effectiveState.items;
+  const items = useMemo(
+    () =>
+      resolveRenderableItems({
+        legacyItems,
+        legacyThreadId,
+        legacyWorkspaceId,
+        conversationState,
+      }),
+    [conversationState, legacyItems, legacyThreadId, legacyWorkspaceId],
+  );
+  const plan = effectiveState.plan;
   const userInputRequests = effectiveState.userInputQueue;
   const workspaceId = effectiveState.meta.workspaceId || legacyWorkspaceId;
   const threadId = effectiveState.meta.threadId || legacyThreadId;
@@ -1356,10 +1566,19 @@ export const Messages = memo(function Messages({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [showAllHistoryItems, setShowAllHistoryItems] = useState(false);
+  const hideClaudeReasoning = activeEngine === "claude" && shouldHideClaudeReasoningModule();
+  const [isPlanPreviewOpen, setIsPlanPreviewOpen] = useState(false);
+  const [isSelectionFrozen, setIsSelectionFrozen] = useState(false);
   const copyTimeoutRef = useRef<number | null>(null);
   const planPanelFocusRafRef = useRef<number | null>(null);
   const planPanelFocusTimeoutRef = useRef<number | null>(null);
   const planPanelFocusNodeRef = useRef<HTMLElement | null>(null);
+  const frozenItemsRef = useRef<ConversationItem[] | null>(null);
+  const latestItemsRef = useRef(items);
+  latestItemsRef.current = items;
+  const effectiveItems = isSelectionFrozen
+    ? frozenItemsRef.current ?? items
+    : items;
   const firstItemIdRef = useRef<string | null>(items[0]?.id ?? null);
   const activeUserInputRequestId =
     threadId && userInputRequests.length
@@ -1369,7 +1588,7 @@ export const Messages = memo(function Messages({
             (!workspaceId || request.workspace_id === workspaceId),
         )?.request_id ?? null)
       : null;
-  const rawScrollKey = `${scrollKeyForItems(items)}-${activeUserInputRequestId ?? "no-input"}`;
+  const rawScrollKey = `${scrollKeyForItems(effectiveItems)}-${activeUserInputRequestId ?? "no-input"}`;
   // Throttle scrollKey during streaming to avoid flooding the main thread
   // with smooth-scroll animations that block keyboard input.
   const [scrollKey, setScrollKey] = useState(rawScrollKey);
@@ -1448,14 +1667,36 @@ export const Messages = memo(function Messages({
   useEffect(() => {
     autoScrollRef.current = true;
     setExpandedItems(new Set());
+    setIsSelectionFrozen(false);
+    frozenItemsRef.current = null;
   }, [threadId]);
   useEffect(() => {
-    const currentFirstId = items[0]?.id ?? null;
+    const handleSelectionChange = () => {
+      const nextFrozen = isSelectionInsideNode(window.getSelection(), containerRef.current);
+      if (nextFrozen) {
+        frozenItemsRef.current = frozenItemsRef.current ?? latestItemsRef.current;
+      } else {
+        frozenItemsRef.current = null;
+      }
+      setIsSelectionFrozen((previous) => (previous === nextFrozen ? previous : nextFrozen));
+    };
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, []);
+  useEffect(() => {
+    if (!isSelectionFrozen) {
+      frozenItemsRef.current = null;
+    }
+  }, [isSelectionFrozen, items]);
+  useEffect(() => {
+    const currentFirstId = effectiveItems[0]?.id ?? null;
     if (currentFirstId !== firstItemIdRef.current) {
       setShowAllHistoryItems(false);
     }
     firstItemIdRef.current = currentFirstId;
-  }, [items]);
+  }, [effectiveItems]);
   const toggleExpanded = useCallback((id: string) => {
     setExpandedItems((prev) => {
       const next = new Set(prev);
@@ -1477,7 +1718,7 @@ export const Messages = memo(function Messages({
     }
 
     const reasoningIds: string[] = [];
-    for (const item of items) {
+    for (const item of effectiveItems) {
       if (item.kind === "reasoning") {
         reasoningIds.push(item.id);
       }
@@ -1503,24 +1744,34 @@ export const Messages = memo(function Messages({
       });
       lastAutoExpandedIdRef.current = lastReasoningId;
     }
-  }, [items, isThinking]);
-
+  }, [effectiveItems, isThinking]);
   const reasoningMetaById = useMemo(() => {
     const meta = new Map<string, ReturnType<typeof parseReasoning>>();
-    items.forEach((item) => {
+    effectiveItems.forEach((item) => {
       if (item.kind === "reasoning") {
         meta.set(item.id, parseReasoning(item));
       }
     });
     return meta;
-  }, [items]);
+  }, [effectiveItems]);
+
+  const lastUserMessageIndex = useMemo(
+    () => findLastUserMessageIndex(effectiveItems),
+    [effectiveItems],
+  );
+  const reasoningWindowStartIndex = useMemo(() => {
+    if (lastUserMessageIndex >= 0) {
+      return lastUserMessageIndex;
+    }
+    return findLastAssistantMessageIndex(effectiveItems);
+  }, [effectiveItems, lastUserMessageIndex]);
 
   const latestReasoningLabel = useMemo(() => {
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
-      if (item.kind === "message") {
-        break;
-      }
+    if (hideClaudeReasoning) {
+      return null;
+    }
+    for (let index = effectiveItems.length - 1; index > reasoningWindowStartIndex; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind !== "reasoning") {
         continue;
       }
@@ -1530,24 +1781,69 @@ export const Messages = memo(function Messages({
       }
     }
     return null;
-  }, [items, reasoningMetaById]);
+  }, [effectiveItems, hideClaudeReasoning, reasoningMetaById, reasoningWindowStartIndex]);
 
   const latestReasoningId = useMemo(() => {
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
-      if (item.kind === "message") {
-        break;
-      }
+    for (let index = effectiveItems.length - 1; index > reasoningWindowStartIndex; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind === "reasoning") {
         return item.id;
       }
     }
     return null;
-  }, [items]);
+  }, [effectiveItems, reasoningWindowStartIndex]);
+  const claudeDockedReasoningItems = useMemo(() => {
+    if (!hideClaudeReasoning) {
+      return [] as Array<{
+        item: Extract<ConversationItem, { kind: "reasoning" }>;
+        parsed: ReturnType<typeof parseReasoning>;
+      }>;
+    }
+    const list: Array<{
+      item: Extract<ConversationItem, { kind: "reasoning" }>;
+      parsed: ReturnType<typeof parseReasoning>;
+    }> = [];
+    for (let index = reasoningWindowStartIndex + 1; index < effectiveItems.length; index += 1) {
+      const item = effectiveItems[index];
+      if (item.kind !== "reasoning") {
+        continue;
+      }
+      const parsed = reasoningMetaById.get(item.id) ?? parseReasoning(item);
+      const hasText =
+        Boolean(parsed.bodyText?.trim()) ||
+        Boolean(item.content?.trim()) ||
+        Boolean(item.summary?.trim());
+      if (!hasText) {
+        continue;
+      }
+      list.push({ item, parsed });
+    }
+    return list;
+  }, [effectiveItems, hideClaudeReasoning, reasoningMetaById, reasoningWindowStartIndex]);
+  const previousIsThinkingRef = useRef(isThinking);
+  useEffect(() => {
+    if (previousIsThinkingRef.current && !isThinking && claudeDockedReasoningItems.length > 0) {
+      setExpandedItems((prev) => {
+        const reasoningIds = new Set(claudeDockedReasoningItems.map((entry) => entry.item.id));
+        let changed = false;
+        const next = new Set(prev);
+        for (const id of reasoningIds) {
+          if (next.delete(id)) {
+            changed = true;
+          }
+        }
+        if (!changed) {
+          return prev;
+        }
+        return next;
+      });
+    }
+    previousIsThinkingRef.current = isThinking;
+  }, [claudeDockedReasoningItems, isThinking]);
 
   const latestTitleOnlyReasoningId = useMemo(() => {
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
+    for (let index = effectiveItems.length - 1; index >= 0; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind !== "reasoning") {
         continue;
       }
@@ -1557,12 +1853,12 @@ export const Messages = memo(function Messages({
       }
     }
     return null;
-  }, [items, reasoningMetaById]);
+  }, [effectiveItems, reasoningMetaById]);
 
   const latestWorkingActivityLabel = useMemo(() => {
     let lastUserIndex = -1;
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
+    for (let index = effectiveItems.length - 1; index >= 0; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind === "message" && item.role === "user") {
         lastUserIndex = index;
         break;
@@ -1571,8 +1867,8 @@ export const Messages = memo(function Messages({
     if (lastUserIndex < 0) {
       return null;
     }
-    for (let index = items.length - 1; index > lastUserIndex; index -= 1) {
-      const item = items[index];
+    for (let index = effectiveItems.length - 1; index > lastUserIndex; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind === "message" && item.role === "assistant") {
         break;
       }
@@ -1582,15 +1878,25 @@ export const Messages = memo(function Messages({
       }
     }
     return null;
-  }, [activeEngine, items, presentationProfile]);
+  }, [activeEngine, effectiveItems, presentationProfile]);
+
+  const latestAssistantMessageId = useMemo(() => {
+    for (let index = effectiveItems.length - 1; index > lastUserMessageIndex; index -= 1) {
+      const item = effectiveItems[index];
+      if (item.kind === "message" && item.role === "assistant") {
+        return item.id;
+      }
+    }
+    return null;
+  }, [effectiveItems, lastUserMessageIndex]);
 
   const waitingForFirstChunk = useMemo(() => {
-    if (!isThinking || items.length === 0) {
+    if (!isThinking || effectiveItems.length === 0) {
       return false;
     }
     let lastUserIndex = -1;
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
+    for (let index = effectiveItems.length - 1; index >= 0; index -= 1) {
+      const item = effectiveItems[index];
       if (item.kind === "message" && item.role === "user") {
         lastUserIndex = index;
         break;
@@ -1599,17 +1905,23 @@ export const Messages = memo(function Messages({
     if (lastUserIndex < 0) {
       return false;
     }
-    for (let index = lastUserIndex + 1; index < items.length; index += 1) {
-      const item = items[index];
+    for (let index = lastUserIndex + 1; index < effectiveItems.length; index += 1) {
+      const item = effectiveItems[index];
       if (item.kind === "message" && item.role === "assistant") {
         return false;
       }
     }
     return true;
-  }, [isThinking, items]);
+  }, [isThinking, effectiveItems]);
 
   const visibleItems = useMemo(() => {
-    const filtered = items.filter((item) => {
+    const filtered = effectiveItems.filter((item) => {
+        if (hideClaudeReasoning && item.kind === "reasoning") {
+          return false;
+        }
+        if (item.kind === "tool" && shouldHideToolItemForRender(item)) {
+          return false;
+        }
         if (item.kind !== "reasoning") {
           return true;
         }
@@ -1629,8 +1941,10 @@ export const Messages = memo(function Messages({
           : activeEngine === "codex";
         return keepTitleOnlyReasoning || item.id === latestTitleOnlyReasoningId;
       });
-    return dedupeAdjacentReasoningItems(filtered, reasoningMetaById);
-  }, [activeEngine, items, latestTitleOnlyReasoningId, presentationProfile, reasoningMetaById]);
+    const deduped = dedupeAdjacentReasoningItems(filtered, reasoningMetaById);
+    const collapseReasoningRuns = activeEngine !== "codex" && activeEngine !== "gemini";
+    return collapseConsecutiveReasoningRuns(deduped, collapseReasoningRuns);
+  }, [activeEngine, effectiveItems, hideClaudeReasoning, latestTitleOnlyReasoningId, presentationProfile, reasoningMetaById]);
   const shouldCollapseHistoryItems =
     !showAllHistoryItems && visibleItems.length > VISIBLE_MESSAGE_WINDOW;
   const collapsedHistoryItemCount = shouldCollapseHistoryItems
@@ -1714,7 +2028,7 @@ export const Messages = memo(function Messages({
     const previous = lastRenderSnapshotRef.current;
     const changedKeys: string[] = [];
     if (previous) {
-      if (previous.items !== items) {
+      if (previous.items !== effectiveItems) {
         changedKeys.push("items");
       }
       if (previous.userInputRequests !== userInputRequests) {
@@ -1743,7 +2057,7 @@ export const Messages = memo(function Messages({
     ) {
       logMessagesPerf("render", {
         ms: Number(renderCostMs.toFixed(2)),
-        items: items.length,
+        items: effectiveItems.length,
         visibleItems: renderedItems.length,
         anchors: messageAnchors.length,
         threadId,
@@ -1751,7 +2065,7 @@ export const Messages = memo(function Messages({
       });
     }
     lastRenderSnapshotRef.current = {
-      items,
+      items: effectiveItems,
       userInputRequests,
       conversationState,
       presentationProfile,
@@ -1856,8 +2170,38 @@ export const Messages = memo(function Messages({
       )
       : null;
 
+  const planQuickViewNode = plan
+    ? (
+      <div
+        className="message assistant"
+        style={{ marginTop: 6, marginBottom: 6 }}
+      >
+        <div className="bubble message-bubble" style={{ maxWidth: 560 }}>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setIsPlanPreviewOpen((previous) => !previous)}
+            aria-label="Plan"
+            style={{ marginBottom: isPlanPreviewOpen ? 8 : 0 }}
+          >
+            Plan
+          </button>
+          {isPlanPreviewOpen && (
+            <div style={{ display: "grid", gap: 6 }}>
+              {plan.explanation ? <div>{plan.explanation}</div> : null}
+              {plan.steps.map((step, index) => (
+                <div key={`${plan.turnId}-${index}-${step.step}`}>{step.step}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+    : null;
+
   const renderSingleItem = (item: ConversationItem) => {
     if (item.kind === "message") {
+      const itemRenderKey = `message:${item.id}`;
       const isCopied = copiedMessageId === item.id;
       const bindMessageNode = (node: HTMLDivElement | null) => {
         if (item.role === "user" && node) {
@@ -1867,9 +2211,15 @@ export const Messages = memo(function Messages({
         messageNodeByIdRef.current.delete(item.id);
       };
       return (
-        <div key={item.id} ref={bindMessageNode} data-message-anchor-id={item.id}>
+        <div key={itemRenderKey} ref={bindMessageNode} data-message-anchor-id={item.id}>
           <MessageRow
             item={item}
+            isStreaming={
+              activeEngine === "claude" &&
+              isThinking &&
+              item.role === "assistant" &&
+              item.id === latestAssistantMessageId
+            }
             activeEngine={activeEngine}
             activeCollaborationModeId={activeCollaborationModeId}
             enableCollaborationBadge={activeEngine === "codex"}
@@ -1884,6 +2234,7 @@ export const Messages = memo(function Messages({
       );
     }
     if (item.kind === "reasoning") {
+      const itemRenderKey = `reasoning:${item.id}`;
       const isExpanded = expandedItems.has(item.id);
       const parsed =
         reasoningMetaById.get(item.id) ??
@@ -1892,7 +2243,7 @@ export const Messages = memo(function Messages({
         isThinking && latestReasoningId === item.id;
       return (
         <ReasoningRow
-          key={item.id}
+          key={itemRenderKey}
           item={item}
           parsed={parsed}
           isExpanded={isExpanded}
@@ -1906,7 +2257,7 @@ export const Messages = memo(function Messages({
     if (item.kind === "review") {
       return (
         <ReviewRow
-          key={item.id}
+          key={`review:${item.id}`}
           item={item}
           onOpenFileLink={openFileLink}
           onOpenFileLinkMenu={showFileLinkMenu}
@@ -1914,18 +2265,19 @@ export const Messages = memo(function Messages({
       );
     }
     if (item.kind === "diff") {
-      return <DiffRow key={item.id} item={item} />;
+      return <DiffRow key={`diff:${item.id}`} item={item} />;
     }
     if (item.kind === "tool") {
       const isExpanded = expandedItems.has(item.id);
       return (
         <ToolBlockRenderer
-          key={item.id}
+          key={`tool:${item.id}`}
           item={item}
           isExpanded={isExpanded}
           onToggle={toggleExpanded}
           onRequestAutoScroll={requestAutoScroll}
           activeCollaborationModeId={activeCollaborationModeId}
+          onOpenDiffPath={onOpenDiffPath}
         />
       );
     }
@@ -1933,7 +2285,7 @@ export const Messages = memo(function Messages({
       const isExpanded = expandedItems.has(item.id);
       return (
         <ExploreRow
-          key={item.id}
+          key={`explore:${item.id}`}
           item={item}
           isExpanded={isExpanded}
           onToggle={toggleExpanded}
@@ -2037,20 +2389,33 @@ export const Messages = memo(function Messages({
             </div>
           )}
           {groupedEntries.map(renderEntry)}
+          {planQuickViewNode}
+          {claudeDockedReasoningItems.map(({ item, parsed }) => (
+            <ReasoningRow
+              key={`claude-live-${item.id}`}
+              item={item}
+              parsed={parsed}
+              isExpanded={isThinking && latestReasoningId === item.id ? true : expandedItems.has(item.id)}
+              isLive={isThinking && latestReasoningId === item.id}
+              onToggle={toggleExpanded}
+              onOpenFileLink={openFileLink}
+              onOpenFileLinkMenu={showFileLinkMenu}
+            />
+          ))}
           {userInputNode}
           <WorkingIndicator
             isThinking={isThinking}
             processingStartedAt={processingStartedAt}
             lastDurationMs={lastDurationMs}
             heartbeatPulse={heartbeatPulse}
-            hasItems={items.length > 0}
+            hasItems={effectiveItems.length > 0}
             reasoningLabel={latestReasoningLabel}
             activityLabel={latestWorkingActivityLabel}
             activeEngine={activeEngine}
             waitingForFirstChunk={waitingForFirstChunk}
             presentationProfile={presentationProfile}
           />
-          {!items.length && !userInputNode && (
+          {!effectiveItems.length && !userInputNode && (
             <div className="empty messages-empty">
               {t("messages.emptyThread")}
             </div>

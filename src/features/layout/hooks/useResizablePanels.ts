@@ -351,7 +351,7 @@ export function useResizablePanels() {
         return;
       }
       event.preventDefault();
-      event.stopPropagation();
+      stopResizeEventPropagation(event);
       setResizingMode(true);
       resizeRef.current = {
         type: "sidebar",
@@ -374,7 +374,7 @@ export function useResizablePanels() {
         return;
       }
       event.preventDefault();
-      event.stopPropagation();
+      stopResizeEventPropagation(event);
       setResizingMode(true);
       resizeRef.current = {
         type: "right-panel",
@@ -397,7 +397,7 @@ export function useResizablePanels() {
         return;
       }
       event.preventDefault();
-      event.stopPropagation();
+      stopResizeEventPropagation(event);
       setResizingMode(true);
       resizeRef.current = {
         type: "plan-panel",
@@ -420,7 +420,7 @@ export function useResizablePanels() {
         return;
       }
       event.preventDefault();
-      event.stopPropagation();
+      stopResizeEventPropagation(event);
       setResizingMode(true);
       resizeRef.current = {
         type: "terminal-panel",
@@ -443,7 +443,7 @@ export function useResizablePanels() {
         return;
       }
       event.preventDefault();
-      event.stopPropagation();
+      stopResizeEventPropagation(event);
       setResizingMode(true);
       resizeRef.current = {
         type: "debug-panel",
@@ -466,7 +466,7 @@ export function useResizablePanels() {
         return;
       }
       event.preventDefault();
-      event.stopPropagation();
+      stopResizeEventPropagation(event);
       setResizingMode(true);
       resizeRef.current = {
         type: "kanban-conversation",
@@ -498,3 +498,8 @@ export function useResizablePanels() {
     onKanbanConversationResizeStart,
   };
 }
+  const stopResizeEventPropagation = (event: ReactMouseEvent) => {
+    if (typeof event.stopPropagation === "function") {
+      event.stopPropagation();
+    }
+  };

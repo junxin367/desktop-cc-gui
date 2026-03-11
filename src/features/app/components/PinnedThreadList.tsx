@@ -1,8 +1,19 @@
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { CSSProperties, MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ThreadSummary } from "../../../types";
 import { EngineIcon } from "../../engine/components/EngineIcon";
+import { ThreadDeleteConfirmBubble } from "../../threads/components/ThreadDeleteConfirmBubble";
 
 type ThreadStatusMap = Record<
   string,
@@ -30,6 +41,11 @@ type PinnedThreadListProps = {
     threadId: string,
     canPin: boolean,
   ) => void;
+  deleteConfirmThreadId?: string | null;
+  deleteConfirmWorkspaceId?: string | null;
+  deleteConfirmBusy?: boolean;
+  onCancelDeleteConfirm?: () => void;
+  onConfirmDeleteConfirm?: () => void;
 };
 
 export function PinnedThreadList({
@@ -42,6 +58,11 @@ export function PinnedThreadList({
   isThreadAutoNaming,
   onSelectThread,
   onShowThreadMenu,
+  deleteConfirmThreadId = null,
+  deleteConfirmWorkspaceId = null,
+  deleteConfirmBusy = false,
+  onCancelDeleteConfirm,
+  onConfirmDeleteConfirm,
 }: PinnedThreadListProps) {
   const { t } = useTranslation();
 
@@ -72,52 +93,85 @@ export function PinnedThreadList({
             : engineSource === "opencode"
               ? "OpenCode"
               : "Codex";
+        const isDeleteConfirmOpen =
+          deleteConfirmWorkspaceId === workspaceId && deleteConfirmThreadId === thread.id;
 
         return (
-          <div
+          <Popover
             key={`${workspaceId}:${thread.id}`}
-            className={`thread-row ${
-              workspaceId === activeWorkspaceId && thread.id === activeThreadId
-                ? "active"
-                : ""
-            }`}
-            style={indentStyle}
-            data-tooltip={thread.name}
-            onClick={() => onSelectThread(workspaceId, thread.id)}
-            onContextMenu={(event) =>
-              onShowThreadMenu(event, workspaceId, thread.id, canPin)
-            }
-            role="button"
-            tabIndex={0}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                onSelectThread(workspaceId, thread.id);
+            open={isDeleteConfirmOpen}
+            onOpenChange={(open) => {
+              if (!open) {
+                onCancelDeleteConfirm?.();
               }
             }}
           >
-            <span className={`thread-status ${statusClass}`} aria-hidden />
-            {isPinned && (
-              <span className="thread-pin-icon" aria-label="Pinned">
-                📌
-              </span>
+            <Tooltip>
+              <PopoverAnchor asChild>
+                <TooltipTrigger
+                  delay={450}
+                  className={`thread-row ${
+                    workspaceId === activeWorkspaceId && thread.id === activeThreadId
+                      ? "active"
+                      : ""
+                  }${isDeleteConfirmOpen ? " has-delete-confirm" : ""}`}
+                  style={indentStyle}
+                  onClick={() => onSelectThread(workspaceId, thread.id)}
+                  onContextMenu={(event) =>
+                    onShowThreadMenu(event, workspaceId, thread.id, canPin)
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelectThread(workspaceId, thread.id);
+                    }
+                  }}
+                >
+                  <span className={`thread-status ${statusClass}`} aria-hidden />
+                  {isPinned && <span className="thread-pin-icon" aria-label="Pinned" />}
+                  <span
+                    className={`thread-engine-badge thread-engine-${engineSource}${
+                      isProcessing ? " is-processing" : ""
+                    }`}
+                    title={engineTitle}
+                  >
+                    <EngineIcon engine={engineSource} size={12} />
+                  </span>
+                  <span className="thread-name">{thread.name}</span>
+                  <div className="thread-meta">
+                    {isAutoNaming && (
+                      <span className="thread-auto-naming">{t("threads.autoNaming")}</span>
+                    )}
+                    {relativeTime && <span className="thread-time">{relativeTime}</span>}
+                  </div>
+                </TooltipTrigger>
+              </PopoverAnchor>
+              <TooltipPopup
+                side="top"
+                align="start"
+                sideOffset={4}
+                className="max-w-[400px] break-words"
+              >
+                {thread.name}
+              </TooltipPopup>
+            </Tooltip>
+            {isDeleteConfirmOpen && (
+              <PopoverContent
+                side="right"
+                align="start"
+                sideOffset={10}
+                className="thread-delete-popover-shell"
+                onOpenAutoFocus={(event) => event.preventDefault()}
+              >
+                <ThreadDeleteConfirmBubble
+                  threadName={thread.name}
+                  isDeleting={deleteConfirmBusy}
+                  onCancel={() => onCancelDeleteConfirm?.()}
+                  onConfirm={() => onConfirmDeleteConfirm?.()}
+                />
+              </PopoverContent>
             )}
-            <span
-              className={`thread-engine-badge thread-engine-${engineSource}${
-                isProcessing ? " is-processing" : ""
-              }`}
-              title={engineTitle}
-            >
-              <EngineIcon engine={engineSource} size={12} />
-            </span>
-            <span className="thread-name">{thread.name}</span>
-            <div className="thread-meta">
-              {isAutoNaming && (
-                <span className="thread-auto-naming">{t("threads.autoNaming")}</span>
-              )}
-              {relativeTime && <span className="thread-time">{relativeTime}</span>}
-            </div>
-          </div>
+          </Popover>
         );
       })}
     </div>

@@ -9,6 +9,7 @@ import type {
   TurnPlan,
 } from "../../../types";
 import { normalizeItem, prepareThreadItems, upsertItem } from "../../../utils/threadItems";
+import { settlePlanInProgressSteps } from "../utils/threadNormalize";
 
 function formatThreadName(text: string) {
   const trimmed = text.trim();
@@ -29,6 +30,69 @@ function extractRenameText(text: string) {
   const withoutImages = text.replace(/\[image(?: x\d+)?\]/gi, " ");
   const withoutSkills = withoutImages.replace(/(^|\s)\$[A-Za-z0-9_-]+(?=\s|$)/g, " ");
   return withoutSkills.replace(/\s+/g, " ").trim();
+}
+
+const OPTIMISTIC_USER_ITEM_PREFIX = "optimistic-user-";
+
+type MessageItem = Extract<ConversationItem, { kind: "message" }>;
+type UserMessageItem = MessageItem & { role: "user" };
+
+function isUserMessageItem(item: ConversationItem): item is UserMessageItem {
+  return item.kind === "message" && item.role === "user";
+}
+
+function isOptimisticUserMessage(
+  item: ConversationItem,
+): item is UserMessageItem {
+  return isUserMessageItem(item) && item.id.startsWith(OPTIMISTIC_USER_ITEM_PREFIX);
+}
+
+function normalizeComparableUserText(text: string) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function normalizeUserImages(images: string[] | undefined) {
+  return Array.isArray(images) ? images : [];
+}
+
+function areSameUserImages(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((image, index) => image === right[index]);
+}
+
+function dropMatchingOptimisticUserMessage(
+  list: ConversationItem[],
+  incoming: UserMessageItem,
+) {
+  let matchedIndex = -1;
+  let fallbackIndex = -1;
+  const incomingText = normalizeComparableUserText(incoming.text);
+  const incomingImages = normalizeUserImages(incoming.images);
+  for (let index = 0; index < list.length; index += 1) {
+    const item = list[index];
+    if (!isOptimisticUserMessage(item)) {
+      continue;
+    }
+    if (fallbackIndex < 0) {
+      fallbackIndex = index;
+    }
+    const textMatches = normalizeComparableUserText(item.text) === incomingText;
+    const imageMatches = areSameUserImages(
+      normalizeUserImages(item.images),
+      incomingImages,
+    );
+    if (textMatches && imageMatches) {
+      matchedIndex = index;
+      break;
+    }
+  }
+  const targetIndex = matchedIndex >= 0 ? matchedIndex : fallbackIndex;
+  if (targetIndex < 0) {
+    return list;
+  }
+  return [...list.slice(0, targetIndex), ...list.slice(targetIndex + 1)];
 }
 
 function getAssistantTextForRename(
@@ -120,10 +184,20 @@ function isPendingToolStatus(status: string) {
   );
 }
 
+function isLocalCliReasoningThread(threadId: string) {
+  return (
+    threadId.startsWith("claude:") ||
+    threadId.startsWith("claude-pending-") ||
+    threadId.startsWith("opencode:") ||
+    threadId.startsWith("opencode-pending-")
+  );
+}
+
 type ThreadActivityStatus = {
   isProcessing: boolean;
   hasUnread: boolean;
   isReviewing: boolean;
+  isContextCompacting?: boolean;
   processingStartedAt: number | null;
   lastDurationMs: number | null;
   heartbeatPulse?: number;
@@ -167,6 +241,11 @@ export type ThreadAction =
       threadId: string;
       isProcessing: boolean;
       timestamp: number;
+    }
+  | {
+      type: "markContextCompacting";
+      threadId: string;
+      isCompacting: boolean;
     }
   | { type: "markHeartbeat"; threadId: string; pulse: number }
   | {
@@ -231,6 +310,7 @@ export type ThreadAction =
       turnId: string;
     }
   | { type: "appendReasoningContent"; threadId: string; itemId: string; delta: string }
+  | { type: "dropReasoningItems"; threadId: string }
   | { type: "appendToolOutput"; threadId: string; itemId: string; delta: string }
   | { type: "setThreads"; workspaceId: string; threads: ThreadSummary[] }
   | {
@@ -274,6 +354,11 @@ export type ThreadAction =
     }
   | { type: "setActiveTurnId"; threadId: string; turnId: string | null }
   | { type: "setThreadPlan"; threadId: string; plan: TurnPlan | null }
+  | {
+      type: "settleThreadPlanInProgress";
+      threadId: string;
+      targetStatus: "pending" | "completed";
+    }
   | { type: "clearThreadPlan"; threadId: string }
   | { type: "incrementAgentSegment"; threadId: string }
   | { type: "resetAgentSegment"; threadId: string }
@@ -312,6 +397,15 @@ export const initialState: ThreadState = {
   lastAgentMessageByThread: {},
   agentSegmentByThread: {},
 };
+
+function shouldAcceptReasoningDelta(state: ThreadState, threadId: string) {
+  if (!isLocalCliReasoningThread(threadId)) {
+    return true;
+  }
+  const hasActiveTurn = (state.activeTurnIdByThread[threadId] ?? null) !== null;
+  const isProcessing = Boolean(state.threadStatusById[threadId]?.isProcessing);
+  return hasActiveTurn || isProcessing;
+}
 
 function mergeStreamingText(existing: string, delta: string) {
   if (!delta) {
@@ -663,6 +757,55 @@ function compactComparableStreamingText(value: string) {
     .replace(/[？?]/g, "?")
     .replace(/[，,]/g, ",")
     .replace(/[。．.]/g, ".");
+}
+
+function isReasoningSnapshotDuplicate(previous: string, incoming: string) {
+  const previousCompact = compactComparableStreamingText(previous);
+  const incomingCompact = compactComparableStreamingText(incoming);
+  if (!previousCompact || !incomingCompact) {
+    return false;
+  }
+  if (previousCompact === incomingCompact) {
+    return true;
+  }
+  if (previousCompact.length >= 16 && incomingCompact.includes(previousCompact)) {
+    return true;
+  }
+  if (incomingCompact.length >= 16 && previousCompact.includes(incomingCompact)) {
+    return true;
+  }
+  return false;
+}
+
+function findDuplicateReasoningSnapshotIndex(
+  list: ConversationItem[],
+  incoming: Extract<ConversationItem, { kind: "reasoning" }>,
+) {
+  const incomingText = normalizeReasoningReadableText(
+    incoming.content || incoming.summary || "",
+  );
+  if (!incomingText) {
+    return -1;
+  }
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const candidate = list[index];
+    if (candidate.kind === "message" && candidate.role === "user") {
+      break;
+    }
+    if (candidate.kind !== "reasoning") {
+      continue;
+    }
+    const candidateText = normalizeReasoningReadableText(
+      candidate.content || candidate.summary || "",
+    );
+    if (!candidateText) {
+      continue;
+    }
+    if (isReasoningSnapshotDuplicate(candidateText, incomingText)) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function sharedPrefixLength(left: string, right: string) {
@@ -1017,6 +1160,19 @@ function findAssistantMessageIndexById(
   return -1;
 }
 
+function findReasoningIndexById(list: ConversationItem[], candidateId: string) {
+  if (!candidateId) {
+    return -1;
+  }
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const item = list[index];
+    if (item.kind === "reasoning" && item.id === candidateId) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 function findAssistantMessageIndexByPrefix(
   list: ConversationItem[],
   idPrefix: string,
@@ -1036,6 +1192,21 @@ function findAssistantMessageIndexByPrefix(
     }
   }
   return -1;
+}
+
+function resolveLiveAssistantMessageId(
+  state: ThreadState,
+  threadId: string,
+  itemId: string,
+) {
+  const segment = state.agentSegmentByThread[threadId] ?? 0;
+  const activeTurnId = state.activeTurnIdByThread[threadId] ?? null;
+  if (isLocalCliReasoningThread(threadId) && activeTurnId) {
+    return segment > 0
+      ? `assistant-live:${activeTurnId}:seg-${segment}`
+      : `assistant-live:${activeTurnId}`;
+  }
+  return segment > 0 ? `${itemId}-seg-${segment}` : itemId;
 }
 
 function addSummaryBoundary(existing: string) {
@@ -1137,6 +1308,9 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
                 hasUnread: false,
                 isReviewing:
                   state.threadStatusById[action.threadId]?.isReviewing ?? false,
+                isContextCompacting:
+                  state.threadStatusById[action.threadId]?.isContextCompacting ??
+                  false,
                 processingStartedAt:
                   state.threadStatusById[action.threadId]?.processingStartedAt ??
                   null,
@@ -1202,54 +1376,42 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
           }
         });
 
-        const hasPendingThreadActivity = (threadId: string) =>
-          Boolean(state.threadStatusById[threadId]?.isProcessing) ||
+        const hasPendingThreadAnchor = (threadId: string) =>
           (state.activeTurnIdByThread[threadId] ?? null) !== null ||
           (state.itemsByThread[threadId]?.length ?? 0) > 0 ||
           Boolean(state.lastAgentMessageByThread[threadId]);
+        const activePendingId = state.activeThreadIdByWorkspace[action.workspaceId] ?? null;
+        const resolveActivePendingIndex = (): number | null => {
+          if (!activePendingId || !activePendingId.startsWith(pendingPrefix)) {
+            return null;
+          }
+          const activeIndex = pendingIndexes.find(
+            (index) => list[index]?.id === activePendingId,
+          );
+          if (activeIndex === undefined) {
+            return null;
+          }
+          const threadId = list[activeIndex]?.id ?? "";
+          if (!threadId || !hasPendingThreadAnchor(threadId)) {
+            return null;
+          }
+          return activeIndex;
+        };
 
-        // Prefer deterministic reconciliation when multiple pending threads exist:
-        // 1) single processing pending thread
-        // 2) single pending thread with an active turn id
-        // 3) single pending thread with observed activity (messages/deltas)
+        // Boundary first: when multiple pending threads exist for the same engine,
+        // never auto-rename here. The incoming finalized session event may belong
+        // to any pending stream, and guessing can cross-bind sessions.
+        //
+        // We rely on explicit thread/session mapping (thread/sessionIdUpdated) to
+        // reconcile those cases safely.
         let pendingIndex: number | null = null;
         if (pendingIndexes.length === 1) {
           const singlePendingId = list[pendingIndexes[0]]?.id ?? "";
-          if (singlePendingId && hasPendingThreadActivity(singlePendingId)) {
+          if (singlePendingId && hasPendingThreadAnchor(singlePendingId)) {
             pendingIndex = pendingIndexes[0];
           }
-        } else if (pendingIndexes.length > 1) {
-          const processingIndexes = pendingIndexes.filter((index) => {
-            const pendingId = list[index]?.id;
-            return pendingId
-              ? Boolean(state.threadStatusById[pendingId]?.isProcessing)
-              : false;
-          });
-          if (processingIndexes.length === 1) {
-            pendingIndex = processingIndexes[0];
-          }
-
-          if (pendingIndex === null) {
-            const turnBoundIndexes = pendingIndexes.filter((index) => {
-              const pendingId = list[index]?.id;
-              return pendingId
-                ? (state.activeTurnIdByThread[pendingId] ?? null) !== null
-                : false;
-            });
-            if (turnBoundIndexes.length === 1) {
-              pendingIndex = turnBoundIndexes[0];
-            }
-          }
-
-          if (pendingIndex === null) {
-            const activityIndexes = pendingIndexes.filter((index) => {
-              const pendingId = list[index]?.id;
-              return pendingId ? hasPendingThreadActivity(pendingId) : false;
-            });
-            if (activityIndexes.length === 1) {
-              pendingIndex = activityIndexes[0];
-            }
-          }
+        } else if (pendingIndexes.length === 0) {
+          pendingIndex = resolveActivePendingIndex();
         }
 
         if (pendingIndex !== null) {
@@ -1360,6 +1522,7 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             isProcessing: false,
             hasUnread: false,
             isReviewing: false,
+            isContextCompacting: false,
             processingStartedAt: null,
             lastDurationMs: null,
             heartbeatPulse: 0,
@@ -1472,6 +1635,7 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               isProcessing: true,
               hasUnread: previous?.hasUnread ?? false,
               isReviewing: previous?.isReviewing ?? false,
+              isContextCompacting: previous?.isContextCompacting ?? false,
               processingStartedAt:
                 wasProcessing && startedAt ? startedAt : action.timestamp,
               lastDurationMs,
@@ -1492,9 +1656,32 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             isProcessing: false,
             hasUnread: previous?.hasUnread ?? false,
             isReviewing: previous?.isReviewing ?? false,
+            isContextCompacting: previous?.isContextCompacting ?? false,
             processingStartedAt: null,
             lastDurationMs: nextDuration,
             heartbeatPulse: 0,
+          },
+        },
+      };
+    }
+    case "markContextCompacting": {
+      const previous = state.threadStatusById[action.threadId];
+      const currentIsCompacting = previous?.isContextCompacting ?? false;
+      if (currentIsCompacting === action.isCompacting) {
+        return state;
+      }
+      return {
+        ...state,
+        threadStatusById: {
+          ...state.threadStatusById,
+          [action.threadId]: {
+            isProcessing: previous?.isProcessing ?? false,
+            hasUnread: previous?.hasUnread ?? false,
+            isReviewing: previous?.isReviewing ?? false,
+            isContextCompacting: action.isCompacting,
+            processingStartedAt: previous?.processingStartedAt ?? null,
+            lastDurationMs: previous?.lastDurationMs ?? null,
+            heartbeatPulse: previous?.heartbeatPulse ?? 0,
           },
         },
       };
@@ -1576,6 +1763,9 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               state.threadStatusById[action.threadId]?.isProcessing ?? false,
             hasUnread: state.threadStatusById[action.threadId]?.hasUnread ?? false,
             isReviewing: action.isReviewing,
+            isContextCompacting:
+              state.threadStatusById[action.threadId]?.isContextCompacting ??
+              false,
             processingStartedAt:
               state.threadStatusById[action.threadId]?.processingStartedAt ?? null,
             lastDurationMs:
@@ -1596,6 +1786,9 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             hasUnread: action.hasUnread,
             isReviewing:
               state.threadStatusById[action.threadId]?.isReviewing ?? false,
+            isContextCompacting:
+              state.threadStatusById[action.threadId]?.isContextCompacting ??
+              false,
             processingStartedAt:
               state.threadStatusById[action.threadId]?.processingStartedAt ?? null,
             lastDurationMs:
@@ -1678,14 +1871,19 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       };
     }
     case "appendAgentDelta": {
-      // 使用分段 ID：当 tool item 开始时会增加 segment，确保文本和工具交替显示
-      const segment = state.agentSegmentByThread[action.threadId] ?? 0;
-      const segmentedItemId = segment > 0 ? `${action.itemId}-seg-${segment}` : action.itemId;
+      const segmentedItemId = resolveLiveAssistantMessageId(
+        state,
+        action.threadId,
+        action.itemId,
+      );
 
       const list = [...(state.itemsByThread[action.threadId] ?? [])];
-      const index = list.findIndex((msg) => msg.id === segmentedItemId);
-      if (index >= 0 && list[index].kind === "message") {
+      const index = findAssistantMessageIndexById(list, segmentedItemId);
+      if (index >= 0) {
         const existing = list[index];
+        if (existing.kind !== "message" || existing.role !== "assistant") {
+          return state;
+        }
         list[index] = {
           ...existing,
           text: mergeAgentMessageText(existing.text, action.delta),
@@ -1717,8 +1915,11 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       };
     }
     case "completeAgentMessage": {
-      const segment = state.agentSegmentByThread[action.threadId] ?? 0;
-      const segmentedItemId = segment > 0 ? `${action.itemId}-seg-${segment}` : action.itemId;
+      const segmentedItemId = resolveLiveAssistantMessageId(
+        state,
+        action.threadId,
+        action.itemId,
+      );
       const list = [...(state.itemsByThread[action.threadId] ?? [])];
       let index = findAssistantMessageIndexById(list, segmentedItemId);
       if (index < 0) {
@@ -1767,7 +1968,12 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
     case "upsertItem": {
       let list = state.itemsByThread[action.threadId] ?? [];
       const item = normalizeItem(action.item);
-      const isUserMessage = item.kind === "message" && item.role === "user";
+      const isUserMessage = isUserMessageItem(item);
+      const isOptimisticUser =
+        isUserMessage && item.id.startsWith(OPTIMISTIC_USER_ITEM_PREFIX);
+      if (isUserMessage && !isOptimisticUser) {
+        list = dropMatchingOptimisticUserMessage(list, item);
+      }
       const hadUserMessage = isUserMessage
         ? list.some((entry) => entry.kind === "message" && entry.role === "user")
         : false;
@@ -1805,11 +2011,32 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             content: chooseReadableText(existingContent, incomingContent),
           };
         } else {
-          nextItem = {
+          const normalizedIncoming = {
             ...nextItem,
             summary: normalizeReasoningReadableText(nextItem.summary),
             content: normalizeReasoningReadableText(nextItem.content),
           };
+          const duplicateIndex = findDuplicateReasoningSnapshotIndex(
+            list,
+            normalizedIncoming,
+          );
+          if (
+            duplicateIndex >= 0 &&
+            list[duplicateIndex]?.kind === "reasoning"
+          ) {
+            const duplicate = list[duplicateIndex] as Extract<
+              ConversationItem,
+              { kind: "reasoning" }
+            >;
+            nextItem = {
+              ...normalizedIncoming,
+              id: duplicate.id,
+              summary: chooseReadableText(duplicate.summary, normalizedIncoming.summary),
+              content: chooseReadableText(duplicate.content, normalizedIncoming.content),
+            };
+          } else {
+            nextItem = normalizedIncoming;
+          }
         }
       }
       const updatedItems = prepareThreadItems(upsertItem(list, nextItem));
@@ -1940,6 +2167,9 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               isProcessing: oldStatus.isProcessing || existingStatus.isProcessing,
               hasUnread: oldStatus.hasUnread || existingStatus.hasUnread,
               isReviewing: oldStatus.isReviewing || existingStatus.isReviewing,
+              isContextCompacting:
+                (oldStatus.isContextCompacting ?? false)
+                || (existingStatus.isContextCompacting ?? false),
               processingStartedAt:
                 oldStatus.processingStartedAt ?? existingStatus.processingStartedAt,
               lastDurationMs:
@@ -2055,10 +2285,13 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       };
     }
     case "appendReasoningSummary": {
+      if (!shouldAcceptReasoningDelta(state, action.threadId)) {
+        return state;
+      }
       const list = state.itemsByThread[action.threadId] ?? [];
-      const index = list.findIndex((entry) => entry.id === action.itemId);
+      const index = findReasoningIndexById(list, action.itemId);
       const base =
-        index >= 0 && list[index].kind === "reasoning"
+        index >= 0
           ? (list[index] as ConversationItem)
           : {
               id: action.itemId,
@@ -2086,10 +2319,13 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       };
     }
     case "appendReasoningSummaryBoundary": {
+      if (!shouldAcceptReasoningDelta(state, action.threadId)) {
+        return state;
+      }
       const list = state.itemsByThread[action.threadId] ?? [];
-      const index = list.findIndex((entry) => entry.id === action.itemId);
+      const index = findReasoningIndexById(list, action.itemId);
       const base =
-        index >= 0 && list[index].kind === "reasoning"
+        index >= 0
           ? (list[index] as ConversationItem)
           : {
               id: action.itemId,
@@ -2134,10 +2370,13 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       };
     }
     case "appendReasoningContent": {
+      if (!shouldAcceptReasoningDelta(state, action.threadId)) {
+        return state;
+      }
       const list = state.itemsByThread[action.threadId] ?? [];
-      const index = list.findIndex((entry) => entry.id === action.itemId);
+      const index = findReasoningIndexById(list, action.itemId);
       const base =
-        index >= 0 && list[index].kind === "reasoning"
+        index >= 0
           ? (list[index] as ConversationItem)
           : {
               id: action.itemId,
@@ -2161,6 +2400,20 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
         itemsByThread: {
           ...state.itemsByThread,
           [action.threadId]: prepareThreadItems(next),
+        },
+      };
+    }
+    case "dropReasoningItems": {
+      const list = state.itemsByThread[action.threadId] ?? [];
+      const filtered = list.filter((item) => item.kind !== "reasoning");
+      if (filtered.length === list.length) {
+        return state;
+      }
+      return {
+        ...state,
+        itemsByThread: {
+          ...state.itemsByThread,
+          [action.threadId]: prepareThreadItems(filtered),
         },
       };
     }
@@ -2339,6 +2592,20 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
           [action.threadId]: action.plan,
         },
       };
+    case "settleThreadPlanInProgress": {
+      const current = state.planByThread[action.threadId] ?? null;
+      const next = settlePlanInProgressSteps(current, action.targetStatus);
+      if (next === current) {
+        return state;
+      }
+      return {
+        ...state,
+        planByThread: {
+          ...state.planByThread,
+          [action.threadId]: next,
+        },
+      };
+    }
     case "clearThreadPlan":
       return {
         ...state,

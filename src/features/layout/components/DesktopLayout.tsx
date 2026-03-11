@@ -28,9 +28,11 @@ type DesktopLayoutProps = {
   topbarLeftNode: ReactNode;
   centerMode: "chat" | "diff" | "editor" | "memory";
   editorSplitLayout: "vertical" | "horizontal";
+  isEditorFileMaximized: boolean;
   messagesNode: ReactNode;
   gitDiffViewerNode: ReactNode;
   fileViewPanelNode: ReactNode;
+  rightPanelToolbarNode: ReactNode;
   gitDiffPanelNode: ReactNode;
   planPanelNode: ReactNode;
   composerNode: ReactNode;
@@ -62,9 +64,11 @@ export function DesktopLayout({
   topbarLeftNode,
   centerMode,
   editorSplitLayout,
+  isEditorFileMaximized,
   messagesNode,
   gitDiffViewerNode,
   fileViewPanelNode,
+  rightPanelToolbarNode,
   gitDiffPanelNode,
   planPanelNode,
   composerNode,
@@ -86,6 +90,7 @@ export function DesktopLayout({
   const isEditorSplitMode = centerMode === "editor";
   const isEditorHorizontalSplitMode =
     isEditorSplitMode && editorSplitLayout === "horizontal";
+  const isEditorSplitChatVisible = isEditorSplitMode && !isEditorFileMaximized;
 
   useEffect(() => {
     const diffLayer = diffLayerRef.current;
@@ -101,7 +106,7 @@ export function DesktopLayout({
     for (const { ref, mode } of layers) {
       if (!ref) continue;
       const isInteractive =
-        centerMode === mode || (isEditorSplitMode && mode === "chat");
+        centerMode === mode || (isEditorSplitChatVisible && mode === "chat");
       if (isInteractive) {
         ref.removeAttribute("inert");
       } else {
@@ -113,14 +118,14 @@ export function DesktopLayout({
     if (activeElement instanceof HTMLElement) {
       for (const { ref, mode } of layers) {
         const isInteractive =
-          centerMode === mode || (isEditorSplitMode && mode === "chat");
+          centerMode === mode || (isEditorSplitChatVisible && mode === "chat");
         if (ref && !isInteractive && ref.contains(activeElement)) {
           activeElement.blur();
           break;
         }
       }
     }
-  }, [centerMode, isEditorSplitMode]);
+  }, [centerMode, isEditorSplitChatVisible]);
 
   useEffect(() => {
     return () => {
@@ -270,6 +275,8 @@ export function DesktopLayout({
                         ? " is-editor-split-horizontal"
                         : " is-editor-split-vertical"
                       : ""
+                  }${
+                    isEditorSplitChatVisible ? "" : isEditorSplitMode ? " is-editor-file-maximized" : ""
                   }`}
                 >
                   <div
@@ -301,11 +308,11 @@ export function DesktopLayout({
                   ) : null}
                   <div
                     className={`content-layer content-layer--chat ${
-                      centerMode === "chat" || isEditorSplitMode
+                      centerMode === "chat" || isEditorSplitChatVisible
                         ? "is-active"
                         : "is-hidden"
                     }`}
-                    aria-hidden={centerMode !== "chat" && !isEditorSplitMode}
+                    aria-hidden={centerMode !== "chat" && !isEditorSplitChatVisible}
                     ref={chatLayerRef}
                   >
                     {messagesNode}
@@ -322,6 +329,7 @@ export function DesktopLayout({
                       onMouseDown={onRightPanelResizeStart}
                     />
                     <div className={`right-panel ${hasActivePlan ? "" : "plan-collapsed"}`}>
+                      {rightPanelToolbarNode}
                       <div className="right-panel-top">{gitDiffPanelNode}</div>
                       <div
                         className="right-panel-divider"
@@ -334,7 +342,7 @@ export function DesktopLayout({
                     </div>
                   </>
                 )}
-                {composerNode}
+                {isEditorSplitMode && isEditorFileMaximized ? null : composerNode}
                 {runtimeConsoleDockNode}
                 {terminalDockNode}
                 {debugPanelNode}

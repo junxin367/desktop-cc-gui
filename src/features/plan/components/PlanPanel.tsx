@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import X from "lucide-react/dist/esm/icons/x";
 import type { TurnPlan } from "../../../types";
+import { resolvePlanStepStatusForDisplay } from "../../threads/utils/threadNormalize";
 
 type PlanPanelProps = {
   plan: TurnPlan | null;
@@ -58,12 +58,12 @@ export function PlanPanel({
           {onClose && (
             <button
               type="button"
-              className="plan-close-btn"
+              className="plan-toggle-btn"
               onClick={onClose}
               aria-label={t("tools.closePlanPanel")}
               title={t("tools.closePlanPanel")}
             >
-              <X size={14} aria-hidden />
+              <span className="plan-toggle-thumb" aria-hidden />
             </button>
           )}
         </div>
@@ -76,9 +76,12 @@ export function PlanPanel({
       ) : (
         <ol className="plan-list">
           {steps.map((step, index) => (
-            <li key={`${step.step}-${index}`} className={`plan-step ${step.status}`}>
+            <li
+              key={`${step.step}-${index}`}
+              className={`plan-step ${resolvePlanStepStatusForDisplay(step.status, isProcessing)}`}
+            >
               <span className="plan-step-status" aria-hidden>
-                {statusLabel(step.status)}
+                {statusLabel(resolvePlanStepStatusForDisplay(step.status, isProcessing))}
               </span>
               <span className="plan-step-text">{step.step}</span>
             </li>

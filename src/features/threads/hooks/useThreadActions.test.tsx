@@ -147,6 +147,33 @@ describe("useThreadActions", () => {
     expect(loadedThreadsRef.current["thread-1"]).toBe(true);
   });
 
+  it("starts a thread when start_thread returns result.threadId", async () => {
+    vi.mocked(startThread).mockResolvedValue({
+      result: { threadId: "thread-1" },
+    });
+
+    const { result, dispatch, loadedThreadsRef } = renderActions();
+
+    let threadId: string | null = null;
+    await act(async () => {
+      threadId = await result.current.startThreadForWorkspace("ws-1");
+    });
+
+    expect(threadId).toBe("thread-1");
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+      engine: "codex",
+    });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "setActiveThreadId",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+    });
+    expect(loadedThreadsRef.current["thread-1"]).toBe(true);
+  });
+
   it("starts an opencode pending thread locally", async () => {
     const { result, dispatch, loadedThreadsRef } = renderActions();
 
@@ -446,7 +473,7 @@ describe("useThreadActions", () => {
       plan: {
         turnId: "turn-1",
         explanation: "Plan first",
-        steps: [{ step: "Inspect", status: "inProgress" }],
+        steps: [{ step: "Inspect", status: "pending" }],
       },
     });
   });
@@ -662,7 +689,7 @@ describe("useThreadActions", () => {
     });
   });
 
-  it("filters archived and vscode thread entries", async () => {
+  it("filters archived and Codex helper thread entries while keeping vscode sessions", async () => {
     vi.mocked(listThreads).mockResolvedValue({
       result: {
         data: [
@@ -684,9 +711,25 @@ describe("useThreadActions", () => {
           {
             id: "thread-vscode",
             cwd: "/tmp/codex",
-            preview: "Should hide vscode",
+            preview: "Should keep vscode",
             updated_at: 6000,
             source: "vscode",
+          },
+          {
+            id: "thread-helper-title",
+            cwd: "/tmp/codex",
+            preview:
+              "Generate a concise title for a coding chat thread from the first user message. Return only title text.",
+            updated_at: 5900,
+            source: "cli",
+          },
+          {
+            id: "thread-helper-project-info",
+            cwd: "/tmp/codex",
+            preview:
+              "You are generating OpenSpec project context. Return ONLY valid JSON with keys:",
+            updated_at: 5800,
+            source: "cli",
           },
         ],
         nextCursor: null,
@@ -711,6 +754,12 @@ describe("useThreadActions", () => {
           id: "thread-valid",
           name: "Visible thread",
           updatedAt: 6200,
+          engineSource: "codex",
+        },
+        {
+          id: "thread-vscode",
+          name: "Should keep vscode",
+          updatedAt: 6000,
           engineSource: "codex",
         },
       ],
@@ -978,6 +1027,43 @@ describe("useThreadActions", () => {
       "old-thread",
       "new-thread",
     );
+  });
+
+  it("skips claude history reload while turn is processing and local items exist", async () => {
+    const { result } = renderActions({
+      itemsByThread: {
+        "claude:session-1": [
+          {
+            id: "reasoning-live-1",
+            kind: "reasoning",
+            summary: "正在分析",
+            content: "正在分析",
+          },
+        ],
+      },
+      threadStatusById: {
+        "claude:session-1": {
+          isProcessing: true,
+          hasUnread: false,
+          isReviewing: false,
+          processingStartedAt: Date.now(),
+          lastDurationMs: null,
+          heartbeatPulse: 1,
+        },
+      },
+    });
+
+    let resumed: string | null = null;
+    await act(async () => {
+      resumed = await result.current.resumeThreadForWorkspace(
+        "ws-1",
+        "claude:session-1",
+      );
+    });
+
+    expect(resumed).toBe("claude:session-1");
+    expect(loadClaudeSession).not.toHaveBeenCalled();
+    expect(resumeThread).not.toHaveBeenCalled();
   });
 
   it("maps Claude tool_result to terminal status", async () => {

@@ -55,6 +55,104 @@ describe("useComposerAutocompleteState", () => {
     );
   });
 
+  it("filters gitignored files and directories from @ suggestions", () => {
+    const text = "请看 @src/";
+    const selectionStart = text.length;
+    const textareaRef = createTextareaRef();
+
+    const { result } = renderHook(() =>
+      useComposerAutocompleteState({
+        text,
+        selectionStart,
+        disabled: false,
+        skills: [],
+        prompts: [],
+        files: ["src/App.tsx", "src/generated.ts"],
+        directories: ["src", "src/generated"],
+        gitignoredFiles: new Set(["src/generated.ts"]),
+        gitignoredDirectories: new Set(["src/generated"]),
+        textareaRef,
+        setText: vi.fn(),
+        setSelectionStart: vi.fn(),
+      }),
+    );
+
+    expect(result.current.isAutocompleteOpen).toBe(true);
+    expect(result.current.autocompleteMatches.map((item) => item.label)).toContain("src/App.tsx");
+    expect(result.current.autocompleteMatches.map((item) => item.label)).not.toContain(
+      "src/generated.ts",
+    );
+    expect(result.current.autocompleteMatches.map((item) => item.label)).not.toContain(
+      "src/generated/",
+    );
+  });
+
+  it("shows only top-level entries when @ query has no directory scope", () => {
+    const text = "看看 @";
+    const selectionStart = text.length;
+    const textareaRef = createTextareaRef();
+
+    const { result } = renderHook(() =>
+      useComposerAutocompleteState({
+        text,
+        selectionStart,
+        disabled: false,
+        skills: [],
+        prompts: [],
+        files: ["README.md", "src/App.tsx", "src/main.tsx"],
+        directories: ["src", "src/components", "docs"],
+        textareaRef,
+        setText: vi.fn(),
+        setSelectionStart: vi.fn(),
+      }),
+    );
+
+    expect(result.current.autocompleteMatches.map((item) => item.label)).toEqual([
+      "docs/",
+      "src/",
+      "README.md",
+    ]);
+  });
+
+  it("shows only direct children inside the queried directory scope", () => {
+    const text = "看看 @src/";
+    const selectionStart = text.length;
+    const textareaRef = createTextareaRef();
+
+    const { result } = renderHook(() =>
+      useComposerAutocompleteState({
+        text,
+        selectionStart,
+        disabled: false,
+        skills: [],
+        prompts: [],
+        files: [
+          "src/App.tsx",
+          "src/components/Button.tsx",
+          "src/components/forms/Input.tsx",
+          "src/config.ts",
+        ],
+        directories: ["src", "src/components", "src/components/forms", "src/core"],
+        textareaRef,
+        setText: vi.fn(),
+        setSelectionStart: vi.fn(),
+      }),
+    );
+
+    expect(result.current.autocompleteMatches.map((item) => item.label)).toEqual([
+      "src/components/",
+      "src/core/",
+      "src/App.tsx",
+      "src/config.ts",
+    ]);
+    expect(result.current.autocompleteMatches.map((item) => item.label)).not.toContain(
+      "src/components/forms/",
+    );
+    expect(result.current.autocompleteMatches.map((item) => item.label)).not.toContain(
+      "src/components/forms/Input.tsx",
+    );
+  });
+
   it("suggests workspace memories when trigger is @@", async () => {
     vi.useFakeTimers();
     vi.mocked(projectMemoryFacade.list).mockResolvedValue({

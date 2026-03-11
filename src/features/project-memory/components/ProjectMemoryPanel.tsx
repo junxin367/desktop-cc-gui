@@ -10,7 +10,7 @@ import CheckSquare from "lucide-react/dist/esm/icons/check-square";
 import Square from "lucide-react/dist/esm/icons/square";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
-import { PanelTabs, type PanelTabId } from "../../layout/components/PanelTabs";
+import type { PanelTabId } from "../../layout/components/PanelTabs";
 import { Markdown } from "../../messages/components/Markdown";
 import { useProjectMemory } from "../hooks/useProjectMemory";
 import { projectMemoryFacade } from "../services/projectMemoryFacade";
@@ -93,7 +93,7 @@ type ProjectMemoryPanelProps = {
 
 export function ProjectMemoryPanel({
   workspaceId,
-  filePanelMode,
+  filePanelMode: _filePanelMode,
   onFilePanelModeChange,
 }: ProjectMemoryPanelProps) {
   const { t, i18n } = useTranslation();
@@ -998,9 +998,6 @@ export function ProjectMemoryPanel({
   return (
     <>
       <section className="project-memory-panel">
-        <header className="project-memory-header">
-          <PanelTabs active={filePanelMode} onSelect={onFilePanelModeChange} />
-        </header>
       </section>
 
       {managerOpen && (

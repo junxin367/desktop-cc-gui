@@ -28,9 +28,12 @@ import { recordHistory as recordInputHistory } from "../hooks/useInputHistorySto
 import { ChatInputBoxAdapter } from "./ChatInputBox/ChatInputBoxAdapter";
 import type { ChatInputBoxHandle } from "./ChatInputBox/ChatInputBoxAdapter";
 import { accessModeToPermissionMode, permissionModeToAccessMode } from "./ChatInputBox/types";
-import type { PermissionMode } from "./ChatInputBox/types";
+import { ReviewInlinePrompt } from "./ReviewInlinePrompt";
 import type {
+  ContextCompactionState,
   ContextSelectionChip,
+  DualContextUsageViewModel,
+  PermissionMode,
   SelectedAgent as ChatInputSelectedAgent,
 } from "./ChatInputBox/types";
 import { StatusPanel } from "../../status-panel/components/StatusPanel";
@@ -43,6 +46,7 @@ import {
   extractInlineSelections,
   mergeUniqueNames,
 } from "../utils/inlineSelections";
+import { compactThreadContext } from "../../../services/tauri";
 import { pushErrorToast } from "../../../services/toasts";
 import { getManualMemoryInjectionMode } from "../../project-memory/utils/manualInjectionMode";
 
@@ -98,7 +102,11 @@ type ComposerProps = {
   commands?: CustomCommandOption[];
   files: string[];
   directories?: string[];
+  gitignoredFiles?: Set<string>;
+  gitignoredDirectories?: Set<string>;
   contextUsage?: ThreadTokenUsage | null;
+  contextDualViewEnabled?: boolean;
+  isContextCompacting?: boolean;
   accountRateLimits?: RateLimitSnapshot | null;
   usageShowRemaining?: boolean;
   onRefreshAccountRateLimits?: () => Promise<void> | void;
@@ -206,6 +214,61 @@ const MANUAL_MEMORY_USER_INPUT_REGEX =
 const MANUAL_MEMORY_ASSISTANT_SUMMARY_REGEX =
   /(?:^|\n)\s*助手输出摘要[:：]\s*([\s\S]*?)(?=\n+\s*(?:助手输出|用户输入)[:：]|$)/;
 const INLINE_FILE_REFERENCE_TOKEN_REGEX = /(📁|📄)\s+([^\n`📁📄]+?)\s+`([^`\n]+)`/gu;
+
+function clampUsagePercent(percent: number): number {
+  if (!Number.isFinite(percent)) {
+    return 0;
+  }
+  return Math.min(Math.max(percent, 0), 100);
+}
+
+function isCompactedConversationItem(item: ConversationItem): boolean {
+  if (item.kind !== "message" || item.role !== "assistant") {
+    return false;
+  }
+  if (item.id.startsWith("context-compacted-")) {
+    return true;
+  }
+  return item.text.trim().toLowerCase() === "context compacted.";
+}
+
+function resolveCompactionState(
+  items: ConversationItem[],
+  isContextCompacting: boolean,
+): ContextCompactionState {
+  if (isContextCompacting) {
+    return "compacting";
+  }
+  if (items.some(isCompactedConversationItem)) {
+    return "compacted";
+  }
+  return "idle";
+}
+
+function resolveDualContextUsageModel(
+  contextUsage: ThreadTokenUsage | null,
+  items: ConversationItem[],
+  isContextCompacting: boolean,
+): DualContextUsageViewModel {
+  const contextWindow = Math.max(contextUsage?.modelContextWindow ?? 0, 0);
+  const lastInput = Math.max(contextUsage?.last.inputTokens ?? 0, 0);
+  const lastCached = Math.max(contextUsage?.last.cachedInputTokens ?? 0, 0);
+  // Use current/last snapshot only for context window occupancy.
+  // total.* is cumulative session usage and can exceed context window after compaction.
+  const usedTokens = lastInput + lastCached;
+  const hasUsage = usedTokens > 0 && contextWindow > 0;
+  const percent = contextWindow > 0 ? clampUsagePercent((usedTokens / contextWindow) * 100) : 0;
+  return {
+    usedTokens,
+    contextWindow,
+    percent,
+    hasUsage,
+    compactionState: resolveCompactionState(
+      items,
+      isContextCompacting,
+    ),
+  };
+}
 
 function normalizeInlineFileReferenceTokens(text: string) {
   return text.replace(
@@ -380,7 +443,11 @@ export const Composer = memo(function Composer({
   commands = [],
   files,
   directories = [],
+  gitignoredFiles,
+  gitignoredDirectories,
   contextUsage = null,
+  contextDualViewEnabled = false,
+  isContextCompacting = false,
   accountRateLimits = null,
   usageShowRemaining = false,
   onRefreshAccountRateLimits,
@@ -450,6 +517,8 @@ export const Composer = memo(function Composer({
 }: ComposerProps) {
   const { t } = useTranslation();
   const isCodexEngine = selectedEngine === "codex";
+  const isReviewQuickActionEngine =
+    selectedEngine === "codex" || selectedEngine === "claude";
   const showStatusPanel = selectedEngine === "claude" || selectedEngine === "codex";
   const { todoTotal, subagentTotal, fileChanges, commandTotal } = useStatusPanelData(
     items,
@@ -701,6 +770,8 @@ export const Composer = memo(function Composer({
     commands,
     files,
     directories,
+    gitignoredFiles,
+    gitignoredDirectories,
     workspaceId: activeWorkspaceId,
     onManualMemorySelect: handleSelectManualMemory,
     textareaRef,
@@ -796,6 +867,47 @@ export const Composer = memo(function Composer({
       message: t("rewind.notAvailable"),
     });
   }, [onRewind, t]);
+
+  const handleManualCompactContext = useCallback(async () => {
+    if (selectedEngine !== "codex") {
+      return;
+    }
+    if (!activeWorkspaceId || !activeThreadId) {
+      pushErrorToast({
+        title: t("chat.contextDualViewManualCompact"),
+        message: t("chat.contextDualViewManualCompactUnavailable"),
+      });
+      return;
+    }
+    try {
+      await compactThreadContext(activeWorkspaceId, activeThreadId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      pushErrorToast({
+        title: t("chat.contextDualViewManualCompact"),
+        message: message || t("chat.contextDualViewManualCompactFailed"),
+      });
+    }
+  }, [activeThreadId, activeWorkspaceId, selectedEngine, t]);
+
+  const handleCodexQuickCommand = useCallback((command: string) => {
+    if (disabled) {
+      return;
+    }
+    const normalized = command.trim().toLowerCase();
+    const isReviewCommand = /^\/review\b/.test(normalized);
+    const isFastCommand = /^\/fast\b/.test(normalized);
+    if (isFastCommand && selectedEngine !== "codex") {
+      return;
+    }
+    if (isReviewCommand && !isReviewQuickActionEngine) {
+      return;
+    }
+    if (!isReviewCommand && !isFastCommand && selectedEngine !== "codex") {
+      return;
+    }
+    void onSend(command, []);
+  }, [disabled, isReviewQuickActionEngine, onSend, selectedEngine]);
 
   const handleSend = useCallback((submittedImages?: string[]) => {
     if (disabled) {
@@ -955,6 +1067,48 @@ export const Composer = memo(function Composer({
     textareaRef,
   ]);
 
+  const legacyContextUsage = useMemo(
+    () =>
+      contextUsage
+        ? {
+            used: contextUsage.total.totalTokens,
+            total: contextUsage.modelContextWindow ?? 0,
+          }
+        : null,
+    [contextUsage],
+  );
+
+  const dualContextUsage = useMemo(
+    () =>
+      resolveDualContextUsageModel(
+        contextUsage,
+        items,
+        isContextCompacting,
+      ),
+    [contextUsage, isContextCompacting, items],
+  );
+  const codexContextDualViewEnabled = contextDualViewEnabled && isCodexEngine;
+  const shouldRenderReviewInlinePrompt =
+    isReviewQuickActionEngine &&
+    Boolean(reviewPrompt) &&
+    Boolean(_onReviewPromptClose) &&
+    Boolean(_onReviewPromptShowPreset) &&
+    Boolean(_onReviewPromptChoosePreset) &&
+    _highlightedPresetIndex !== undefined &&
+    Boolean(_onReviewPromptHighlightPreset) &&
+    _highlightedBranchIndex !== undefined &&
+    Boolean(_onReviewPromptHighlightBranch) &&
+    _highlightedCommitIndex !== undefined &&
+    Boolean(_onReviewPromptHighlightCommit) &&
+    Boolean(_onReviewPromptSelectBranch) &&
+    Boolean(_onReviewPromptSelectBranchAtIndex) &&
+    Boolean(_onReviewPromptConfirmBranch) &&
+    Boolean(_onReviewPromptSelectCommit) &&
+    Boolean(_onReviewPromptSelectCommitAtIndex) &&
+    Boolean(_onReviewPromptConfirmCommit) &&
+    Boolean(_onReviewPromptUpdateCustomInstructions) &&
+    Boolean(_onReviewPromptConfirmCustom);
+
   return (
     <footer className={`composer${disabled ? " is-disabled" : ""}`}>
       {showStatusPanel && (
@@ -1047,6 +1201,45 @@ export const Composer = memo(function Composer({
           </div>
         )}
 
+        {shouldRenderReviewInlinePrompt && reviewPrompt && (
+          <div
+            className="composer-suggestions popover-surface review-inline-suggestions"
+            role="listbox"
+            style={{
+              position: "relative",
+              left: "auto",
+              right: "auto",
+              top: "auto",
+              bottom: "auto",
+              width: "min(540px, 100%)",
+              maxWidth: "min(540px, 100%)",
+              marginBottom: "4px",
+            }}
+          >
+            <ReviewInlinePrompt
+              reviewPrompt={reviewPrompt}
+              onClose={_onReviewPromptClose!}
+              onShowPreset={_onReviewPromptShowPreset!}
+              onChoosePreset={_onReviewPromptChoosePreset!}
+              highlightedPresetIndex={_highlightedPresetIndex!}
+              onHighlightPreset={_onReviewPromptHighlightPreset!}
+              highlightedBranchIndex={_highlightedBranchIndex!}
+              onHighlightBranch={_onReviewPromptHighlightBranch!}
+              highlightedCommitIndex={_highlightedCommitIndex!}
+              onHighlightCommit={_onReviewPromptHighlightCommit!}
+              onSelectBranch={_onReviewPromptSelectBranch!}
+              onSelectBranchAtIndex={_onReviewPromptSelectBranchAtIndex!}
+              onConfirmBranch={_onReviewPromptConfirmBranch!}
+              onSelectCommit={_onReviewPromptSelectCommit!}
+              onSelectCommitAtIndex={_onReviewPromptSelectCommitAtIndex!}
+              onConfirmCommit={_onReviewPromptConfirmCommit!}
+              onUpdateCustomInstructions={_onReviewPromptUpdateCustomInstructions!}
+              onConfirmCustom={_onReviewPromptConfirmCustom!}
+              onKeyDown={_onReviewPromptKeyDown}
+            />
+          </div>
+        )}
+
         <ChatInputBoxAdapter
           ref={chatInputRef}
           text={text}
@@ -1072,7 +1265,10 @@ export const Composer = memo(function Composer({
           onRemoveAttachment={onRemoveImage}
           textareaHeight={textareaHeight}
           onHeightChange={onTextareaHeightChange}
-          contextUsage={contextUsage ? { used: contextUsage.total.totalTokens, total: contextUsage.modelContextWindow ?? 0 } : null}
+          contextUsage={legacyContextUsage}
+          contextDualViewEnabled={codexContextDualViewEnabled}
+          dualContextUsage={dualContextUsage}
+          onRequestContextCompaction={handleManualCompactContext}
           queuedMessages={queuedMessages}
           onDeleteQueued={onDeleteQueued}
           suggestionsOpen={suggestionsOpen}
@@ -1104,6 +1300,7 @@ export const Composer = memo(function Composer({
           accountRateLimits={accountRateLimits}
           usageShowRemaining={usageShowRemaining}
           onRefreshAccountRateLimits={onRefreshAccountRateLimits}
+          onCodexQuickCommand={handleCodexQuickCommand}
           hasMessages={items.length > 0}
           onRewind={handleRewind}
           showRewindEntry={false}

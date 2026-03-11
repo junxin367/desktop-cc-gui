@@ -1006,6 +1006,88 @@ function normalizeStringList(value: unknown) {
   return single ? [single] : [];
 }
 
+function stringifyUnknown(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function extractWebSearchQuery(item: Record<string, unknown>): string {
+  const directCandidates = [
+    item.query,
+    item.q,
+    item.searchQuery,
+    item.search_query,
+    item.prompt,
+    item.text,
+  ];
+  for (const candidate of directCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  const queryPayload = item.search_query ?? item.searchQuery;
+  if (Array.isArray(queryPayload)) {
+    const queries = queryPayload
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry.trim();
+        }
+        if (!entry || typeof entry !== "object") {
+          return "";
+        }
+        const record = entry as Record<string, unknown>;
+        return asString(record.q ?? record.query ?? record.url ?? "").trim();
+      })
+      .filter(Boolean);
+    if (queries.length > 0) {
+      return queries.join(" | ");
+    }
+  }
+
+  if (queryPayload && typeof queryPayload === "object") {
+    const record = queryPayload as Record<string, unknown>;
+    const nested = asString(record.q ?? record.query ?? record.url ?? "").trim();
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return "";
+}
+
+function normalizeFileChangeKind(rawKind: unknown): string | undefined {
+  const normalized = asString(rawKind).trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+  if (["a", "add", "added", "create", "created", "new"].includes(normalized)) {
+    return "add";
+  }
+  if (["d", "del", "delete", "deleted", "remove", "removed"].includes(normalized)) {
+    return "delete";
+  }
+  if (["r", "rename", "renamed", "move", "moved"].includes(normalized)) {
+    return "rename";
+  }
+  if (["m", "mod", "modify", "modified", "update", "updated", "edit", "edited"].includes(normalized)) {
+    return "modified";
+  }
+  return normalized;
+}
+
 function formatCollabAgentStates(value: unknown) {
   if (!value || typeof value !== "object") {
     return "";
@@ -1458,7 +1540,9 @@ export function prepareThreadItems(items: ConversationItem[]) {
 }
 
 export function upsertItem(list: ConversationItem[], item: ConversationItem) {
-  const index = list.findIndex((entry) => entry.id === item.id);
+  const index = list.findIndex(
+    (entry) => entry.id === item.id && entry.kind === item.kind,
+  );
   if (index === -1) {
     return [...list, item];
   }
@@ -1603,24 +1687,51 @@ export function buildConversationItem(
       title: titleText ? `Command: ${titleText}` : "Command",
       detail: detailPayload || cwd,
       status: asString(item.status ?? ""),
-      output: asString(item.aggregatedOutput ?? ""),
+      output: asString(
+        item.aggregatedOutput ??
+          item.output ??
+          item.result ??
+          item.text ??
+          "",
+      ),
       durationMs,
     };
   }
   if (type === "fileChange") {
-    const changes = Array.isArray(item.changes) ? item.changes : [];
+    const changes = Array.isArray(item.changes)
+      ? item.changes
+      : Array.isArray(item.files)
+        ? item.files
+        : [];
     const normalizedChanges = changes
       .map((change) => {
-        const path = asString(change?.path ?? "");
+        const path = asString(
+          change?.path ??
+            change?.file_path ??
+            change?.filePath ??
+            change?.filename ??
+            "",
+        );
         const kind = change?.kind as Record<string, unknown> | string | undefined;
-        const kindType =
+        const rawKind =
           typeof kind === "string"
             ? kind
             : typeof kind === "object" && kind
-              ? asString((kind as Record<string, unknown>).type ?? "")
-              : "";
-        const normalizedKind = kindType ? kindType.toLowerCase() : "";
-        const diff = asString(change?.diff ?? "");
+              ? asString(
+                  (kind as Record<string, unknown>).type ??
+                    (kind as Record<string, unknown>).status ??
+                    "",
+                )
+              : asString(change?.status ?? change?.type ?? "");
+        const normalizedKind = normalizeFileChangeKind(rawKind);
+        const diff = asString(
+          change?.diff ??
+            change?.patch ??
+            change?.unifiedDiff ??
+            change?.unified_diff ??
+            change?.output ??
+            "",
+        );
         return { path, kind: normalizedKind || undefined, diff: diff || undefined };
       })
       .filter((change) => change.path);
@@ -1631,6 +1742,8 @@ export function buildConversationItem(
             ? "A"
             : change.kind === "delete"
               ? "D"
+              : change.kind === "rename"
+                ? "R"
               : change.kind
                 ? "M"
                 : "";
@@ -1649,7 +1762,7 @@ export function buildConversationItem(
       title: "File changes",
       detail: paths || "Pending changes",
       status: asString(item.status ?? ""),
-      output: diffOutput,
+      output: diffOutput || asString(item.aggregatedOutput ?? item.output ?? item.text ?? ""),
       changes: normalizedChanges,
     };
   }
@@ -1695,14 +1808,25 @@ export function buildConversationItem(
     };
   }
   if (type === "webSearch") {
+    const query = extractWebSearchQuery(item);
+    const detail = query ? JSON.stringify({ query }) : asString(item.query ?? "");
+    const output = stringifyUnknown(
+      item.result ??
+        item.output ??
+        item.response ??
+        item.results ??
+        item.text ??
+        item.error ??
+        "",
+    );
     return {
       id,
       kind: "tool",
       toolType: type,
       title: "Web search",
-      detail: asString(item.query ?? ""),
-      status: "",
-      output: "",
+      detail,
+      status: asString(item.status ?? ""),
+      output,
     };
   }
   if (type === "imageView") {

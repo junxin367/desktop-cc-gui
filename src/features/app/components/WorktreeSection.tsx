@@ -53,6 +53,11 @@ type WorktreeSectionProps = {
     threadId: string,
     canPin: boolean,
   ) => void;
+  deleteConfirmThreadId?: string | null;
+  deleteConfirmWorkspaceId?: string | null;
+  deleteConfirmBusy?: boolean;
+  onCancelDeleteConfirm?: () => void;
+  onConfirmDeleteConfirm?: () => void;
   onShowWorktreeMenu: (event: MouseEvent, workspaceId: string) => void;
   onToggleExpanded: (workspaceId: string) => void;
   onLoadOlderThreads: (workspaceId: string) => void;
@@ -82,6 +87,11 @@ export function WorktreeSection({
   onToggleWorkspaceCollapse,
   onSelectThread,
   onShowThreadMenu,
+  deleteConfirmThreadId = null,
+  deleteConfirmWorkspaceId = null,
+  deleteConfirmBusy = false,
+  onCancelDeleteConfirm,
+  onConfirmDeleteConfirm,
   onShowWorktreeMenu,
   onToggleExpanded,
   onLoadOlderThreads,
@@ -136,6 +146,9 @@ export function WorktreeSection({
       >
         <Layers className="worktree-header-icon" aria-hidden />
         <span className="worktree-header-text">worktrees</span>
+        <span className="worktree-header-count" aria-hidden>
+          {worktrees.length}
+        </span>
         <span className="worktree-header-toggle" aria-hidden>
           ›
         </span>
@@ -171,6 +184,8 @@ export function WorktreeSection({
                 worktree={worktree}
                 isActive={worktree.id === activeWorkspaceId}
                 hasPrimaryActiveThread={hasPrimaryActiveThread}
+                threadCount={totalWorktreeRoots}
+                hasThreadCursor={Boolean(worktreeNextCursor)}
                 isDeleting={deletingWorktreeIds.has(worktree.id)}
                 onSelectWorkspace={onSelectWorkspace}
                 onShowWorktreeMenu={onShowWorktreeMenu}
@@ -198,6 +213,11 @@ export function WorktreeSection({
                     onLoadOlderThreads={onLoadOlderThreads}
                     onSelectThread={onSelectThread}
                     onShowThreadMenu={onShowThreadMenu}
+                    deleteConfirmThreadId={deleteConfirmThreadId}
+                    deleteConfirmWorkspaceId={deleteConfirmWorkspaceId}
+                    deleteConfirmBusy={deleteConfirmBusy}
+                    onCancelDeleteConfirm={onCancelDeleteConfirm}
+                    onConfirmDeleteConfirm={onConfirmDeleteConfirm}
                   />
                 )}
                 {showWorktreeLoader && <ThreadLoading nested />}

@@ -19,7 +19,9 @@ import { ChatInputBox } from './ChatInputBox';
 import type {
   ChatInputBoxHandle,
   Attachment,
+  CodexSpeedMode,
   ContextSelectionChip,
+  DualContextUsageViewModel,
   PermissionMode,
   ReasoningEffort,
   SelectedAgent,
@@ -38,6 +40,7 @@ import {
   setClaudeAlwaysThinkingEnabled,
   switchClaudeProvider,
   updateClaudeProvider,
+  getWorkspaceDirectoryChildren,
 } from '../../../../services/tauri';
 
 // Re-export the handle type for Composer to use
@@ -128,11 +131,15 @@ export interface ChatInputBoxAdapterProps {
 
   // Context usage
   contextUsage?: { used: number; total: number } | null;
+  contextDualViewEnabled?: boolean;
+  dualContextUsage?: DualContextUsageViewModel | null;
+  onRequestContextCompaction?: () => Promise<void> | void;
   accountRateLimits?: RateLimitSnapshot | null;
   usageShowRemaining?: boolean;
   onRefreshAccountRateLimits?: () => Promise<void> | void;
   selectedCollaborationModeId?: string | null;
   onSelectCollaborationMode?: (id: string | null) => void;
+  onCodexQuickCommand?: (command: string) => void | Promise<void>;
 
   // Queue
   queuedMessages?: ComposerQueuedMessage[];
@@ -334,11 +341,15 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
       onAddAttachment,
       onRemoveAttachment,
       contextUsage,
+      contextDualViewEnabled = false,
+      dualContextUsage,
+      onRequestContextCompaction,
       accountRateLimits,
       usageShowRemaining,
       onRefreshAccountRateLimits,
       selectedCollaborationModeId,
       onSelectCollaborationMode,
+      onCodexQuickCommand,
       queuedMessages,
       onDeleteQueued,
       files,
@@ -372,6 +383,7 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
     const [localStreamingEnabled, setLocalStreamingEnabled] = useState(
       () => readStoredStreamingEnabled(),
     );
+    const [codexSpeedMode, setCodexSpeedMode] = useState<CodexSpeedMode>('unknown');
 
     // Expose ChatInputBoxHandle to parent
     useImperativeHandle(ref, () => ({
@@ -502,6 +514,18 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
       onSelectEngine?.(targetEngine);
     }, [onSelectEngine, selectedEngine]);
 
+    const handleCodexSpeedModeChange = useCallback(
+      (mode: Exclude<CodexSpeedMode, 'unknown'>) => {
+        setCodexSpeedMode(mode);
+        void onCodexQuickCommand?.(mode === 'fast' ? '/fast on' : '/fast off');
+      },
+      [onCodexQuickCommand],
+    );
+
+    const handleCodexReviewQuickStart = useCallback(() => {
+      void onCodexQuickCommand?.('/review');
+    }, [onCodexQuickCommand]);
+
     // Convert context usage
     const usagePercentage = useMemo(() => {
       if (!contextUsage) return 0;
@@ -524,13 +548,10 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
         if (signal.aborted) {
           throw new DOMException('Aborted', 'AbortError');
         }
-        const sourceDirectories = directories ?? [];
-        const sourceFiles = files ?? [];
-        const normalizedQuery = query.trim().toLowerCase();
-        const maxSuggestions = 500;
+        const maxSuggestions = 200;
         const results: FileItem[] = [];
 
-        const pushDirectory = (path: string) => {
+        const pushDirectoryFromPath = (path: string) => {
           const normalizedPath = `${normalizePath(path)}/`;
           const name = fileNameFromPath(path);
           results.push({
@@ -541,7 +562,7 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
             extension: '',
           });
         };
-        const pushFile = (path: string) => {
+        const pushFileFromPath = (path: string) => {
           const normalizedPath = normalizePath(path);
           const name = fileNameFromPath(path);
           results.push({
@@ -552,52 +573,101 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
             extension: extensionFromFileName(name),
           });
         };
+        const pushFromResponse = (response: { files: string[]; directories: string[] }) => {
+          for (const dir of response.directories) {
+            pushDirectoryFromPath(dir);
+            if (results.length >= maxSuggestions) return;
+          }
+          for (const file of response.files) {
+            pushFileFromPath(file);
+            if (results.length >= maxSuggestions) return;
+          }
+        };
+
+        const normalizedQuery = query.trim();
+
+        // Parse query: separate directory path from search fragment
+        // e.g. "src/com" -> { dirPath: "src", fragment: "com" }
+        // e.g. "src/"   -> { dirPath: "src", fragment: "" }
+        // e.g. "but"    -> { dirPath: "", fragment: "but" }
+        const lastSlashIndex = normalizedQuery.lastIndexOf('/');
+        const dirPath = lastSlashIndex >= 0 ? normalizedQuery.slice(0, lastSlashIndex) : '';
+        const fragment = lastSlashIndex >= 0 ? normalizedQuery.slice(lastSlashIndex + 1) : normalizedQuery;
+        const lowerFragment = fragment.toLowerCase();
+
+        // If we have a workspace ID and a directory path, use lazy loading
+        if (workspaceId && dirPath) {
+          try {
+            const response = await getWorkspaceDirectoryChildren(workspaceId, dirPath);
+            if (signal.aborted) {
+              throw new DOMException('Aborted', 'AbortError');
+            }
+            if (!lowerFragment) {
+              // No search term - show all direct children of the directory
+              pushFromResponse(response);
+            } else {
+              // Filter by fragment
+              for (const dir of response.directories) {
+                const name = fileNameFromPath(dir);
+                if (name.toLowerCase().includes(lowerFragment)) {
+                  pushDirectoryFromPath(dir);
+                  if (results.length >= maxSuggestions) break;
+                }
+              }
+              for (const file of response.files) {
+                const name = fileNameFromPath(file);
+                if (name.toLowerCase().includes(lowerFragment)) {
+                  pushFileFromPath(file);
+                  if (results.length >= maxSuggestions) break;
+                }
+              }
+            }
+            return results;
+          } catch (error) {
+            if ((error as Error).name === 'AbortError') throw error;
+            // Fallback to local filtering on error
+          }
+        }
+
+        // For root-level browsing or search, use the pre-loaded file/directory arrays
+        const sourceDirectories = directories ?? [];
+        const sourceFiles = files ?? [];
 
         if (!normalizedQuery) {
+          // No query: show only root-level entries (direct children of workspace root)
           for (const path of sourceDirectories) {
-            pushDirectory(path);
-            if (results.length >= maxSuggestions) {
-              return results;
+            if (!path.includes('/')) {
+              pushDirectoryFromPath(path);
+              if (results.length >= maxSuggestions) return results;
             }
           }
           for (const path of sourceFiles) {
-            pushFile(path);
-            if (results.length >= maxSuggestions) {
-              return results;
+            if (!path.includes('/')) {
+              pushFileFromPath(path);
+              if (results.length >= maxSuggestions) return results;
             }
           }
           return results;
         }
 
+        // Search query without directory path: search by name across all entries
         for (const path of sourceDirectories) {
-          const normalizedPath = normalizePath(path);
           const name = fileNameFromPath(path);
-          if (
-            name.toLowerCase().includes(normalizedQuery) ||
-            normalizedPath.toLowerCase().includes(normalizedQuery)
-          ) {
-            pushDirectory(path);
-            if (results.length >= maxSuggestions) {
-              return results;
-            }
+          if (name.toLowerCase().includes(lowerFragment) || normalizePath(path).toLowerCase().includes(lowerFragment)) {
+            pushDirectoryFromPath(path);
+            if (results.length >= maxSuggestions) return results;
           }
         }
         for (const path of sourceFiles) {
-          const normalizedPath = normalizePath(path);
           const name = fileNameFromPath(path);
-          if (
-            name.toLowerCase().includes(normalizedQuery) ||
-            normalizedPath.toLowerCase().includes(normalizedQuery)
-          ) {
-            pushFile(path);
-            if (results.length >= maxSuggestions) {
-              return results;
-            }
+          if (name.toLowerCase().includes(lowerFragment) || normalizePath(path).toLowerCase().includes(lowerFragment)) {
+            pushFileFromPath(path);
+            if (results.length >= maxSuggestions) return results;
           }
         }
         return results;
       },
-      [directories, files],
+      [directories, files, workspaceId],
     );
 
     const manualMemoryCompletionProvider = useCallback(
@@ -634,18 +704,29 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
       [workspaceId],
     );
 
-    const builtinSlashCommands = useMemo<CommandItem[]>(() => [
-      { id: 'clear', label: '/clear', description: t('chat.commands.clear'), category: 'system' },
-      { id: 'new', label: '/new', description: t('chat.commands.new'), category: 'system' },
-      { id: 'status', label: '/status', description: t('chat.commands.status'), category: 'session' },
-      { id: 'resume', label: '/resume', description: t('chat.commands.resume'), category: 'session' },
-      { id: 'review', label: '/review', description: t('chat.commands.review'), category: 'workflow' },
-      { id: 'fork', label: '/fork', description: t('chat.commands.fork'), category: 'workflow' },
-      { id: 'mcp', label: '/mcp', description: t('chat.commands.mcp'), category: 'tooling' },
-      { id: 'export', label: '/export', description: t('chat.commands.export'), category: 'session' },
-      { id: 'import', label: '/import', description: t('chat.commands.import'), category: 'session' },
-      { id: 'lsp', label: '/lsp', description: t('chat.commands.lsp'), category: 'tooling' },
-    ], [t]);
+    const builtinSlashCommands = useMemo<CommandItem[]>(() => {
+      const commands: CommandItem[] = [
+        { id: 'clear', label: '/clear', description: t('chat.commands.clear'), category: 'system' },
+        { id: 'new', label: '/new', description: t('chat.commands.new'), category: 'system' },
+        { id: 'status', label: '/status', description: t('chat.commands.status'), category: 'session' },
+        { id: 'resume', label: '/resume', description: t('chat.commands.resume'), category: 'session' },
+        { id: 'review', label: '/review', description: t('chat.commands.review'), category: 'workflow' },
+        { id: 'fork', label: '/fork', description: t('chat.commands.fork'), category: 'workflow' },
+        { id: 'mcp', label: '/mcp', description: t('chat.commands.mcp'), category: 'tooling' },
+        { id: 'export', label: '/export', description: t('chat.commands.export'), category: 'session' },
+        { id: 'import', label: '/import', description: t('chat.commands.import'), category: 'session' },
+        { id: 'lsp', label: '/lsp', description: t('chat.commands.lsp'), category: 'tooling' },
+      ];
+      if (selectedEngine === 'codex') {
+        commands.push({
+          id: 'fast',
+          label: '/fast',
+          description: t('chat.commands.fast'),
+          category: 'workflow',
+        });
+      }
+      return commands;
+    }, [selectedEngine, t]);
 
     const completionCommands = useMemo<CommandItem[]>(() => {
       const customCommands: CommandItem[] = (commands ?? [])
@@ -806,11 +887,17 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
         usageUsedTokens={contextUsage?.used}
         usageMaxTokens={contextUsage?.total}
         showUsage={true}
+        contextDualViewEnabled={contextDualViewEnabled}
+        dualContextUsage={dualContextUsage}
+        onRequestContextCompaction={onRequestContextCompaction}
         accountRateLimits={accountRateLimits}
         usageShowRemaining={usageShowRemaining}
         onRefreshAccountRateLimits={onRefreshAccountRateLimits}
         selectedCollaborationModeId={selectedCollaborationModeId}
         onSelectCollaborationMode={onSelectCollaborationMode}
+        codexSpeedMode={codexSpeedMode}
+        onCodexSpeedModeChange={handleCodexSpeedModeChange}
+        onCodexReviewQuickStart={handleCodexReviewQuickStart}
         messageQueue={messageQueue}
         onRemoveFromQueue={onDeleteQueued}
         sdkInstalled={true}

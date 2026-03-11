@@ -11,6 +11,7 @@ import { useThreadApprovalEvents } from "./useThreadApprovalEvents";
 import { useThreadItemEvents } from "./useThreadItemEvents";
 import { useThreadTurnEvents } from "./useThreadTurnEvents";
 import { useThreadUserInputEvents } from "./useThreadUserInputEvents";
+import { stripBackendErrorPrefix } from "../utils/networkErrors";
 import type { ThreadAction } from "./useThreadsReducer";
 
 type ThreadEventHandlersOptions = {
@@ -146,8 +147,13 @@ export function useThreadEventHandlers({
       // so we should stop the spinning "processing" state immediately.
       markProcessing(threadId, false);
       setActiveTurnId(threadId, null);
+      dispatch({
+        type: "settleThreadPlanInProgress",
+        threadId,
+        targetStatus: "pending",
+      });
     },
-    [enqueueUserInputRequest, markProcessing, setActiveTurnId],
+    [dispatch, enqueueUserInputRequest, markProcessing, setActiveTurnId],
   );
   const onModeBlocked = useCallback(
     (event: CollaborationModeBlockedRequest) => {
@@ -225,6 +231,7 @@ export function useThreadEventHandlers({
     recordThreadActivity,
     applyCollabThreadLinks,
     interruptedThreadsRef,
+    onDebug,
     onAgentMessageCompletedExternal,
   });
 
@@ -236,7 +243,9 @@ export function useThreadEventHandlers({
     onThreadTokenUsageUpdated,
     onAccountRateLimitsUpdated,
     onTurnError,
+    onContextCompacting,
     onContextCompacted,
+    onContextCompactionFailed,
     onThreadSessionIdUpdated,
   } = useThreadTurnEvents({
     dispatch,
@@ -256,6 +265,7 @@ export function useThreadEventHandlers({
     renameThreadTitleMapping,
     resolvePendingThreadForSession,
     renamePendingMemoryCaptureKey,
+    onDebug,
   });
 
   const onBackgroundThreadAction = useCallback(
@@ -279,32 +289,10 @@ export function useThreadEventHandlers({
     [dispatch, safeMessageActivity],
   );
 
-  /**
-   * 获取当前活动的 Codex thread ID
-   * 奶奶请看：这个函数就是"智能收件室"的核心功能
-   * 当 Codex 的报告信没有写收件人时，我们就看看当前正在使用哪个 Codex 房间
-   */
-  const getActiveCodexThreadId = useCallback(
-    (_workspaceId: string): string | null => {
-      // 如果当前有活动的 thread，且不是 Claude thread（Claude 以 "claude:" 开头）
-      // 那就返回这个 thread ID
-      if (
-        activeThreadId &&
-        !activeThreadId.startsWith("claude:") &&
-        !activeThreadId.startsWith("claude-pending-") &&
-        !activeThreadId.startsWith("opencode:") &&
-        !activeThreadId.startsWith("opencode-pending-")
-      ) {
-        return activeThreadId;
-      }
-      return null;
-    },
-    [activeThreadId],
-  );
-
   const onAppServerEvent = useCallback(
     (event: AppServerEvent) => {
       const method = String(event.message?.method ?? "");
+      const params = (event.message?.params as Record<string, unknown> | undefined) ?? {};
       const inferredSource = method === "codex/stderr" ? "stderr" : "event";
       onDebug?.({
         id: `${Date.now()}-server-event`,
@@ -313,6 +301,19 @@ export function useThreadEventHandlers({
         label: method || "event",
         payload: event,
       });
+
+      if (method === "codex/stderr") {
+        const rawMessage = String(params.message ?? "").trim();
+        if (onDebug && isReasoningRawDebugEnabled() && rawMessage) {
+          onDebug({
+            id: `${Date.now()}-stderr-raw`,
+            timestamp: Date.now(),
+            source: "stderr",
+            label: "stderr/raw",
+            payload: stripBackendErrorPrefix(rawMessage),
+          });
+        }
+      }
 
       if (!onDebug || !isReasoningRawDebugEnabled()) {
         return;
@@ -330,7 +331,6 @@ export function useThreadEventHandlers({
         return;
       }
 
-      const params = (event.message?.params as Record<string, unknown> | undefined) ?? {};
       if (
         method === "item/reasoning/summaryTextDelta" ||
         method === "item/reasoning/summaryPartAdded" ||
@@ -374,7 +374,9 @@ export function useThreadEventHandlers({
         },
       });
     },
-    [onDebug],
+    [
+      onDebug,
+    ],
   );
 
   const handlers = useMemo(
@@ -405,10 +407,10 @@ export function useThreadEventHandlers({
       onThreadTokenUsageUpdated,
       onAccountRateLimitsUpdated,
       onTurnError,
+      onContextCompacting,
       onContextCompacted,
+      onContextCompactionFailed,
       onThreadSessionIdUpdated,
-      // 奶奶请看：这里就是把"智能收件室"功能加到处理器列表里
-      getActiveCodexThreadId,
     }),
     [
       onWorkspaceConnected,
@@ -437,9 +439,10 @@ export function useThreadEventHandlers({
       onThreadTokenUsageUpdated,
       onAccountRateLimitsUpdated,
       onTurnError,
+      onContextCompacting,
       onContextCompacted,
+      onContextCompactionFailed,
       onThreadSessionIdUpdated,
-      getActiveCodexThreadId,
       onCollaborationModeResolved,
     ],
   );

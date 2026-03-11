@@ -119,6 +119,7 @@ export const BashToolBlock = memo(function BashToolBlock({
   const isCompleted = status === 'completed';
   const showOutput = isExpanded || (isRunning && showLiveOutput) || isLongRunning || isError;
   const isErrorLine = (line: string) => /(?:\berror\b|\bfailed\b|\bexception\b)/i.test(line);
+  const isTableLikeLine = (line: string) => /^\s*\|.*\|\s*$/.test(line);
 
   return (
     <div className="task-container">
@@ -205,6 +206,8 @@ export const BashToolBlock = memo(function BashToolBlock({
                     <span className="bash-output-line-error">{line || ' '}</span>
                   ) : line.length === 0 ? (
                     <span>&nbsp;</span>
+                  ) : isTableLikeLine(line) ? (
+                    <span>{line}</span>
                   ) : (
                     <span
                       dangerouslySetInnerHTML={{ __html: highlightedOutputLines[index] ?? "" }}

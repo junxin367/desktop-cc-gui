@@ -33,6 +33,8 @@ type UseComposerAutocompleteStateArgs = {
   commands?: CustomCommandOption[];
   files: string[];
   directories?: string[];
+  gitignoredFiles?: Set<string>;
+  gitignoredDirectories?: Set<string>;
   workspaceId?: string | null;
   onManualMemorySelect?: (memory: ManualMemorySuggestion) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -40,9 +42,45 @@ type UseComposerAutocompleteStateArgs = {
   setSelectionStart: (next: number | null) => void;
 };
 
-const MAX_FILE_SUGGESTIONS = 500;
+const MAX_FILE_SUGGESTIONS = 200;
 const MAX_MEMORY_SUGGESTIONS = 50;
 const FILE_TRIGGER_PREFIX = new RegExp("^(?:\\s|[\"'`]|\\(|\\[|\\{)$");
+
+function normalizeFileQueryPath(value: string) {
+  return value.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function splitFileQueryScope(query: string) {
+  const normalized = normalizeFileQueryPath(query);
+  const lastSlashIndex = normalized.lastIndexOf("/");
+  if (lastSlashIndex < 0) {
+    return { parentPath: "", fragment: normalized };
+  }
+  return {
+    parentPath: normalized.slice(0, lastSlashIndex),
+    fragment: normalized.slice(lastSlashIndex + 1),
+  };
+}
+
+function isDirectChildPath(path: string, parentPath: string) {
+  if (!parentPath) {
+    return !path.includes("/");
+  }
+  if (!path.startsWith(`${parentPath}/`)) {
+    return false;
+  }
+  const remainder = path.slice(parentPath.length + 1);
+  return remainder.length > 0 && !remainder.includes("/");
+}
+
+function matchesFileFragment(path: string, fragment: string) {
+  if (!fragment) {
+    return true;
+  }
+  const normalizedFragment = fragment.toLowerCase();
+  const childName = path.split("/").filter(Boolean).pop()?.toLowerCase() ?? path.toLowerCase();
+  return childName.includes(normalizedFragment);
+}
 
 function isFileTriggerActive(text: string, cursor: number | null) {
   if (!text || cursor === null) {
@@ -110,6 +148,8 @@ export function useComposerAutocompleteState({
   commands = [],
   files,
   directories = [],
+  gitignoredFiles,
+  gitignoredDirectories,
   workspaceId = null,
   onManualMemorySelect,
   textareaRef,
@@ -222,18 +262,33 @@ export function useComposerAutocompleteState({
       isFileTriggerActive(text, selectionStart)
         ? (() => {
             const query = getFileTriggerQuery(text, selectionStart) ?? "";
-            const directoryItems: AutocompleteItem[] = directories
-              .slice(0, MAX_FILE_SUGGESTIONS)
-              .map((path) => ({
-                id: `dir:${path}`,
-                label: `${path}/`,
-                insertText: `${path}/`,
-                isDirectory: true,
-              }));
-            const fileItemsList: AutocompleteItem[] = (query
-              ? files
-              : files.slice(0, MAX_FILE_SUGGESTIONS)
-            ).map((path) => ({
+            const { parentPath, fragment } = splitFileQueryScope(query);
+            // Combine filter predicates to avoid multiple passes over large arrays
+            const matchedDirectories: string[] = [];
+            const matchedFiles: string[] = [];
+            for (const path of directories) {
+              if (matchedDirectories.length >= MAX_FILE_SUGGESTIONS) break;
+              if (gitignoredDirectories?.has(path)) continue;
+              if (!isDirectChildPath(path, parentPath)) continue;
+              if (!matchesFileFragment(path, fragment)) continue;
+              matchedDirectories.push(path);
+            }
+            for (const path of files) {
+              if (matchedFiles.length >= MAX_FILE_SUGGESTIONS) break;
+              if (gitignoredFiles?.has(path)) continue;
+              if (!isDirectChildPath(path, parentPath)) continue;
+              if (!matchesFileFragment(path, fragment)) continue;
+              matchedFiles.push(path);
+            }
+            matchedDirectories.sort((a, b) => a.localeCompare(b));
+            matchedFiles.sort((a, b) => a.localeCompare(b));
+            const directoryItems: AutocompleteItem[] = matchedDirectories.map((path) => ({
+              id: `dir:${path}`,
+              label: `${path}/`,
+              insertText: `${path}/`,
+              isDirectory: true,
+            }));
+            const fileItemsList: AutocompleteItem[] = matchedFiles.map((path) => ({
               id: path,
               label: path,
               insertText: path,
@@ -242,7 +297,7 @@ export function useComposerAutocompleteState({
             return [...directoryItems, ...fileItemsList];
           })()
         : [],
-    [directories, files, selectionStart, text],
+    [directories, files, gitignoredDirectories, gitignoredFiles, selectionStart, text],
   );
 
   const promptItems = useMemo<AutocompleteItem[]>(

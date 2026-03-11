@@ -42,6 +42,7 @@ const AUTO_TITLE_REQUEST_TIMEOUT_MS = 8_000;
 const AUTO_TITLE_MAX_ATTEMPTS = 2;
 const AUTO_TITLE_PENDING_STALE_MS = 20_000;
 const MEMORY_DEBUG_FLAG_KEY = "codemoss:memory-debug";
+const THREAD_ERROR_DUPLICATE_WINDOW_MS = 8_000;
 
 /** 回合级记忆待合并数据（输入侧采集后暂存，等输出侧压缩后融合写入） */
 type PendingMemoryCapture = {
@@ -386,19 +387,22 @@ export function resolvePendingThreadIdForSession({
       ? activePendingId
       : null;
   };
-  const hasPendingActivity = (threadId: string) =>
-    Boolean(threadStatusById[threadId]?.isProcessing) ||
-    (activeTurnIdByThread[threadId] ?? null) !== null ||
-    (itemsByThread[threadId]?.length ?? 0) > 0;
+  const hasObservedItems = (threadId: string) => (itemsByThread[threadId]?.length ?? 0) > 0;
+  const hasPendingAnchor = (threadId: string) => {
+    const hasActiveTurn = (activeTurnIdByThread[threadId] ?? null) !== null;
+    if (hasActiveTurn) {
+      return true;
+    }
+    const isProcessing = Boolean(threadStatusById[threadId]?.isProcessing);
+    return isProcessing && hasObservedItems(threadId);
+  };
 
-  const processingPending = pendingThreads.filter((thread) =>
-    Boolean(threadStatusById[thread.id]?.isProcessing),
-  );
-  if (processingPending.length === 1) {
-    return processingPending[0].id;
-  }
-  if (processingPending.length > 1) {
-    return pickActivePending(processingPending);
+  // Boundary guard: pending->session reconciliation requires a concrete anchor
+  // (active turn or observed items). Processing state alone is not sufficient,
+  // otherwise old in-flight streams can be rebound into unrelated new sessions.
+  const activePending = pickActivePending(pendingThreads);
+  if (activePending && hasPendingAnchor(activePending)) {
+    return activePending;
   }
 
   const turnBoundPending = pendingThreads.filter(
@@ -412,7 +416,9 @@ export function resolvePendingThreadIdForSession({
   }
 
   const contentBoundPending = pendingThreads.filter(
-    (thread) => (itemsByThread[thread.id]?.length ?? 0) > 0,
+    (thread) =>
+      Boolean(threadStatusById[thread.id]?.isProcessing)
+      && hasObservedItems(thread.id),
   );
   if (contentBoundPending.length === 1) {
     return contentBoundPending[0].id;
@@ -423,12 +429,7 @@ export function resolvePendingThreadIdForSession({
 
   if (pendingThreads.length === 1) {
     const onlyPendingId = pendingThreads[0].id;
-    return hasPendingActivity(onlyPendingId) ? onlyPendingId : null;
-  }
-
-  const activePending = pickActivePending(pendingThreads);
-  if (activePending && hasPendingActivity(activePending)) {
-    return activePending;
+    return hasPendingAnchor(onlyPendingId) ? onlyPendingId : null;
   }
 
   return null;
@@ -462,6 +463,7 @@ export function useThreads({
   const pendingMemoryCaptureRef = useRef<Record<string, PendingMemoryCapture>>({});
   const pendingAssistantCompletionRef = useRef<Record<string, PendingAssistantCompletion>>({});
   const threadIdAliasRef = useRef<Record<string, string>>({});
+  const recentThreadErrorsRef = useRef<Record<string, { message: string; at: number }>>({});
   const { approvalAllowlistRef, handleApprovalDecision, handleApprovalRemember } =
     useThreadApprovals({ dispatch, onDebug });
   const { handleUserInputSubmit } = useThreadUserInput({ dispatch });
@@ -509,6 +511,19 @@ export function useThreads({
 
   const pushThreadErrorMessage = useCallback(
     (threadId: string, message: string) => {
+      const normalized = message.trim();
+      if (normalized) {
+        const now = Date.now();
+        const recent = recentThreadErrorsRef.current[threadId];
+        if (
+          recent
+          && recent.message === normalized
+          && now - recent.at < THREAD_ERROR_DUPLICATE_WINDOW_MS
+        ) {
+          return;
+        }
+        recentThreadErrorsRef.current[threadId] = { message: normalized, at: now };
+      }
       dispatch({
         type: "addAssistantMessage",
         threadId,
@@ -563,7 +578,7 @@ export function useThreads({
       workspaceId: string,
       engine: "claude" | "opencode",
     ): string | null => {
-      return resolvePendingThreadIdForSession({
+      const resolved = resolvePendingThreadIdForSession({
         workspaceId,
         engine,
         threadsByWorkspace: state.threadsByWorkspace,
@@ -572,8 +587,33 @@ export function useThreads({
         activeTurnIdByThread: state.activeTurnIdByThread,
         itemsByThread: state.itemsByThread,
       });
+      const pendingPrefix = `${engine}-pending-`;
+      const pendingCandidates = (state.threadsByWorkspace[workspaceId] ?? [])
+        .map((thread) => thread.id)
+        .filter((threadId) => threadId.startsWith(pendingPrefix));
+      onDebug?.({
+        id: `${Date.now()}-thread-session-resolve`,
+        timestamp: Date.now(),
+        source: "client",
+        label: "thread/session:resolve-pending",
+        payload: {
+          workspaceId,
+          engine,
+          activeThreadId: state.activeThreadIdByWorkspace[workspaceId] ?? null,
+          pendingCandidates,
+          resolved,
+          anchors: pendingCandidates.map((threadId) => ({
+            threadId,
+            hasTurn: (state.activeTurnIdByThread[threadId] ?? null) !== null,
+            itemCount: state.itemsByThread[threadId]?.length ?? 0,
+            isProcessing: Boolean(state.threadStatusById[threadId]?.isProcessing),
+          })),
+        },
+      });
+      return resolved;
     },
     [
+      onDebug,
       state.activeThreadIdByWorkspace,
       state.activeTurnIdByThread,
       state.itemsByThread,
@@ -1321,6 +1361,7 @@ export function useThreads({
     startMcp,
     startSpecRoot,
     startStatus,
+    startFast,
     startMode,
     startExport,
     startImport,
@@ -1378,7 +1419,6 @@ export function useThreads({
     forkThreadForWorkspace,
     updateThreadParent,
     startThreadForWorkspace,
-    autoNameThread,
     resolveOpenCodeAgent,
     resolveOpenCodeVariant,
     onInputMemoryCaptured: handleInputMemoryCaptured,
@@ -1655,6 +1695,7 @@ export function useThreads({
     startMcp,
     startSpecRoot,
     startStatus,
+    startFast,
     startMode,
     startExport,
     startImport,

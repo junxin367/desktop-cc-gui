@@ -154,6 +154,10 @@ export async function isWorkspacePathDir(path: string): Promise<boolean> {
   return invoke<boolean>("is_workspace_path_dir", { path });
 }
 
+export async function ensureWorkspacePathDir(path: string): Promise<void> {
+  return invoke("ensure_workspace_path_dir", { path });
+}
+
 export async function addClone(
   sourceWorkspaceId: string,
   copiesFolder: string,
@@ -317,6 +321,13 @@ export async function interruptTurn(
   turnId: string,
 ) {
   return invoke("turn_interrupt", { workspaceId, threadId, turnId });
+}
+
+export async function compactThreadContext(
+  workspaceId: string,
+  threadId: string,
+) {
+  return invoke("thread_compact", { workspaceId, threadId });
 }
 
 export async function startReview(
@@ -1145,6 +1156,26 @@ export type WorkspaceFilesResponse = {
   gitignored_directories: string[];
 };
 
+export type WorkspaceTextSearchMatch = {
+  line: number;
+  column: number;
+  end_column: number;
+  preview: string;
+};
+
+export type WorkspaceTextSearchFileResult = {
+  path: string;
+  match_count: number;
+  matches: WorkspaceTextSearchMatch[];
+};
+
+export type WorkspaceTextSearchResponse = {
+  files: WorkspaceTextSearchFileResult[];
+  file_count: number;
+  match_count: number;
+  limit_hit: boolean;
+};
+
 export type ExternalSpecFileResponse = {
   exists: boolean;
   content: string;
@@ -1153,6 +1184,38 @@ export type ExternalSpecFileResponse = {
 
 export async function getWorkspaceFiles(workspaceId: string) {
   return invoke<WorkspaceFilesResponse>("list_workspace_files", { workspaceId });
+}
+
+export async function getWorkspaceDirectoryChildren(
+  workspaceId: string,
+  path: string,
+) {
+  return invoke<WorkspaceFilesResponse>("list_workspace_directory_children", {
+    workspaceId,
+    path,
+  });
+}
+
+export async function searchWorkspaceText(
+  workspaceId: string,
+  options: {
+    query: string;
+    caseSensitive: boolean;
+    wholeWord: boolean;
+    isRegex: boolean;
+    includePattern?: string | null;
+    excludePattern?: string | null;
+  },
+) {
+  return invoke<WorkspaceTextSearchResponse>("search_workspace_text", {
+    workspaceId,
+    query: options.query,
+    caseSensitive: options.caseSensitive,
+    wholeWord: options.wholeWord,
+    isRegex: options.isRegex,
+    includePattern: options.includePattern ?? null,
+    excludePattern: options.excludePattern ?? null,
+  });
 }
 
 export async function listExternalSpecTree(workspaceId: string, specRoot: string) {
@@ -1187,6 +1250,13 @@ export async function writeWorkspaceFile(
   content: string,
 ): Promise<void> {
   return invoke("write_workspace_file", { workspaceId, path, content });
+}
+
+export async function createWorkspaceDirectory(
+  workspaceId: string,
+  path: string,
+): Promise<void> {
+  return invoke("create_workspace_directory", { workspaceId, path });
 }
 
 export async function writeExternalSpecFile(

@@ -10,10 +10,12 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 use super::files::{
-    copy_workspace_item_inner, list_external_spec_tree_inner, list_workspace_files_inner,
-    read_external_spec_file_inner, read_workspace_file_inner, trash_workspace_item_inner,
-    write_external_spec_file_inner, write_workspace_file_inner, ExternalSpecFileResponse,
-    WorkspaceFileResponse, WorkspaceFilesResponse,
+    copy_workspace_item_inner, create_workspace_directory_inner, list_external_spec_tree_inner,
+    list_workspace_directory_children_inner, list_workspace_files_inner,
+    read_external_spec_file_inner, read_workspace_file_inner, search_workspace_text_inner,
+    trash_workspace_item_inner, write_external_spec_file_inner, write_workspace_file_inner,
+    ExternalSpecFileResponse, WorkspaceFileResponse, WorkspaceFilesResponse,
+    WorkspaceTextSearchOptions, WorkspaceTextSearchResponse,
 };
 use super::git::{
     git_branch_exists, git_find_remote_for_branch, git_get_origin_url, git_remote_branch_exists,
@@ -346,6 +348,26 @@ pub(crate) async fn write_workspace_file(
 }
 
 #[tauri::command]
+pub(crate) async fn create_workspace_directory(
+    workspace_id: String,
+    path: String,
+    state: State<'_, AppState>,
+    _app: AppHandle,
+) -> Result<(), String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        return Err("create_workspace_directory is not supported in remote mode yet.".to_string());
+    }
+
+    workspaces_core::create_workspace_directory_core(
+        &state.workspaces,
+        &workspace_id,
+        &path,
+        |root, rel_path| create_workspace_directory_inner(root, rel_path),
+    )
+    .await
+}
+
+#[tauri::command]
 pub(crate) async fn list_external_spec_tree(
     workspace_id: String,
     spec_root: String,
@@ -570,6 +592,25 @@ pub(crate) async fn is_workspace_path_dir(
         return serde_json::from_value(response).map_err(|err| err.to_string());
     }
     Ok(workspaces_core::is_workspace_path_dir_core(&path))
+}
+
+#[tauri::command]
+pub(crate) async fn ensure_workspace_path_dir(
+    path: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        remote_backend::call_remote(
+            &*state,
+            app,
+            "ensure_workspace_path_dir",
+            json!({ "path": path }),
+        )
+        .await?;
+        return Ok(());
+    }
+    workspaces_core::ensure_workspace_path_dir_core(&path)
 }
 
 #[tauri::command]
@@ -1393,7 +1434,7 @@ pub(crate) async fn list_workspace_files(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<WorkspaceFilesResponse, String> {
-    const MAX_WORKSPACE_FILE_ENTRIES: usize = 20_000;
+    const MAX_WORKSPACE_FILE_ENTRIES: usize = 12_000;
     if remote_backend::is_remote_mode(&*state).await {
         let response = remote_backend::call_remote(
             &*state,
@@ -1409,6 +1450,84 @@ pub(crate) async fn list_workspace_files(
         list_workspace_files_inner(root, MAX_WORKSPACE_FILE_ENTRIES)
     })
     .await
+}
+
+#[tauri::command]
+pub(crate) async fn list_workspace_directory_children(
+    workspace_id: String,
+    path: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<WorkspaceFilesResponse, String> {
+    const MAX_WORKSPACE_DIRECTORY_CHILDREN: usize = 2_000;
+    if remote_backend::is_remote_mode(&*state).await {
+        let response = remote_backend::call_remote(
+            &*state,
+            app,
+            "list_workspace_directory_children",
+            json!({ "workspaceId": workspace_id, "path": path }),
+        )
+        .await?;
+        return serde_json::from_value(response).map_err(|err| err.to_string());
+    }
+
+    workspaces_core::read_workspace_file_core(
+        &state.workspaces,
+        &workspace_id,
+        &path,
+        |root, rel_path| {
+            list_workspace_directory_children_inner(
+                root,
+                rel_path,
+                MAX_WORKSPACE_DIRECTORY_CHILDREN,
+            )
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub(crate) async fn search_workspace_text(
+    workspace_id: String,
+    query: String,
+    case_sensitive: bool,
+    whole_word: bool,
+    is_regex: bool,
+    include_pattern: Option<String>,
+    exclude_pattern: Option<String>,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<WorkspaceTextSearchResponse, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        let response = remote_backend::call_remote(
+            &*state,
+            app,
+            "search_workspace_text",
+            json!({
+                "workspaceId": workspace_id,
+                "query": query,
+                "caseSensitive": case_sensitive,
+                "wholeWord": whole_word,
+                "isRegex": is_regex,
+                "includePattern": include_pattern,
+                "excludePattern": exclude_pattern,
+            }),
+        )
+        .await?;
+        return serde_json::from_value(response).map_err(|err| err.to_string());
+    }
+
+    let options = WorkspaceTextSearchOptions {
+        case_sensitive,
+        whole_word,
+        is_regex,
+        include_pattern,
+        exclude_pattern,
+    };
+    workspaces_core::list_workspace_files_core(&state.workspaces, &workspace_id, |root| {
+        search_workspace_text_inner(root, &query, &options)
+    })
+    .await?
 }
 
 #[tauri::command]

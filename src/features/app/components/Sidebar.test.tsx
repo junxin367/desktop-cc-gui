@@ -17,6 +17,7 @@ vi.mock("react-i18next", () => ({
         "sidebar.quickAutomation": "Automation",
         "sidebar.quickSearch": "Search",
         "sidebar.quickSkills": "Skills",
+        "lockScreen.lock": "Lock",
         "sidebar.projects": "Projects",
         "sidebar.mcpSkillsMarket": "MCP & Skills Market",
         "sidebar.longTermMemory": "Long-term Memory",
@@ -103,7 +104,9 @@ const baseProps = {
   onWorkspaceDrop: vi.fn(),
   appMode: "chat" as const,
   onAppModeChange: vi.fn(),
+  onOpenHomeChat: vi.fn(),
   onOpenMemory: vi.fn(),
+  onLockPanel: vi.fn(),
   onOpenProjectMemory: vi.fn(),
   onOpenReleaseNotes: vi.fn(),
   onOpenGlobalSearch: vi.fn(),
@@ -190,6 +193,7 @@ describe("Sidebar", () => {
     expect(menu.queryByRole("menuitem", { name: "Automation" })).toBeNull();
     const skillsEntry = menu.getByRole("menuitem", { name: "Skills" });
     expect((skillsEntry as HTMLButtonElement).disabled).toBe(true);
+    expect(menu.getByRole("menuitem", { name: "Lock" })).toBeTruthy();
     expect(menu.getByRole("menuitem", { name: "Long-term Memory" })).toBeTruthy();
     expect(menu.getByRole("menuitem", { name: "Spec Hub" })).toBeTruthy();
     expect(menu.getByRole("menuitem", { name: "Project Memory" })).toBeTruthy();

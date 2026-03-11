@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::text_encoding::decode_text_bytes;
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TextFileResponse {
     pub exists: bool,
@@ -83,8 +85,7 @@ pub(crate) fn read_text_file_within(
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)
         .map_err(|err| format!("Failed to read {file_context}: {err}"))?;
-    let content =
-        String::from_utf8(buffer).map_err(|_| format!("{file_context} is not valid UTF-8"))?;
+    let content = decode_text_bytes(&buffer, file_context)?;
 
     Ok(TextFileResponse {
         exists: true,
@@ -174,6 +175,23 @@ mod tests {
                 .expect("read should succeed");
         assert!(response.exists);
         assert_eq!(response.content, "hello");
+    }
+
+    #[test]
+    fn read_decodes_gb18030_text() {
+        let root = temp_dir();
+        std::fs::create_dir_all(&root).expect("create root");
+        let path = root.join("AGENTS.md");
+        let (encoded, _, had_errors) = encoding_rs::GB18030.encode("usb异常断开");
+        assert!(!had_errors, "encode should succeed");
+        std::fs::write(&path, encoded.as_ref()).expect("write file");
+
+        let response =
+            read_text_file_within(&root, "AGENTS.md", false, "CODEX_HOME", "AGENTS.md", false)
+                .expect("read should succeed");
+
+        assert!(response.exists);
+        assert_eq!(response.content, "usb异常断开");
     }
 
     #[cfg(unix)]

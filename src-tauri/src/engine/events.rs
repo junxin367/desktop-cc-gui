@@ -367,6 +367,51 @@ pub fn engine_event_to_app_server_event(
                 "pulse": pulse,
             }
         }),
+        EngineEvent::ApprovalRequest {
+            request_id,
+            tool_name,
+            input,
+            message,
+            ..
+        } => {
+            let tool_name_lower = tool_name.to_ascii_lowercase();
+            let method = if tool_name_lower.contains("apply")
+                || tool_name_lower.contains("patch")
+                || tool_name_lower.contains("write")
+                || tool_name_lower.contains("edit")
+            {
+                "item/fileChange/requestApproval"
+            } else if tool_name_lower.contains("exec")
+                || tool_name_lower.contains("bash")
+                || tool_name_lower.contains("command")
+            {
+                "item/commandExecution/requestApproval"
+            } else {
+                "approval/request"
+            };
+
+            let mut merged_params = if let Some(Value::Object(map)) = input.clone() {
+                map
+            } else {
+                serde_json::Map::new()
+            };
+            merged_params.insert("threadId".to_string(), Value::String(thread_id.to_string()));
+            merged_params.insert("turnId".to_string(), Value::String(item_id.to_string()));
+            merged_params.insert("itemId".to_string(), Value::String(item_id.to_string()));
+            merged_params.insert("toolName".to_string(), Value::String(tool_name.clone()));
+            if let Some(message_text) = message.clone() {
+                merged_params.insert("message".to_string(), Value::String(message_text));
+            }
+            if let Some(raw_input) = input.clone() {
+                merged_params.insert("input".to_string(), raw_input);
+            }
+
+            json!({
+                "method": method,
+                "params": Value::Object(merged_params),
+                "id": request_id,
+            })
+        }
         EngineEvent::RequestUserInput {
             request_id,
             questions,
@@ -435,5 +480,35 @@ mod tests {
             text: "test".to_string(),
         };
         assert!(!delta.is_terminal());
+    }
+
+    #[test]
+    fn approval_request_maps_to_app_server_event() {
+        let event = EngineEvent::ApprovalRequest {
+            workspace_id: "ws-approval".to_string(),
+            request_id: json!("req-42"),
+            tool_name: "exec".to_string(),
+            input: Some(json!({
+                "argv": ["git", "status"]
+            })),
+            message: Some("git status".to_string()),
+        };
+
+        let mapped =
+            engine_event_to_app_server_event(&event, "thread-1", "item-1").expect("mapped event");
+        assert_eq!(mapped.workspace_id, "ws-approval");
+        assert_eq!(
+            mapped.message["method"],
+            Value::String("item/commandExecution/requestApproval".to_string())
+        );
+        assert_eq!(mapped.message["id"], Value::String("req-42".to_string()));
+        assert_eq!(
+            mapped.message["params"]["threadId"],
+            Value::String("thread-1".to_string())
+        );
+        assert_eq!(
+            mapped.message["params"]["argv"],
+            json!(["git", "status"])
+        );
     }
 }

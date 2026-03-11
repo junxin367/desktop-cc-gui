@@ -16,6 +16,12 @@ vi.mock("react-i18next", () => ({
         "threads.searchOlder": "Search older...",
         "threads.loadOlder": "Load older...",
         "threads.autoNaming": "Auto naming...",
+        "threads.deleteThreadTitle": "Delete conversation",
+        "threads.deleteThreadMessage": "Are you sure you want to delete this thread?",
+        "threads.deleteThreadHint": "This cannot be undone.",
+        "threads.delete": "Delete",
+        "common.cancel": "Cancel",
+        "common.deleting": "Deleting",
       };
       return translations[key] || key;
     },
@@ -152,6 +158,30 @@ describe("ThreadList", () => {
       "thread-2",
       false,
     );
+  });
+
+
+  it("shows inline delete confirmation bubble beside the row", () => {
+    const onCancelDeleteConfirm = vi.fn();
+    const onConfirmDeleteConfirm = vi.fn();
+
+    render(
+      <ThreadList
+        {...baseProps}
+        deleteConfirmWorkspaceId="ws-1"
+        deleteConfirmThreadId="thread-1"
+        onCancelDeleteConfirm={onCancelDeleteConfirm}
+        onConfirmDeleteConfirm={onConfirmDeleteConfirm}
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "Delete conversation" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(onConfirmDeleteConfirm).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onCancelDeleteConfirm).toHaveBeenCalledTimes(1);
   });
 
   it("shows auto naming loading badge when thread is auto naming", () => {

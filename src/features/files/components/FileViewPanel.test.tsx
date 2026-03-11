@@ -242,4 +242,33 @@ describe("FileViewPanel navigation", () => {
       column: 9,
     });
   });
+
+  it("renders maximize toggle and triggers callback", async () => {
+    vi.mocked(readWorkspaceFile).mockResolvedValue({
+      content: "class Main {}",
+      truncated: false,
+    });
+    const onToggleEditorFileMaximized = vi.fn();
+
+    render(
+      <FileViewPanel
+        workspaceId="ws-4"
+        workspacePath="/repo"
+        filePath="src/Main.java"
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={vi.fn()}
+        onToggleEditorFileMaximized={onToggleEditorFileMaximized}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await screen.findByTestId("mock-codemirror");
+    const maximizeButton = screen.getByRole("button", {
+      name: /Maximize|menu\.maximize/i,
+    });
+    fireEvent.click(maximizeButton);
+    expect(onToggleEditorFileMaximized).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import type { Dispatch, MutableRefObject } from "react";
+import type { DebugEntry } from "../../../types";
 import { useTranslation } from "react-i18next";
 import { interruptTurn as interruptTurnService } from "../../../services/tauri";
 import { getThreadTimestamp } from "../../../utils/threadItems";
@@ -23,6 +24,31 @@ function inferEngineFromThreadId(threadId: string): "claude" | "codex" | "openco
     return "opencode";
   }
   return "codex";
+}
+
+const CODEX_BACKGROUND_HELPER_PREVIEW_PREFIXES = [
+  "Generate a concise title for a coding chat thread from the first user message.",
+  "You create concise run metadata for a coding task.",
+  "You are generating OpenSpec project context.",
+  "Generate a concise git commit message for the following changes.",
+] as const;
+
+function isCodexBackgroundHelperThread(
+  threadId: string,
+  thread: Record<string, unknown>,
+): boolean {
+  if (inferEngineFromThreadId(threadId) !== "codex") {
+    return false;
+  }
+  const previewCandidates = [
+    asString(thread.preview).trim(),
+    asString(thread.title).trim(),
+  ].filter(Boolean);
+  return previewCandidates.some((preview) =>
+    CODEX_BACKGROUND_HELPER_PREVIEW_PREFIXES.some((prefix) =>
+      preview.startsWith(prefix),
+    ),
+  );
 }
 
 type UseThreadTurnEventsOptions = {
@@ -61,6 +87,7 @@ type UseThreadTurnEventsOptions = {
     oldThreadId: string,
     newThreadId: string,
   ) => void;
+  onDebug?: (entry: DebugEntry) => void;
 };
 
 export function useThreadTurnEvents({
@@ -81,8 +108,21 @@ export function useThreadTurnEvents({
   renameThreadTitleMapping,
   resolvePendingThreadForSession,
   renamePendingMemoryCaptureKey,
+  onDebug,
 }: UseThreadTurnEventsOptions) {
   const { t } = useTranslation();
+  const logSessionTrace = useCallback(
+    (label: string, payload: Record<string, unknown>) => {
+      onDebug?.({
+        id: `${Date.now()}-thread-session-trace`,
+        timestamp: Date.now(),
+        source: "event",
+        label: `thread/session:${label}`,
+        payload,
+      });
+    },
+    [onDebug],
+  );
   const resolvePendingAliasThread = useCallback(
     (
       workspaceId: string,
@@ -109,6 +149,10 @@ export function useThreadTurnEvents({
     (workspaceId: string, thread: Record<string, unknown>) => {
       const threadId = asString(thread.id);
       if (!threadId) {
+        return;
+      }
+      if (isCodexBackgroundHelperThread(threadId, thread)) {
+        dispatch({ type: "hideThread", workspaceId, threadId });
         return;
       }
       if (isThreadHidden(workspaceId, threadId)) {
@@ -146,6 +190,7 @@ export function useThreadTurnEvents({
         threadId,
         engine: inferEngineFromThreadId(threadId),
       });
+      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
       if (pendingInterruptsRef.current.has(threadId)) {
         pendingInterruptsRef.current.delete(threadId);
         if (turnId) {
@@ -172,6 +217,16 @@ export function useThreadTurnEvents({
           type: "finalizePendingToolStatuses",
           threadId: targetThreadId,
           status: "completed",
+        });
+        dispatch({
+          type: "markContextCompacting",
+          threadId: targetThreadId,
+          isCompacting: false,
+        });
+        dispatch({
+          type: "settleThreadPlanInProgress",
+          threadId: targetThreadId,
+          targetStatus: "completed",
         });
         markProcessing(targetThreadId, false);
         setActiveTurnId(targetThreadId, null);
@@ -256,6 +311,12 @@ export function useThreadTurnEvents({
         threadId,
         status: "failed",
       });
+      dispatch({
+        type: "settleThreadPlanInProgress",
+        threadId,
+        targetStatus: "pending",
+      });
+      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
       markProcessing(threadId, false);
       markReviewing(threadId, false);
       setActiveTurnId(threadId, null);
@@ -265,6 +326,16 @@ export function useThreadTurnEvents({
           type: "finalizePendingToolStatuses",
           threadId: aliasThreadId,
           status: "failed",
+        });
+        dispatch({
+          type: "markContextCompacting",
+          threadId: aliasThreadId,
+          isCompacting: false,
+        });
+        dispatch({
+          type: "settleThreadPlanInProgress",
+          threadId: aliasThreadId,
+          targetStatus: "pending",
         });
         markProcessing(aliasThreadId, false);
         markReviewing(aliasThreadId, false);
@@ -298,15 +369,44 @@ export function useThreadTurnEvents({
   const onContextCompacted = useCallback(
     (workspaceId: string, threadId: string, turnId: string) => {
       dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      if (!turnId) {
-        return;
-      }
-      dispatch({ type: "appendContextCompacted", threadId, turnId });
+      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
       const timestamp = Date.now();
+      const resolvedTurnId = turnId || `auto-${timestamp}`;
+      dispatch({ type: "appendContextCompacted", threadId, turnId: resolvedTurnId });
       recordThreadActivity(workspaceId, threadId, timestamp);
       safeMessageActivity();
     },
     [dispatch, recordThreadActivity, safeMessageActivity],
+  );
+
+  const onContextCompacting = useCallback(
+    (
+      workspaceId: string,
+      threadId: string,
+      _payload: {
+        usagePercent: number | null;
+        thresholdPercent: number | null;
+        targetPercent: number | null;
+      },
+    ) => {
+      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
+      dispatch({ type: "markContextCompacting", threadId, isCompacting: true });
+      safeMessageActivity();
+    },
+    [dispatch, safeMessageActivity],
+  );
+
+  const onContextCompactionFailed = useCallback(
+    (workspaceId: string, threadId: string, reason: string) => {
+      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
+      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
+      const message = reason
+        ? t("threads.contextCompactionFailedWithMessage", { message: reason })
+        : t("threads.contextCompactionFailed");
+      pushThreadErrorMessage(threadId, message);
+      safeMessageActivity();
+    },
+    [dispatch, pushThreadErrorMessage, safeMessageActivity, t],
   );
 
   const onThreadSessionIdUpdated = useCallback(
@@ -329,6 +429,15 @@ export function useThreadTurnEvents({
           : null;
       const pendingOpenCode = resolvePendingThreadForSession?.(workspaceId, "opencode") ?? null;
       const pendingClaude = resolvePendingThreadForSession?.(workspaceId, "claude") ?? null;
+      logSessionTrace("event", {
+        workspaceId,
+        threadId,
+        sessionId,
+        engineHint: engineHint ?? null,
+        explicitEnginePrefix,
+        pendingOpenCode,
+        pendingClaude,
+      });
 
       const enginePrefix =
         explicitEnginePrefix
@@ -339,30 +448,85 @@ export function useThreadTurnEvents({
             ? "claude"
             : null);
       if (!enginePrefix) {
+        logSessionTrace("skip:no-engine-prefix", {
+          workspaceId,
+          threadId,
+          sessionId,
+          engineHint: engineHint ?? null,
+          pendingOpenCode,
+          pendingClaude,
+        });
         return;
       }
 
       const newThreadId = `${enginePrefix}:${sessionId}`;
-      const sourceThreadId = threadId.startsWith(`${enginePrefix}-pending-`)
-        ? threadId
-        : enginePrefix === "opencode"
-          ? pendingOpenCode
-            ?? (threadId !== newThreadId &&
-              !threadId.startsWith("claude:") &&
-              !threadId.startsWith("claude-pending-")
-              ? threadId
-              : null)
-          : pendingClaude
-            ?? (threadId !== newThreadId &&
-              !threadId.startsWith("opencode:") &&
-              !threadId.startsWith("opencode-pending-")
-              ? threadId
-              : null);
-
-      if (!sourceThreadId || sourceThreadId === newThreadId) {
+      // Guard boundary: if backend already reports the finalized thread id,
+      // never remap a pending thread onto it.
+      if (threadId === newThreadId) {
+        logSessionTrace("skip:already-finalized", {
+          workspaceId,
+          threadId,
+          newThreadId,
+          enginePrefix,
+        });
         return;
       }
 
+      const sameEnginePendingPrefix = `${enginePrefix}-pending-`;
+      const sameEngineFinalizedPrefix = `${enginePrefix}:`;
+      const hasAnyEnginePrefix =
+        threadId.startsWith("claude:")
+        || threadId.startsWith("claude-pending-")
+        || threadId.startsWith("opencode:")
+        || threadId.startsWith("opencode-pending-");
+      const hasForeignEnginePrefix = enginePrefix === "opencode"
+        ? threadId.startsWith("claude:") || threadId.startsWith("claude-pending-")
+        : threadId.startsWith("opencode:") || threadId.startsWith("opencode-pending-");
+
+      if (
+        threadId.startsWith(sameEngineFinalizedPrefix)
+        && threadId !== newThreadId
+      ) {
+        logSessionTrace("skip:finalized-mismatch", {
+          workspaceId,
+          threadId,
+          newThreadId,
+          enginePrefix,
+        });
+        return;
+      }
+
+      let sourceThreadId: string | null = null;
+      if (threadId.startsWith(sameEnginePendingPrefix)) {
+        sourceThreadId = threadId;
+      } else if (!hasAnyEnginePrefix && !hasForeignEnginePrefix) {
+        const pendingThreadId = enginePrefix === "opencode"
+          ? pendingOpenCode
+          : pendingClaude;
+        if (pendingThreadId?.startsWith(sameEnginePendingPrefix)) {
+          sourceThreadId = pendingThreadId;
+        }
+      }
+
+      if (!sourceThreadId || sourceThreadId === newThreadId) {
+        logSessionTrace("skip:no-pending-source", {
+          workspaceId,
+          threadId,
+          newThreadId,
+          sourceThreadId,
+          hasForeignEnginePrefix,
+          enginePrefix,
+        });
+        return;
+      }
+
+      logSessionTrace("rename", {
+        workspaceId,
+        oldThreadId: sourceThreadId,
+        newThreadId,
+        enginePrefix,
+        eventThreadId: threadId,
+      });
       // Rename the thread from claude-pending-* to claude:{sessionId}
       dispatch({
         type: "renameThreadId",
@@ -377,6 +541,7 @@ export function useThreadTurnEvents({
     },
     [
       dispatch,
+      logSessionTrace,
       renameAutoTitlePendingKey,
       renameCustomNameKey,
       renamePendingMemoryCaptureKey,
@@ -393,7 +558,9 @@ export function useThreadTurnEvents({
     onThreadTokenUsageUpdated,
     onAccountRateLimitsUpdated,
     onTurnError,
+    onContextCompacting,
     onContextCompacted,
+    onContextCompactionFailed,
     onThreadSessionIdUpdated,
   };
 }

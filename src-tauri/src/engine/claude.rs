@@ -202,7 +202,7 @@ impl ClaudeSession {
             cmd.arg(model);
         }
 
-        // Session continuation
+        // Session continuation / explicit session identity
         if params.continue_session {
             if let Some(ref session_id) = params.session_id {
                 cmd.arg("--resume");
@@ -210,6 +210,12 @@ impl ClaudeSession {
             } else {
                 cmd.arg("--continue");
             }
+        } else if let Some(ref session_id) = params.session_id {
+            // Force a fresh, stable identity for "new conversation" runs.
+            // This prevents concurrent Claude turns from collapsing into the
+            // same persisted session due CLI implicit reuse behavior.
+            cmd.arg("--session-id");
+            cmd.arg(session_id);
         }
 
         if let Some(spec_root) = params
@@ -336,6 +342,8 @@ impl ClaudeSession {
         let mut saw_text_delta = false;
         let mut new_session_id: Option<String> = None;
         let mut error_output = String::new();
+        let mut stream_runtime_error: Option<String> = None;
+        let mut stream_error_event_emitted = false;
 
         // Spawn stderr reader
         let stderr_reader = BufReader::new(stderr);
@@ -405,6 +413,13 @@ impl ClaudeSession {
 
                     // Convert and emit event
                     if let Some(unified_event) = self.convert_event(turn_id, &event) {
+                        if let EngineEvent::TurnError { ref error, .. } = unified_event {
+                            if stream_runtime_error.is_none() {
+                                stream_runtime_error = Some(error.clone());
+                            }
+                            stream_error_event_emitted = true;
+                        }
+
                         // Collect text for final response
                         if let EngineEvent::TextDelta { ref text, .. } = unified_event {
                             response_text.push_str(text);
@@ -421,11 +436,7 @@ impl ClaudeSession {
                         // current CLI, and restarts with --resume.
                         if is_user_input_request {
                             if let Some(new_lines) = self
-                                .handle_ask_user_question_resume(
-                                    turn_id,
-                                    &params,
-                                    &new_session_id,
-                                )
+                                .handle_ask_user_question_resume(turn_id, &params, &new_session_id)
                                 .await
                             {
                                 lines = new_lines;
@@ -438,6 +449,12 @@ impl ClaudeSession {
                     // Non-JSON output, might be error
                     error_output.push_str(&line);
                     error_output.push('\n');
+                    if stream_runtime_error.is_none() {
+                        let trimmed = line.trim();
+                        if looks_like_claude_runtime_error(trimmed) {
+                            stream_runtime_error = Some(trimmed.to_string());
+                        }
+                    }
                 }
             }
         }
@@ -520,6 +537,29 @@ impl ClaudeSession {
                 );
                 return Err(error_msg);
             }
+        }
+
+        // Claude may emit an in-stream error while still exiting with code 0.
+        // In that case we must not mark the turn as completed successfully.
+        if let Some(stream_error) = stream_runtime_error {
+            let error_msg = if !error_output.trim().is_empty() {
+                let stderr_text = error_output.trim();
+                format!("{}\n{}", stream_error, stderr_text)
+            } else {
+                stream_error
+            };
+            log::error!("Claude stream reported runtime error: {}", error_msg);
+            if !stream_error_event_emitted {
+                self.emit_turn_event(
+                    turn_id,
+                    EngineEvent::TurnError {
+                        workspace_id: self.workspace_id.clone(),
+                        error: error_msg.clone(),
+                        code: None,
+                    },
+                );
+            }
+            return Err(error_msg);
         }
 
         // Emit turn completed
@@ -757,8 +797,7 @@ impl ClaudeSession {
                 // Intercept AskUserQuestion tool to emit a RequestUserInput event
                 if tool_name == "AskUserQuestion" {
                     if let Some(ref input_val) = input {
-                        return self
-                            .convert_ask_user_question_to_request(&tool_id, input_val);
+                        return self.convert_ask_user_question_to_request(&tool_id, input_val);
                     }
                 }
 
@@ -1203,14 +1242,8 @@ impl ClaudeSession {
         let raw_questions = input.get("questions").and_then(|q| q.as_array())?;
         let mut questions = Vec::new();
         for (idx, raw_q) in raw_questions.iter().enumerate() {
-            let question_text = raw_q
-                .get("question")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let header = raw_q
-                .get("header")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let question_text = raw_q.get("question").and_then(|v| v.as_str()).unwrap_or("");
+            let header = raw_q.get("header").and_then(|v| v.as_str()).unwrap_or("");
             // AskUserQuestion always allows a free-text "Other" option
             let is_other = true;
             let raw_options = raw_q
@@ -1339,9 +1372,10 @@ impl ClaudeSession {
                 // Drop stdin immediately for the resume
                 drop(new_child.stdin.take());
 
-                let new_lines = new_child.stdout.take().map(|stdout| {
-                    BufReader::new(stdout).lines()
-                });
+                let new_lines = new_child
+                    .stdout
+                    .take()
+                    .map(|stdout| BufReader::new(stdout).lines());
 
                 // Capture stderr of new process
                 // (old stderr task will finish on its own)
@@ -1614,6 +1648,17 @@ fn extract_result_text(event: &Value) -> Option<String> {
     content.and_then(extract_text_from_content)
 }
 
+fn looks_like_claude_runtime_error(line: &str) -> bool {
+    let text = line.trim();
+    if text.is_empty() {
+        return false;
+    }
+    let lower = text.to_ascii_lowercase();
+    lower.starts_with("api error:")
+        || lower.contains("unexpected end of json input")
+        || lower.starts_with("error:")
+}
+
 /// Format the user's AskUserQuestion answers into a human-readable message
 /// that can be sent as a follow-up via `--resume`.
 fn format_ask_user_answer(result: &Value) -> String {
@@ -1835,6 +1880,58 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn build_command_uses_session_id_for_new_conversation_without_continue() {
+        let session = ClaudeSession::new(
+            "test-workspace".to_string(),
+            PathBuf::from("/tmp/test"),
+            None,
+        );
+        let mut params = SendMessageParams::default();
+        params.text = "hello".to_string();
+        params.continue_session = false;
+        params.session_id = Some("11111111-1111-4111-8111-111111111111".to_string());
+
+        let command = session.build_command(&params, false);
+        let args: Vec<String> = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect();
+
+        assert!(args.windows(2).any(|window| {
+            window[0] == "--session-id"
+                && window[1] == "11111111-1111-4111-8111-111111111111"
+        }));
+        assert!(!args.iter().any(|arg| arg == "--continue" || arg == "--resume"));
+    }
+
+    #[test]
+    fn build_command_uses_resume_when_continue_session_is_enabled() {
+        let session = ClaudeSession::new(
+            "test-workspace".to_string(),
+            PathBuf::from("/tmp/test"),
+            None,
+        );
+        let mut params = SendMessageParams::default();
+        params.text = "hello".to_string();
+        params.continue_session = true;
+        params.session_id = Some("22222222-2222-4222-8222-222222222222".to_string());
+
+        let command = session.build_command(&params, false);
+        let args: Vec<String> = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect();
+
+        assert!(args.windows(2).any(|window| {
+            window[0] == "--resume"
+                && window[1] == "22222222-2222-4222-8222-222222222222"
+        }));
+        assert!(!args.iter().any(|arg| arg == "--session-id"));
+    }
+
     #[tokio::test]
     async fn session_manager_get_or_create() {
         let manager = ClaudeSessionManager::new();
@@ -2011,5 +2108,21 @@ mod tests {
             Some(EngineEvent::TextDelta { text, .. }) => assert_eq!(text, "？"),
             other => panic!("expected punctuation-only delta, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn looks_like_claude_runtime_error_detects_api_json_eof() {
+        assert!(looks_like_claude_runtime_error(
+            "API Error: Unexpected end of JSON input"
+        ));
+        assert!(looks_like_claude_runtime_error(
+            "error: transport dropped unexpectedly"
+        ));
+    }
+
+    #[test]
+    fn looks_like_claude_runtime_error_ignores_regular_output() {
+        assert!(!looks_like_claude_runtime_error("你好，我继续给你方案"));
+        assert!(!looks_like_claude_runtime_error("{\"type\":\"assistant\"}"));
     }
 }

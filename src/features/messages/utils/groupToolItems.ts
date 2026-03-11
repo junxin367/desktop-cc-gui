@@ -57,7 +57,7 @@ function isGroupableCategory(cat: string): cat is GroupableCategory {
   return cat in CATEGORY_TO_GROUP_KIND;
 }
 
-function shouldHideToolItem(item: ToolItem): boolean {
+export function shouldHideToolItemForRender(item: ToolItem): boolean {
   const toolName = extractToolName(item.title).toLowerCase();
   return toolName === 'todowrite' || toolName === 'todo_write';
 }
@@ -113,7 +113,7 @@ export function groupToolItems(items: ConversationItem[]): GroupedEntry[] {
     flushExplores();
 
     if (item.kind === 'tool') {
-      if (shouldHideToolItem(item)) {
+      if (shouldHideToolItemForRender(item)) {
         flushTools();
         continue;
       }

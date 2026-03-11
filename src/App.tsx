@@ -16,6 +16,7 @@ import "./styles/base.css";
 import "./styles/buttons.css";
 import "./styles/sidebar.css";
 import "./styles/home.css";
+import "./styles/home-chat.css";
 import "./styles/main.css";
 import "./styles/messages.css";
 import "./styles/approval-toasts.css";
@@ -83,7 +84,8 @@ import { useRenameWorktreePrompt } from "./features/workspaces/hooks/useRenameWo
 import { useLayoutController } from "./features/app/hooks/useLayoutController";
 import { useWindowLabel } from "./features/layout/hooks/useWindowLabel";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { isWindowsPlatform } from "./utils/platform";
+import { homeDir } from "@tauri-apps/api/path";
+import { isMacPlatform, isWindowsPlatform } from "./utils/platform";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
@@ -102,6 +104,7 @@ import { useComposerController } from "./features/app/hooks/useComposerControlle
 import { useComposerInsert } from "./features/app/hooks/useComposerInsert";
 import { useEngineController } from "./features/engine/hooks/useEngineController";
 import { useRenameThreadPrompt } from "./features/threads/hooks/useRenameThreadPrompt";
+import { useDeleteThreadPrompt } from "./features/threads/hooks/useDeleteThreadPrompt";
 import { useWorktreePrompt } from "./features/workspaces/hooks/useWorktreePrompt";
 import { useClonePrompt } from "./features/workspaces/hooks/useClonePrompt";
 import { useWorkspaceController } from "./features/app/hooks/useWorkspaceController";
@@ -151,6 +154,7 @@ import { resolveSearchScopeOnOpen } from "./features/search/utils/scope";
 import {
   getSelectedAgentConfig,
   getOpenCodeAgentsList,
+  ensureWorkspacePathDir,
   setSelectedAgentConfig,
   getWorkspaceFiles,
   pickWorkspacePath,
@@ -745,10 +749,12 @@ function MainApp() {
   const [editorSplitLayout, setEditorSplitLayout] = useState<"vertical" | "horizontal">(
     "vertical",
   );
+  const [isEditorFileMaximized, setIsEditorFileMaximized] = useState(false);
 
   useEffect(() => {
     if (!activeEditorFilePath) {
       setActiveEditorLineRange(null);
+      setIsEditorFileMaximized(false);
     }
   }, [activeEditorFilePath]);
 
@@ -1444,6 +1450,7 @@ function MainApp() {
     startMcp,
     startSpecRoot,
     startStatus,
+    startFast,
     startMode,
     startExport,
     startImport,
@@ -1599,6 +1606,12 @@ function MainApp() {
     },
     [listThreadsForWorkspaceTracked, workspacesById],
   );
+  const handleEnsureWorkspaceThreadsForSettings = useCallback(
+    (workspaceId: string) => {
+      ensureWorkspaceThreadListLoaded(workspaceId, { preserveState: true });
+    },
+    [ensureWorkspaceThreadListLoaded],
+  );
   const {
     activeAccount,
     accountSwitching,
@@ -1731,6 +1744,24 @@ function MainApp() {
   } = useRenameThreadPrompt({
     threadsByWorkspace,
     renameThread,
+  });
+
+  const {
+    deletePrompt: deleteThreadPrompt,
+    isDeleting: isDeleteThreadPromptBusy,
+    openDeletePrompt: openDeleteThreadPrompt,
+    handleDeletePromptCancel: handleDeleteThreadPromptCancel,
+    handleDeletePromptConfirm: handleDeleteThreadPromptConfirm,
+  } = useDeleteThreadPrompt({
+    threadsByWorkspace,
+    removeThread,
+    onDeleteSuccess: (threadId) => {
+      clearDraftForThread(threadId);
+      removeImagesForThread(threadId);
+    },
+    onDeleteError: (message) => {
+      alertError(message ?? t("workspace.deleteConversationFailed"));
+    },
   });
 
   const {
@@ -2215,6 +2246,7 @@ function MainApp() {
     startMcp,
     startSpecRoot,
     startStatus,
+    startFast,
     startMode,
     startExport,
     startImport,
@@ -2248,7 +2280,7 @@ function MainApp() {
     filesLoading: false,
     files: 0,
     directories: 0,
-    filePanelMode: "git" as "git" | "files" | "prompts" | "memory",
+    filePanelMode: "git" as "git" | "files" | "search" | "prompts" | "memory",
     rightPanelCollapsed: false,
     isCompact: false,
     draftLength: 0,
@@ -2766,6 +2798,7 @@ function MainApp() {
   useWindowDrag("titlebar");
 
   const isWindowsDesktop = useMemo(() => isWindowsPlatform(), []);
+  const isMacDesktop = useMemo(() => isMacPlatform(), []);
 
   useEffect(() => {
     const title = activeWorkspace
@@ -3185,6 +3218,65 @@ function MainApp() {
       const { panelId, cleanText } = resolveComposerKanbanPanel(trimmedOriginalText);
       const textForSending = cleanText;
 
+      // HomeChat send: no active workspace yet. Select or create one, then
+      // create a thread and jump to normal chat view before sending.
+      if (!activeWorkspaceId && !isPullRequestComposer) {
+        let workspace: WorkspaceInfo | null = null;
+        let defaultWorkspacePath: string;
+        try {
+          const resolvedHome = normalizePath(await homeDir());
+          defaultWorkspacePath = `${resolvedHome}/.codemoss/workspace`;
+          await ensureWorkspacePathDir(defaultWorkspacePath);
+        } catch (error) {
+          alertError(error);
+          return;
+        }
+        const normalizedDefaultPath = normalizePath(defaultWorkspacePath);
+        workspace = workspaces.find(
+          (entry) => normalizePath(entry.path) === normalizedDefaultPath,
+        ) ?? null;
+        if (!workspace) {
+          try {
+            workspace = await addWorkspaceFromPath(defaultWorkspacePath);
+          } catch (error) {
+            alertError(error);
+            return;
+          }
+        }
+        if (!workspace) {
+          return;
+        }
+        exitDiffView();
+        resetPullRequestSelection();
+        setWorkspaceHomeWorkspaceId(null);
+        setAppMode("chat");
+        setCenterMode("chat");
+        selectWorkspace(workspace.id);
+        if (!workspace.connected) {
+          await connectWorkspace(workspace);
+        }
+        const threadId = await startThreadForWorkspace(workspace.id, {
+          engine: activeEngine,
+          activate: true,
+        });
+        if (!threadId) {
+          return;
+        }
+        setActiveThreadId(threadId, workspace.id);
+        const fallbackText =
+          textForSending.length > 0 ? textForSending : trimmedOriginalText;
+        if (fallbackText.length > 0 || images.length > 0) {
+          await sendUserMessageToThread(
+            workspace,
+            threadId,
+            fallbackText,
+            images,
+            mergeSelectedAgentOption(options),
+          );
+        }
+        return;
+      }
+
       if (!panelId || !activeWorkspaceId || isPullRequestComposer) {
         const fallbackText =
           textForSending.length > 0 ? textForSending : trimmedOriginalText;
@@ -3297,7 +3389,15 @@ function MainApp() {
       handleComposerSend,
       mergeSelectedAgentOption,
       activeWorkspaceId,
+      normalizePath,
+      addWorkspaceFromPath,
+      alertError,
+      workspaces,
       workspacesById,
+      exitDiffView,
+      resetPullRequestSelection,
+      selectWorkspace,
+      setActiveThreadId,
       connectWorkspace,
       startThreadForWorkspace,
       forkThreadForWorkspace,
@@ -3512,6 +3612,37 @@ function MainApp() {
       } satisfies WorkspaceHomeDeleteResult;
     },
     [activeWorkspace, alertError, clearDraftForThread, removeImagesForThread, removeThread, t],
+  );
+  const handleDeleteWorkspaceConversationsInSettings = useCallback(
+    async (workspaceId: string, threadIds: string[]) => {
+      if (!workspaceId || threadIds.length === 0) {
+        return {
+          succeededThreadIds: [],
+          failed: [],
+        };
+      }
+      const succeededThreadIds: string[] = [];
+      const failed: Array<{ threadId: string; code: string; message: string }> = [];
+      for (const threadId of threadIds) {
+        const result = await removeThread(workspaceId, threadId);
+        if (result.success) {
+          succeededThreadIds.push(threadId);
+          clearDraftForThread(threadId);
+          removeImagesForThread(threadId);
+          continue;
+        }
+        failed.push({
+          threadId,
+          code: result.code ?? "UNKNOWN",
+          message: result.message ?? t("workspace.deleteConversationFailed"),
+        });
+      }
+      return {
+        succeededThreadIds,
+        failed,
+      };
+    },
+    [clearDraftForThread, removeImagesForThread, removeThread, t],
   );
 
   // --- Kanban conversation handlers ---
@@ -3888,6 +4019,9 @@ function MainApp() {
     },
     [handleSelectDiff, setSelectedDiffPath],
   );
+  const handleCloseGitHistoryPanel = useCallback(() => {
+    setAppMode("chat");
+  }, [setAppMode]);
   const normalizeWorkspacePath = useCallback(
     (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, ""),
     [],
@@ -3948,6 +4082,19 @@ function MainApp() {
     selectHome,
     selectWorkspace,
     setActiveThreadId,
+  ]);
+
+  const handleOpenHomeChat = useCallback(() => {
+    exitDiffView();
+    resetPullRequestSelection();
+    setWorkspaceHomeWorkspaceId(null);
+    setAppMode("chat");
+    setCenterMode("chat");
+    selectHome();
+  }, [
+    exitDiffView,
+    resetPullRequestSelection,
+    selectHome,
   ]);
 
   useArchiveShortcut({
@@ -4013,6 +4160,7 @@ function MainApp() {
     isPhone ? " layout-phone" : ""
   }${isTablet ? " layout-tablet" : ""}${
     isWindowsDesktop ? " windows-desktop" : ""
+  }${isMacDesktop ? " macos-desktop" : ""
   }${
     reduceTransparency ? " reduced-transparency" : ""
   }${!isCompact && sidebarCollapsed && !showGitHistory ? " sidebar-collapsed" : ""}${
@@ -4035,6 +4183,7 @@ function MainApp() {
     desktopTopbarLeftNode,
     tabletNavNode,
     tabBarNode,
+    rightPanelToolbarNode,
     gitDiffPanelNode,
     gitDiffViewerNode,
     fileViewPanelNode,
@@ -4142,13 +4291,14 @@ function MainApp() {
       }
     },
     onDeleteThread: async (workspaceId, threadId) => {
-      const result = await removeThread(workspaceId, threadId);
-      if (!result.success) {
-        alertError(result.message ?? t("workspace.deleteConversationFailed"));
-        return;
-      }
-      clearDraftForThread(threadId);
-      removeImagesForThread(threadId);
+      openDeleteThreadPrompt(workspaceId, threadId);
+    },
+    deleteConfirmThreadId: deleteThreadPrompt?.threadId ?? null,
+    deleteConfirmWorkspaceId: deleteThreadPrompt?.workspaceId ?? null,
+    deleteConfirmBusy: isDeleteThreadPromptBusy,
+    onCancelDeleteConfirm: handleDeleteThreadPromptCancel,
+    onConfirmDeleteConfirm: () => {
+      void handleDeleteThreadPromptConfirm();
     },
     onSyncThread: (workspaceId, threadId) => {
       void refreshThread(workspaceId, threadId);
@@ -4295,6 +4445,9 @@ function MainApp() {
     editorSplitLayout,
     onToggleEditorSplitLayout: () =>
       setEditorSplitLayout((prev) => (prev === "vertical" ? "horizontal" : "vertical")),
+    isEditorFileMaximized,
+    onToggleEditorFileMaximized: () =>
+      setIsEditorFileMaximized((prev) => !prev),
     editorFilePath: activeEditorFilePath,
     editorNavigationTarget,
     openEditorTabs: openFileTabs,
@@ -4443,6 +4596,7 @@ function MainApp() {
     onReviewPromptUpdateCustomInstructions: updateCustomInstructions,
     onReviewPromptConfirmCustom: confirmCustom,
     activeTokenUsage,
+    contextDualViewEnabled: activeEngine === "codex",
     activeQueue,
     draftText: activeDraft,
     onDraftChange: handleDraftChange,
@@ -4559,6 +4713,7 @@ function MainApp() {
     onWorkspaceDrop: handleWorkspaceDrop,
     appMode,
     onAppModeChange: handleAppModeChange,
+    onOpenHomeChat: handleOpenHomeChat,
     onOpenMemory: () => {
       closeSettings();
       setAppMode("chat");
@@ -4637,8 +4792,8 @@ function MainApp() {
       groupedWorkspaces={groupedWorkspaces}
       onSelectWorkspace={setActiveWorkspaceId}
       onSelectWorkspacePath={handleSelectWorkspacePathForGitHistory}
-      onOpenDiffPath={(path) => handleSelectDiffForPanel(path)}
-      onRequestClose={() => setAppMode("chat")}
+      onOpenDiffPath={handleSelectDiffForPanel}
+      onRequestClose={handleCloseGitHistoryPanel}
     />
   );
 
@@ -4773,6 +4928,7 @@ function MainApp() {
         tabletTab={tabletTab}
         centerMode={centerMode}
         editorSplitLayout={editorSplitLayout}
+        isEditorFileMaximized={isEditorFileMaximized}
         hasActivePlan={hasActivePlan}
         activeWorkspace={Boolean(activeWorkspace)}
         sidebarNode={sidebarNodeWithTopbar}
@@ -4786,6 +4942,7 @@ function MainApp() {
         desktopTopbarLeftNode={desktopTopbarLeftNodeWithToggle}
         tabletNavNode={tabletNavNode}
         tabBarNode={tabBarNode}
+        rightPanelToolbarNode={rightPanelToolbarNode}
         gitDiffPanelNode={gitDiffPanelNode}
         gitDiffViewerNode={gitDiffViewerNode}
         fileViewPanelNode={fileViewPanelNode}
@@ -4805,6 +4962,7 @@ function MainApp() {
               <SettingsView
                 workspaceGroups={workspaceGroups}
                 groupedWorkspaces={groupedWorkspaces}
+                allWorkspaces={workspaces}
                 ungroupedLabel={ungroupedLabel}
                 onMoveWorkspace={handleMoveWorkspace}
                 onDeleteWorkspace={(workspaceId) => {
@@ -4831,6 +4989,10 @@ function MainApp() {
                 onUpdateWorkspaceSettings={async (id, settings) => {
                   await updateWorkspaceSettings(id, settings);
                 }}
+                workspaceThreadsById={threadsByWorkspace}
+                workspaceThreadListLoadingById={threadListLoadingByWorkspace}
+                onEnsureWorkspaceThreads={handleEnsureWorkspaceThreadsForSettings}
+                onDeleteWorkspaceThreads={handleDeleteWorkspaceConversationsInSettings}
                 scaleShortcutTitle={scaleShortcutTitle}
                 scaleShortcutText={scaleShortcutText}
                 onTestNotificationSound={handleTestNotificationSound}

@@ -3,7 +3,7 @@ import type {
   RequestUserInputRequest,
   TurnPlan,
 } from "../../../types";
-import { normalizePlanUpdate } from "../utils/threadNormalize";
+import { normalizePlanUpdate, settlePlanInProgressSteps } from "../utils/threadNormalize";
 
 export function asString(value: unknown): string {
   return typeof value === "string" ? value : value ? String(value) : "";
@@ -162,7 +162,8 @@ export function extractLatestTurnPlan(thread: Record<string, unknown>): TurnPlan
     const planRaw = turn.plan ?? turn.steps ?? null;
     const normalized = normalizePlanUpdate(turnId, explanation, planRaw);
     if (normalized) {
-      return normalized;
+      // History snapshot is typically idle on first render; avoid stale "in progress" carry-over.
+      return settlePlanInProgressSteps(normalized, "pending");
     }
   }
   return null;

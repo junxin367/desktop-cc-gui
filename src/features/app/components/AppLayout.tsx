@@ -17,6 +17,7 @@ type AppLayoutProps = {
   tabletTab: "codex" | "spec" | "git" | "log";
   centerMode: "chat" | "diff" | "editor" | "memory";
   editorSplitLayout: "vertical" | "horizontal";
+  isEditorFileMaximized: boolean;
   hasActivePlan: boolean;
   activeWorkspace: boolean;
   sidebarNode: ReactNode;
@@ -30,6 +31,7 @@ type AppLayoutProps = {
   desktopTopbarLeftNode: ReactNode;
   tabletNavNode: ReactNode;
   tabBarNode: ReactNode;
+  rightPanelToolbarNode: ReactNode;
   gitDiffPanelNode: ReactNode;
   gitDiffViewerNode: ReactNode;
   fileViewPanelNode: ReactNode;
@@ -64,6 +66,7 @@ export const AppLayout = memo(function AppLayout({
   tabletTab,
   centerMode,
   editorSplitLayout,
+  isEditorFileMaximized,
   hasActivePlan,
   activeWorkspace,
   sidebarNode,
@@ -77,6 +80,7 @@ export const AppLayout = memo(function AppLayout({
   desktopTopbarLeftNode,
   tabletNavNode,
   tabBarNode,
+  rightPanelToolbarNode,
   gitDiffPanelNode,
   gitDiffViewerNode,
   fileViewPanelNode,
@@ -171,9 +175,11 @@ export const AppLayout = memo(function AppLayout({
       topbarLeftNode={desktopTopbarLeftNode}
       centerMode={centerMode}
       editorSplitLayout={editorSplitLayout}
+      isEditorFileMaximized={isEditorFileMaximized}
       messagesNode={messagesNode}
       gitDiffViewerNode={gitDiffViewerNode}
       fileViewPanelNode={fileViewPanelNode}
+      rightPanelToolbarNode={rightPanelToolbarNode}
       gitDiffPanelNode={gitDiffPanelNode}
       planPanelNode={planPanelNode}
       composerNode={composerNode}

@@ -294,19 +294,14 @@ export const CODEX_MODELS: ModelInfo[] = [
     description: 'Latest frontier agentic coding model with enhanced capabilities.',
   },
   {
-    id: 'gpt-5.3',
-    label: 'gpt-5.3',
+    id: 'gpt-5.4',
+    label: 'gpt-5.4',
     description: 'Latest frontier model with significant improvements.',
   },
   {
     id: 'gpt-5.2-codex',
     label: 'gpt-5.2-codex',
     description: 'Latest frontier agentic coding model.',
-  },
-  {
-    id: 'gpt-5.2',
-    label: 'gpt-5.2',
-    description: 'Latest frontier model with improvements across knowledge.',
   },
   {
     id: 'gpt-5.1-codex-max',
@@ -336,6 +331,7 @@ export interface ProviderInfo {
 }
 
 export type ProviderId = 'claude' | 'codex' | 'gemini' | 'opencode';
+export type CodexSpeedMode = 'standard' | 'fast' | 'unknown';
 
 /**
  * Available AI providers
@@ -410,6 +406,16 @@ export interface UsageInfo {
   total?: number;
 }
 
+export type ContextCompactionState = 'idle' | 'compacting' | 'compacted';
+
+export interface DualContextUsageViewModel {
+  usedTokens: number;
+  contextWindow: number;
+  percent: number;
+  hasUsage: boolean;
+  compactionState: ContextCompactionState;
+}
+
 export interface RateLimitWindowInfo {
   usedPercent?: number | null;
   resetsAt?: number | null;
@@ -473,6 +479,12 @@ export interface ChatInputBoxProps {
   usageMaxTokens?: number;
   /** Whether to show usage */
   showUsage?: boolean;
+  /** Enable legacy + new context usage dual-view */
+  contextDualViewEnabled?: boolean;
+  /** Shared model for new context usage view */
+  dualContextUsage?: DualContextUsageViewModel | null;
+  /** Request context compaction (codex only) */
+  onRequestContextCompaction?: () => Promise<void> | void;
   /** Account rate limits snapshot for codex usage panel */
   accountRateLimits?: AccountRateLimitsInfo | null;
   /** Show remaining limits instead of used */
@@ -483,6 +495,12 @@ export interface ChatInputBoxProps {
   selectedCollaborationModeId?: string | null;
   /** Toggle collaboration mode callback */
   onSelectCollaborationMode?: (id: string | null) => void;
+  /** Current codex speed mode (codex only) */
+  codexSpeedMode?: CodexSpeedMode;
+  /** Change codex speed mode via quick action (codex only) */
+  onCodexSpeedModeChange?: (mode: Exclude<CodexSpeedMode, 'unknown'>) => void;
+  /** Trigger review quick action (codex/claude only) */
+  onCodexReviewQuickStart?: () => void;
   /** Whether always thinking is enabled */
   alwaysThinkingEnabled?: boolean;
   /** Attachment list */
@@ -629,6 +647,12 @@ export interface ButtonAreaProps {
   selectedCollaborationModeId?: string | null;
   /** Toggle collaboration mode callback */
   onSelectCollaborationMode?: (id: string | null) => void;
+  /** Current codex speed mode (codex only) */
+  codexSpeedMode?: CodexSpeedMode;
+  /** Change codex speed mode via quick action (codex only) */
+  onCodexSpeedModeChange?: (mode: Exclude<CodexSpeedMode, 'unknown'>) => void;
+  /** Trigger review quick action (codex/claude only) */
+  onCodexReviewQuickStart?: () => void;
 
   // Event callbacks
   onSubmit?: () => void;

@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import type { Dispatch, MutableRefObject } from "react";
 import { buildConversationItem } from "../../../utils/threadItems";
 import { asString } from "../utils/threadNormalize";
+import type { DebugEntry } from "../../../types";
 import type { ThreadAction } from "./useThreadsReducer";
 
 /**
@@ -38,6 +39,7 @@ type UseThreadItemEventsOptions = {
     item: Record<string, unknown>,
   ) => void;
   interruptedThreadsRef: MutableRefObject<Set<string>>;
+  onDebug?: (entry: DebugEntry) => void;
   onAgentMessageCompletedExternal?: (payload: {
     workspaceId: string;
     threadId: string;
@@ -57,8 +59,35 @@ export function useThreadItemEvents({
   recordThreadActivity,
   applyCollabThreadLinks,
   interruptedThreadsRef,
+  onDebug,
   onAgentMessageCompletedExternal,
 }: UseThreadItemEventsOptions) {
+  const logReasoningRoute = useCallback(
+    (
+      label: string,
+      payload: {
+        workspaceId: string;
+        threadId: string;
+        itemId: string;
+        deltaLength?: number;
+        skipped?: boolean;
+        reason?: string;
+      },
+    ) => {
+      onDebug?.({
+        id: `${Date.now()}-thread-reasoning-route`,
+        timestamp: Date.now(),
+        source: "event",
+        label: `thread/session:${label}`,
+        payload: {
+          ...payload,
+          activeThreadId,
+        },
+      });
+    },
+    [activeThreadId, onDebug],
+  );
+
   const handleItemUpdate = useCallback(
     (
       workspaceId: string,
@@ -73,6 +102,9 @@ export function useThreadItemEvents({
       }
       applyCollabThreadLinks(threadId, item);
       const itemType = asString(item?.type ?? "");
+      const agentMessageSnapshotText = asString(
+        item?.text ?? item?.content ?? item?.output_text ?? item?.outputText ?? "",
+      );
       if (itemType === "enteredReviewMode") {
         markReviewing(threadId, true);
       } else if (itemType === "exitedReviewMode") {
@@ -95,8 +127,38 @@ export function useThreadItemEvents({
         dispatch({ type: "incrementAgentSegment", threadId });
       }
 
+      if (itemType === "agentMessage") {
+        if (agentMessageSnapshotText) {
+          dispatch({
+            type: "appendAgentDelta",
+            workspaceId,
+            threadId,
+            itemId: asString(item?.id ?? ""),
+            delta: agentMessageSnapshotText,
+            hasCustomName: Boolean(getCustomName(workspaceId, threadId)),
+          });
+        }
+        safeMessageActivity();
+        return;
+      }
+
       const converted = buildConversationItem(item);
       if (converted) {
+        const threadEngine = inferEngineFromThreadId(threadId);
+        // Claude can emit reasoning through both snapshot item updates and
+        // reasoning delta channels. Rendering both paths duplicates thinking blocks
+        // during rapid session switching, so Claude relies on delta path only.
+        if (threadEngine === "claude" && converted.kind === "reasoning") {
+          logReasoningRoute("reasoning-snapshot-skipped", {
+            workspaceId,
+            threadId,
+            itemId: converted.id,
+            skipped: true,
+            reason: "claude-snapshot-disabled-use-delta-only",
+          });
+          safeMessageActivity();
+          return;
+        }
         const normalizedItem =
           converted.kind === "message" &&
           converted.role === "user" &&
@@ -120,6 +182,7 @@ export function useThreadItemEvents({
       applyCollabThreadLinks,
       dispatch,
       getCustomName,
+      logReasoningRoute,
       markProcessing,
       markReviewing,
       resolveCollaborationUiMode,
@@ -253,24 +316,41 @@ export function useThreadItemEvents({
   );
 
   const onReasoningSummaryDelta = useCallback(
-    (_workspaceId: string, threadId: string, itemId: string, delta: string) => {
+    (workspaceId: string, threadId: string, itemId: string, delta: string) => {
+      logReasoningRoute("reasoning-summary-delta", {
+        workspaceId,
+        threadId,
+        itemId,
+        deltaLength: delta.length,
+      });
       dispatch({ type: "appendReasoningSummary", threadId, itemId, delta });
     },
-    [dispatch],
+    [dispatch, logReasoningRoute],
   );
 
   const onReasoningSummaryBoundary = useCallback(
-    (_workspaceId: string, threadId: string, itemId: string) => {
+    (workspaceId: string, threadId: string, itemId: string) => {
+      logReasoningRoute("reasoning-summary-boundary", {
+        workspaceId,
+        threadId,
+        itemId,
+      });
       dispatch({ type: "appendReasoningSummaryBoundary", threadId, itemId });
     },
-    [dispatch],
+    [dispatch, logReasoningRoute],
   );
 
   const onReasoningTextDelta = useCallback(
-    (_workspaceId: string, threadId: string, itemId: string, delta: string) => {
+    (workspaceId: string, threadId: string, itemId: string, delta: string) => {
+      logReasoningRoute("reasoning-text-delta", {
+        workspaceId,
+        threadId,
+        itemId,
+        deltaLength: delta.length,
+      });
       dispatch({ type: "appendReasoningContent", threadId, itemId, delta });
     },
-    [dispatch],
+    [dispatch, logReasoningRoute],
   );
 
   const onCommandOutputDelta = useCallback(

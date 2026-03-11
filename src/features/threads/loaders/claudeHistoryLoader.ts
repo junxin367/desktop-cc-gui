@@ -12,6 +12,90 @@ type ClaudeHistoryLoaderOptions = {
   ) => Promise<unknown>;
 };
 
+function compactComparableReasoningText(value: string) {
+  return value
+    .replace(/\s+/g, "")
+    .replace(/[！!]/g, "!")
+    .replace(/[？?]/g, "?")
+    .replace(/[，,]/g, ",")
+    .replace(/[。．.]/g, ".");
+}
+
+function isReasoningSnapshotDuplicate(previous: string, incoming: string) {
+  const previousCompact = compactComparableReasoningText(previous);
+  const incomingCompact = compactComparableReasoningText(incoming);
+  if (!previousCompact || !incomingCompact) {
+    return false;
+  }
+  if (previousCompact === incomingCompact) {
+    return true;
+  }
+  if (previousCompact.length >= 16 && incomingCompact.includes(previousCompact)) {
+    return true;
+  }
+  if (incomingCompact.length >= 16 && previousCompact.includes(incomingCompact)) {
+    return true;
+  }
+  return false;
+}
+
+function preferLongerReasoningText(previous: string, incoming: string) {
+  const previousCompactLength = compactComparableReasoningText(previous).length;
+  const incomingCompactLength = compactComparableReasoningText(incoming).length;
+  return incomingCompactLength >= previousCompactLength ? incoming : previous;
+}
+
+function mergeReasoningSnapshot(
+  items: ConversationItem[],
+  id: string,
+  text: string,
+) {
+  const normalizedText = text.trim();
+  if (!normalizedText) {
+    return;
+  }
+  const byIdIndex = items.findIndex(
+    (item) => item.kind === "reasoning" && item.id === id,
+  );
+  if (byIdIndex >= 0) {
+    const existing = items[byIdIndex];
+    if (existing.kind === "reasoning") {
+      const nextText = preferLongerReasoningText(existing.content, normalizedText);
+      items[byIdIndex] = {
+        ...existing,
+        summary: nextText.slice(0, 100),
+        content: nextText,
+      };
+    }
+    return;
+  }
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const candidate = items[index];
+    if (candidate.kind === "message" && candidate.role === "user") {
+      break;
+    }
+    if (candidate.kind !== "reasoning") {
+      continue;
+    }
+    if (!isReasoningSnapshotDuplicate(candidate.content, normalizedText)) {
+      continue;
+    }
+    const nextText = preferLongerReasoningText(candidate.content, normalizedText);
+    items[index] = {
+      ...candidate,
+      summary: nextText.slice(0, 100),
+      content: nextText,
+    };
+    return;
+  }
+  items.push({
+    id,
+    kind: "reasoning",
+    summary: normalizedText.slice(0, 100),
+    content: normalizedText,
+  });
+}
+
 export function parseClaudeHistoryMessages(messagesData: unknown): ConversationItem[] {
   const items: ConversationItem[] = [];
   const toolIndexById = new Map<string, number>();
@@ -31,12 +115,11 @@ export function parseClaudeHistoryMessages(messagesData: unknown): ConversationI
     }
     if (kind === "reasoning") {
       const text = asString(message.text ?? "");
-      items.push({
-        id: asString(message.id ?? `claude-reasoning-${items.length + 1}`),
-        kind: "reasoning",
-        summary: text.slice(0, 100),
-        content: text,
-      });
+      mergeReasoningSnapshot(
+        items,
+        asString(message.id ?? `claude-reasoning-${items.length + 1}`),
+        text,
+      );
       continue;
     }
     if (kind !== "tool") {

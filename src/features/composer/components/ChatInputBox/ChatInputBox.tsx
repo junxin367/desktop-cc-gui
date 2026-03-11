@@ -108,11 +108,17 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       usageUsedTokens,
       usageMaxTokens,
       showUsage = true,
+      contextDualViewEnabled = false,
+      dualContextUsage = null,
+      onRequestContextCompaction,
       accountRateLimits,
       usageShowRemaining = false,
       onRefreshAccountRateLimits,
       selectedCollaborationModeId,
       onSelectCollaborationMode,
+      codexSpeedMode = 'unknown',
+      onCodexSpeedModeChange,
+      onCodexReviewQuickStart,
       attachments: externalAttachments,
       placeholder = '', // Will be passed from parent via t('chat.inputPlaceholder')
       disabled = false,
@@ -989,6 +995,9 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
               onRefreshAccountRateLimits={onRefreshAccountRateLimits}
               selectedCollaborationModeId={selectedCollaborationModeId}
               onSelectCollaborationMode={onSelectCollaborationMode}
+              codexSpeedMode={codexSpeedMode}
+              onCodexSpeedModeChange={onCodexSpeedModeChange}
+              onCodexReviewQuickStart={onCodexReviewQuickStart}
               onSubmit={handleSubmit}
               onStop={onStop}
               onModeSelect={handleModeSelect}
@@ -1036,6 +1045,10 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
             usedTokens={usageUsedTokens}
             maxTokens={usageMaxTokens}
             showUsage={showUsage}
+            contextDualViewEnabled={contextDualViewEnabled}
+            dualContextUsage={dualContextUsage}
+            onRequestContextCompaction={onRequestContextCompaction}
+            isLoading={isLoading}
             onClearFile={onClearContext}
             onAddAttachment={handleAddAttachment}
             selectedAgent={selectedAgent}

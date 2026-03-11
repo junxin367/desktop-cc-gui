@@ -29,7 +29,10 @@ import {
   mergeThreadItems,
   previewThreadName,
 } from "../../../utils/threadItems";
-import { createClaudeHistoryLoader } from "../loaders/claudeHistoryLoader";
+import {
+  createClaudeHistoryLoader,
+  parseClaudeHistoryMessages,
+} from "../loaders/claudeHistoryLoader";
 import { createCodexHistoryLoader } from "../loaders/codexHistoryLoader";
 import { createOpenCodeHistoryLoader } from "../loaders/opencodeHistoryLoader";
 import {
@@ -74,7 +77,14 @@ const THREAD_LIST_MAX_EMPTY_PAGES = 5;
 const THREAD_LIST_MAX_EMPTY_PAGES_WITH_ACTIVITY = 20;
 const THREAD_LIST_MAX_TOTAL_PAGES = 40;
 const THREAD_LIST_MAX_EMPTY_PAGES_LOAD_OLDER = 10;
-const EXCLUDED_THREAD_SOURCES = new Set(["vscode"]);
+const THREAD_LIST_MAX_FETCH_DURATION_MS = 1_500;
+const DEFAULT_CLAUDE_CONTEXT_WINDOW = 200_000;
+const CODEX_BACKGROUND_HELPER_PROMPT_PREFIXES = [
+  "Generate a concise title for a coding chat thread from the first user message.",
+  "You create concise run metadata for a coding task.",
+  "You are generating OpenSpec project context.",
+  "Generate a concise git commit message for the following changes.",
+] as const;
 
 function normalizeComparableWorkspacePath(path: string): string {
   return normalizeRootPath(path).trim();
@@ -139,8 +149,17 @@ function shouldIncludeThreadEntry(thread: Record<string, unknown>): boolean {
   if (isArchivedThread(thread)) {
     return false;
   }
-  const source = asString(thread.source).trim().toLowerCase();
-  if (source && EXCLUDED_THREAD_SOURCES.has(source)) {
+  const previewCandidates = [
+    asString(thread.preview).trim(),
+    asString(thread.title).trim(),
+    asString(thread.name).trim(),
+  ].filter(Boolean);
+  const isCodexHelperThread = previewCandidates.some((preview) =>
+    CODEX_BACKGROUND_HELPER_PROMPT_PREFIXES.some((prefix) =>
+      preview.startsWith(prefix),
+    ),
+  );
+  if (isCodexHelperThread) {
     return false;
   }
   return true;
@@ -167,8 +186,23 @@ export function useThreadActions({
   const workspacePathsByIdRef = useRef<Record<string, string>>({});
 
   const extractThreadId = useCallback((response: Record<string, any>) => {
-    const thread = response.result?.thread ?? response.thread ?? null;
-    return String(thread?.id ?? "");
+    const candidates = [
+      response.result?.thread?.id,
+      response.result?.threadId,
+      response.result?.thread_id,
+      response.thread?.id,
+      response.threadId,
+      response.thread_id,
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" || typeof candidate === "number") {
+        const normalized = String(candidate).trim();
+        if (normalized) {
+          return normalized;
+        }
+      }
+    }
+    return "";
   }, []);
 
   const startThreadForWorkspace = useCallback(
@@ -247,6 +281,18 @@ export function useThreadActions({
     ) => {
       if (!threadId) {
         return null;
+      }
+      const localItems = itemsByThread[threadId] ?? [];
+      const status = threadStatusById[threadId];
+      if (!force && status?.isProcessing && localItems.length > 0) {
+        onDebug?.({
+          id: `${Date.now()}-client-thread-resume-skipped`,
+          timestamp: Date.now(),
+          source: "client",
+          label: "thread/resume skipped",
+          payload: { workspaceId, threadId, reason: "active-turn" },
+        });
+        return threadId;
       }
       if (useUnifiedHistoryLoader) {
         try {
@@ -332,77 +378,7 @@ export function useThreadActions({
               cacheReadInputTokens?: number;
             } | undefined;
 
-            const items: ConversationItem[] = [];
-            const toolIndexById = new Map<string, number>();
-            const arr = Array.isArray(messagesData) ? messagesData : [];
-            for (const msg of arr) {
-              if (msg.kind === "message") {
-                items.push({
-                  id: msg.id,
-                  kind: "message",
-                  role: msg.role === "user" ? "user" : "assistant",
-                  text: msg.text ?? "",
-                });
-              } else if (msg.kind === "reasoning") {
-                items.push({
-                  id: msg.id,
-                  kind: "reasoning",
-                  summary: (msg.text ?? "").slice(0, 100),
-                  content: msg.text ?? "",
-                });
-              } else if (msg.kind === "tool") {
-                const toolType = msg.toolType ?? "unknown";
-                const isToolResult = toolType === "result" || toolType === "error";
-                const status = toolType === "error" ? "failed" : "completed";
-
-                if (isToolResult) {
-                  const toolResultId = typeof msg.id === "string" ? msg.id : "";
-                  const sourceToolId = toolResultId.endsWith("-result")
-                    ? toolResultId.slice(0, -"-result".length)
-                    : "";
-                  const sourceIndex = sourceToolId
-                    ? toolIndexById.get(sourceToolId)
-                    : undefined;
-
-                  if (sourceIndex !== undefined) {
-                    const existing = items[sourceIndex];
-                    if (existing?.kind === "tool") {
-                      items[sourceIndex] = {
-                        ...existing,
-                        status,
-                        output: msg.text ?? existing.output,
-                      };
-                    }
-                    continue;
-                  }
-
-                  const fallbackId = sourceToolId || msg.id;
-                  items.push({
-                    id: fallbackId || `claude-tool-${items.length + 1}`,
-                    kind: "tool",
-                    toolType,
-                    title: msg.title ?? "Tool",
-                    detail: "",
-                    status,
-                    output: msg.text ?? "",
-                  });
-                  continue;
-                }
-
-                items.push({
-                  id: msg.id,
-                  kind: "tool",
-                  toolType,
-                  title: msg.title ?? "Tool",
-                  detail: msg.text ?? "",
-                  status: "started",
-                });
-
-                if (typeof msg.id === "string" && msg.id) {
-                  toolIndexById.set(msg.id, items.length - 1);
-                }
-              }
-            }
+            const items = parseClaudeHistoryMessages(messagesData);
             if (items.length > 0) {
               dispatch({ type: "setThreadItems", threadId, items });
             }
@@ -428,7 +404,7 @@ export function useThreadActions({
                     totalTokens: (usageData.inputTokens ?? 0) + (usageData.outputTokens ?? 0),
                     reasoningOutputTokens: 0,
                   },
-                  modelContextWindow: 200000, // Default Claude context window
+                  modelContextWindow: DEFAULT_CLAUDE_CONTEXT_WINDOW,
                 },
               });
             }
@@ -447,7 +423,6 @@ export function useThreadActions({
       if (!force && loadedThreadsRef.current[threadId]) {
         return threadId;
       }
-      const status = threadStatusById[threadId];
       if (status?.isProcessing && loadedThreadsRef.current[threadId] && !force) {
         onDebug?.({
           id: `${Date.now()}-client-thread-resume-skipped`,
@@ -725,6 +700,7 @@ export function useThreadActions({
           ? THREAD_LIST_MAX_EMPTY_PAGES_WITH_ACTIVITY
           : THREAD_LIST_MAX_EMPTY_PAGES;
         let pagesFetched = 0;
+        const fetchStartedAt = Date.now();
         let cursor: string | null = null;
         do {
           pagesFetched += 1;
@@ -781,6 +757,21 @@ export function useThreadActions({
                 reason: "page-cap",
                 pagesFetched,
                 pageCap: THREAD_LIST_MAX_TOTAL_PAGES,
+              },
+            });
+            break;
+          }
+          if (Date.now() - fetchStartedAt >= THREAD_LIST_MAX_FETCH_DURATION_MS) {
+            onDebug?.({
+              id: `${Date.now()}-client-thread-list-stop-time-budget`,
+              timestamp: Date.now(),
+              source: "client",
+              label: "thread/list stop",
+              payload: {
+                workspaceId: workspace.id,
+                reason: "time-budget",
+                pagesFetched,
+                budgetMs: THREAD_LIST_MAX_FETCH_DURATION_MS,
               },
             });
             break;
@@ -1010,6 +1001,7 @@ export function useThreadActions({
         const pageSize = THREAD_LIST_PAGE_SIZE;
         const maxPagesWithoutMatch = THREAD_LIST_MAX_EMPTY_PAGES_LOAD_OLDER;
         let pagesFetched = 0;
+        const fetchStartedAt = Date.now();
         let cursor: string | null = nextCursor;
         do {
           pagesFetched += 1;
@@ -1044,6 +1036,9 @@ export function useThreadActions({
             break;
           }
           if (pagesFetched >= THREAD_LIST_MAX_TOTAL_PAGES) {
+            break;
+          }
+          if (Date.now() - fetchStartedAt >= THREAD_LIST_MAX_FETCH_DURATION_MS) {
             break;
           }
         } while (cursor && matchingThreads.length < targetCount);

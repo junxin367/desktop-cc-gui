@@ -24,6 +24,7 @@ import {
   updateWorkspaceCodexBin as updateWorkspaceCodexBinService,
   updateWorkspaceSettings as updateWorkspaceSettingsService,
 } from "../../../services/tauri";
+import { isDefaultWorkspacePath } from "../utils/defaultWorkspace";
 
 const GROUP_ID_RANDOM_MODULUS = 1_000_000;
 const RESERVED_GROUP_NAME = "Ungrouped";
@@ -199,6 +200,11 @@ export function useWorkspaces(options: UseWorkspacesOptions = {}) {
 
     const sortWorkspaces = (list: WorkspaceInfo[]) =>
       list.slice().sort((a, b) => {
+        const aIsDefault = isDefaultWorkspacePath(a.path);
+        const bIsDefault = isDefaultWorkspacePath(b.path);
+        if (aIsDefault !== bIsDefault) {
+          return aIsDefault ? -1 : 1;
+        }
         const orderDiff =
           getSortOrderValue(a.settings.sortOrder) - getSortOrderValue(b.settings.sortOrder);
         if (orderDiff !== 0) {

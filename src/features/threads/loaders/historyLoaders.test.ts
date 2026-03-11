@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createClaudeHistoryLoader } from "./claudeHistoryLoader";
+import {
+  createClaudeHistoryLoader,
+  parseClaudeHistoryMessages,
+} from "./claudeHistoryLoader";
 import { createCodexHistoryLoader } from "./codexHistoryLoader";
 import { createOpenCodeHistoryLoader } from "./opencodeHistoryLoader";
 
@@ -56,7 +59,7 @@ describe("history loaders", () => {
     expect(snapshot.items).toHaveLength(2);
     expect(snapshot.items[0]?.kind).toBe("message");
     expect(snapshot.plan?.steps).toEqual([
-      { step: "Inspect files", status: "inProgress" },
+      { step: "Inspect files", status: "pending" },
     ]);
     expect(snapshot.userInputQueue).toEqual([
       {
@@ -115,6 +118,35 @@ describe("history loaders", () => {
       expect(tool.status).toBe("completed");
       expect(tool.output).toBe("ok");
     }
+  });
+
+  it("collapses repeated claude reasoning snapshots with different ids", () => {
+    const items = parseClaudeHistoryMessages([
+      {
+        kind: "reasoning",
+        id: "reason-1",
+        text: "先检查项目目录结构和入口模块，再确认核心路由",
+      },
+      {
+        kind: "reasoning",
+        id: "reason-2",
+        text: "先检查项目目录结构和入口模块，再确认核心路由并定位状态来源",
+      },
+      {
+        kind: "reasoning",
+        id: "reason-3",
+        text: "先检查项目目录结构和入口模块，再确认核心路由并定位状态来源",
+      },
+    ]);
+
+    const reasoning = items.filter(
+      (item): item is Extract<(typeof items)[number], { kind: "reasoning" }> =>
+        item.kind === "reasoning",
+    );
+    expect(reasoning).toHaveLength(1);
+    expect(reasoning[0]?.content).toBe(
+      "先检查项目目录结构和入口模块，再确认核心路由并定位状态来源",
+    );
   });
 
   it("emits fallback warnings for claude loader when workspace path is unavailable", async () => {

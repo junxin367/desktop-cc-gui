@@ -17,8 +17,8 @@ fn get_pending_open_paths() -> Vec<String> {
     std::mem::take(&mut *paths)
 }
 
-mod backend;
 mod agents;
+mod backend;
 mod claude_commands;
 mod client_storage;
 mod code_intel;
@@ -35,14 +35,15 @@ mod menu;
 mod project_memory;
 mod prompts;
 mod remote_backend;
-mod runtime_log;
 mod rules;
+mod runtime_log;
 mod settings;
 mod shared;
 mod skills;
 mod state;
 mod storage;
 mod terminal;
+mod text_encoding;
 mod types;
 mod utils;
 mod vendors;
@@ -219,6 +220,7 @@ pub fn run() {
             codex::start_thread,
             codex::send_user_message,
             codex::turn_interrupt,
+            codex::thread_compact,
             codex::start_review,
             codex::respond_to_server_request,
             codex::remember_approval_rule,
@@ -245,6 +247,7 @@ pub fn run() {
             // Workspaces
             workspaces::list_workspaces,
             workspaces::is_workspace_path_dir,
+            workspaces::ensure_workspace_path_dir,
             workspaces::add_workspace,
             workspaces::add_clone,
             workspaces::add_worktree,
@@ -259,10 +262,13 @@ pub fn run() {
             workspaces::update_workspace_codex_bin,
             workspaces::connect_workspace,
             workspaces::list_workspace_files,
+            workspaces::list_workspace_directory_children,
+            workspaces::search_workspace_text,
             workspaces::list_external_spec_tree,
             workspaces::read_workspace_file,
             workspaces::read_external_spec_file,
             workspaces::write_workspace_file,
+            workspaces::create_workspace_directory,
             workspaces::write_external_spec_file,
             workspaces::trash_workspace_item,
             workspaces::copy_workspace_item,

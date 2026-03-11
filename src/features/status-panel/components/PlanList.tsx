@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import type { TurnPlan } from "../../../types";
+import { resolvePlanStepStatusForDisplay } from "../../threads/utils/threadNormalize";
 
 interface PlanListProps {
   plan: TurnPlan | null;
@@ -30,14 +31,17 @@ export const PlanList = memo(function PlanList({
 
   return (
     <ol className="sp-plan-list">
-      {steps.map((step, index) => (
-        <li key={`${step.step}-${index}`} className={`sp-plan-item sp-plan-${step.status}`}>
+      {steps.map((step, index) => {
+        const statusForDisplay = resolvePlanStepStatusForDisplay(step.status, isProcessing);
+        return (
+          <li key={`${step.step}-${index}`} className={`sp-plan-item sp-plan-${statusForDisplay}`}>
           <span className="sp-plan-status" aria-hidden>
-            {step.status === "completed" ? "✓" : step.status === "inProgress" ? "…" : "○"}
+            {statusForDisplay === "completed" ? "✓" : statusForDisplay === "inProgress" ? "…" : "○"}
           </span>
           <span className="sp-plan-text">{step.step}</span>
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ol>
   );
 });

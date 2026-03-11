@@ -37,6 +37,19 @@ pub(crate) fn is_workspace_path_dir_core(path: &str) -> bool {
     PathBuf::from(path).is_dir()
 }
 
+pub(crate) fn ensure_workspace_path_dir_core(path: &str) -> Result<(), String> {
+    let target = PathBuf::from(path);
+    if target.is_dir() {
+        return Ok(());
+    }
+    if target.exists() {
+        return Err("Workspace path exists but is not a folder.".to_string());
+    }
+    std::fs::create_dir_all(&target)
+        .map_err(|err| format!("Failed to create workspace folder: {err}"))?;
+    Ok(())
+}
+
 pub(crate) async fn list_workspaces_core(
     workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
@@ -1212,6 +1225,19 @@ where
 {
     let root = resolve_workspace_root(workspaces, workspace_id).await?;
     write_file(&root, path, content)
+}
+
+pub(crate) async fn create_workspace_directory_core<F>(
+    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
+    workspace_id: &str,
+    path: &str,
+    create_directory: F,
+) -> Result<(), String>
+where
+    F: Fn(&PathBuf, &str) -> Result<(), String>,
+{
+    let root = resolve_workspace_root(workspaces, workspace_id).await?;
+    create_directory(&root, path)
 }
 
 pub(crate) async fn trash_workspace_item_core<F>(

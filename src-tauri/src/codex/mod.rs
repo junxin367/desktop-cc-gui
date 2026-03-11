@@ -26,10 +26,152 @@ use crate::backend::app_server::{
 };
 use crate::backend::events::AppServerEvent;
 use crate::event_sink::TauriEventSink;
+use crate::local_usage;
 use crate::remote_backend;
 use crate::shared::{codex_core, thread_titles_core};
 use crate::state::AppState;
-use crate::types::WorkspaceEntry;
+use crate::types::{LocalUsageSessionSummary, WorkspaceEntry};
+
+fn normalize_model_id(candidate: Option<String>) -> Option<String> {
+    candidate
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn pick_model_from_model_list_response(response: &Value) -> Option<String> {
+    let entries = response
+        .get("result")
+        .and_then(|result| result.get("data"))
+        .or_else(|| response.get("data"))
+        .and_then(Value::as_array)?;
+
+    let pick_from_entry = |entry: &Value| {
+        let model = entry
+            .get("model")
+            .and_then(Value::as_str)
+            .or_else(|| entry.get("id").and_then(Value::as_str));
+        model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+    };
+
+    entries
+        .iter()
+        .find(|entry| {
+            entry
+                .get("isDefault")
+                .or_else(|| entry.get("is_default"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .and_then(pick_from_entry)
+        .or_else(|| entries.iter().find_map(pick_from_entry))
+}
+
+fn build_thread_list_empty_response() -> Value {
+    json!({
+        "result": {
+            "data": [],
+            "nextCursor": null
+        }
+    })
+}
+
+fn build_local_codex_session_preview(summary: Option<String>, model: String) -> String {
+    let preview = summary
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    preview.unwrap_or_else(|| format!("Codex session ({model})"))
+}
+
+fn build_local_codex_thread_fallback_response_from_sessions(
+    workspace_path: &str,
+    sessions: &[LocalUsageSessionSummary],
+    requested_limit: usize,
+) -> Value {
+    let data: Vec<Value> = sessions
+        .iter()
+        .take(requested_limit)
+        .map(|session| {
+            let preview =
+                build_local_codex_session_preview(session.summary.clone(), session.model.clone());
+            let title = preview.clone();
+            json!({
+                "id": session.session_id,
+                "preview": preview,
+                "title": title,
+                "cwd": workspace_path,
+                "createdAt": session.timestamp,
+                "updatedAt": session.timestamp,
+                "localFallback": true
+            })
+        })
+        .collect();
+    json!({
+        "result": {
+            "data": data,
+            "nextCursor": null
+        }
+    })
+}
+
+async fn build_local_codex_thread_fallback_response(
+    state: &AppState,
+    workspace_id: &str,
+    limit: Option<u32>,
+) -> Option<Value> {
+    let requested_limit = limit.unwrap_or(50).clamp(1, 200) as usize;
+    let fallback = local_usage::list_codex_session_summaries_for_workspace(
+        &state.workspaces,
+        workspace_id,
+        requested_limit,
+    )
+    .await;
+    let (workspace_path, sessions) = match fallback {
+        Ok(result) => result,
+        Err(error) => {
+            log::debug!(
+                "[list_threads] Local session fallback unavailable for {}: {}",
+                workspace_id,
+                error
+            );
+            return None;
+        }
+    };
+    Some(build_local_codex_thread_fallback_response_from_sessions(
+        &workspace_path,
+        &sessions,
+        requested_limit,
+    ))
+}
+
+async fn resolve_workspace_config_model(state: &AppState, workspace_id: &str) -> Option<String> {
+    let (entry, parent_entry) = {
+        let workspaces = state.workspaces.lock().await;
+        let entry = workspaces.get(workspace_id).cloned()?;
+        let parent_entry = entry
+            .parent_id
+            .as_ref()
+            .and_then(|pid| workspaces.get(pid).cloned());
+        (entry, parent_entry)
+    };
+    let codex_home = resolve_workspace_codex_home(&entry, parent_entry.as_ref());
+    normalize_model_id(config::read_config_model(codex_home).ok().flatten())
+}
+
+async fn resolve_workspace_fallback_model(state: &AppState, workspace_id: &str) -> Option<String> {
+    let from_config = resolve_workspace_config_model(state, workspace_id).await;
+    if from_config.is_some() {
+        return from_config;
+    }
+    let model_list = codex_core::model_list_core(&state.sessions, workspace_id.to_string())
+        .await
+        .ok();
+    model_list
+        .as_ref()
+        .and_then(pick_model_from_model_list_response)
+}
 
 pub(crate) async fn spawn_workspace_session(
     entry: WorkspaceEntry,
@@ -196,8 +338,9 @@ pub(crate) async fn start_thread(
 
     // Ensure Codex session exists before starting thread
     ensure_codex_session(&workspace_id, &state, &app).await?;
+    let resolved_model = resolve_workspace_fallback_model(&state, &workspace_id).await;
 
-    codex_core::start_thread_core(&state.sessions, workspace_id).await
+    codex_core::start_thread_core(&state.sessions, workspace_id, resolved_model).await
 }
 
 #[tauri::command]
@@ -275,14 +418,32 @@ pub(crate) async fn list_threads(
     if !has_session {
         // Try to create a Codex session
         // This handles the case where user installed Codex after creating the workspace
-        match ensure_codex_session(&workspace_id, &state, &app).await {
-            Ok(_) => {
-                log::info!(
-                    "[list_threads] Created Codex session for workspace {}",
+        let warmup = timeout(
+            Duration::from_secs(4),
+            ensure_codex_session(&workspace_id, &state, &app),
+        )
+        .await;
+        match warmup {
+            Err(_) => {
+                log::warn!(
+                    "[list_threads] Codex session warmup timed out for workspace {}",
                     workspace_id
                 );
+                if cursor.is_none() {
+                    if let Some(fallback) =
+                        build_local_codex_thread_fallback_response(&state, &workspace_id, limit)
+                            .await
+                    {
+                        log::info!(
+                            "[list_threads] Using local session fallback after warmup timeout for workspace {}",
+                            workspace_id
+                        );
+                        return Ok(fallback);
+                    }
+                }
+                return Ok(build_thread_list_empty_response());
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 // Codex not available (not installed or other error)
                 // Return empty result - Claude sessions are fetched separately
                 log::debug!(
@@ -290,17 +451,54 @@ pub(crate) async fn list_threads(
                     workspace_id,
                     e
                 );
-                return Ok(json!({
-                    "result": {
-                        "data": [],
-                        "nextCursor": null
+                if cursor.is_none() {
+                    if let Some(fallback) =
+                        build_local_codex_thread_fallback_response(&state, &workspace_id, limit)
+                            .await
+                    {
+                        log::info!(
+                            "[list_threads] Using local session fallback after warmup failure for workspace {}",
+                            workspace_id
+                        );
+                        return Ok(fallback);
                     }
-                }));
+                }
+                return Ok(build_thread_list_empty_response());
+            }
+            Ok(_) => {
+                log::info!(
+                    "[list_threads] Created Codex session for workspace {}",
+                    workspace_id
+                );
             }
         }
     }
 
-    codex_core::list_threads_core(&state.sessions, workspace_id, cursor, limit).await
+    match codex_core::list_threads_core(
+        &state.sessions,
+        workspace_id.clone(),
+        cursor.clone(),
+        limit,
+    )
+    .await
+    {
+        Ok(response) => Ok(response),
+        Err(error) => {
+            if cursor.is_none() && error.contains("workspace not connected") {
+                if let Some(fallback) =
+                    build_local_codex_thread_fallback_response(&state, &workspace_id, limit).await
+                {
+                    log::info!(
+                        "[list_threads] Using local session fallback after list error for workspace {}",
+                        workspace_id
+                    );
+                    return Ok(fallback);
+                }
+                return Ok(build_thread_list_empty_response());
+            }
+            Err(error)
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -378,10 +576,7 @@ fn parse_mcp_entries_from_object(
     entries
 }
 
-fn parse_mcp_entries_from_array(
-    mcp_servers: &[Value],
-    source: &str,
-) -> Vec<GlobalMcpServerEntry> {
+fn parse_mcp_entries_from_array(mcp_servers: &[Value], source: &str) -> Vec<GlobalMcpServerEntry> {
     let mut entries = Vec::new();
     for raw_item in mcp_servers {
         let item = match raw_item.as_object() {
@@ -624,6 +819,7 @@ pub(crate) async fn send_user_message(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Value, String> {
+    let normalized_model = normalize_model_id(model);
     let selected_mode = collaboration_mode
         .as_ref()
         .and_then(|value| {
@@ -657,7 +853,7 @@ pub(crate) async fn send_user_message(
         payload.insert("workspaceId".to_string(), json!(workspace_id));
         payload.insert("threadId".to_string(), json!(thread_id));
         payload.insert("text".to_string(), json!(text));
-        payload.insert("model".to_string(), json!(model));
+        payload.insert("model".to_string(), json!(normalized_model));
         payload.insert("effort".to_string(), json!(effort));
         payload.insert("accessMode".to_string(), json!(access_mode));
         payload.insert("images".to_string(), json!(images));
@@ -684,6 +880,11 @@ pub(crate) async fn send_user_message(
     // Ensure Codex session exists before sending message
     // This handles the case where user switches from Claude to Codex engine
     ensure_codex_session(&workspace_id, &state, &app).await?;
+    let effective_model = if normalized_model.is_some() {
+        normalized_model
+    } else {
+        resolve_workspace_fallback_model(&state, &workspace_id).await
+    };
     let mode_enforcement_enabled = {
         let settings = state.app_settings.lock().await;
         settings.codex_mode_enforcement_enabled
@@ -694,7 +895,7 @@ pub(crate) async fn send_user_message(
         workspace_id.clone(),
         thread_id.clone(),
         text,
-        model,
+        effective_model,
         effort,
         access_mode,
         images,
@@ -800,6 +1001,75 @@ pub(crate) async fn turn_interrupt(
     }
 
     codex_core::turn_interrupt_core(&state.sessions, workspace_id, thread_id, turn_id).await
+}
+
+#[tauri::command]
+pub(crate) async fn thread_compact(
+    workspace_id: String,
+    thread_id: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Value, String> {
+    let normalized_thread_id = thread_id.trim().to_string();
+    if normalized_thread_id.is_empty() {
+        return Err("thread_id is required".to_string());
+    }
+
+    if remote_backend::is_remote_mode(&*state).await {
+        return remote_backend::call_remote(
+            &*state,
+            app,
+            "thread_compact",
+            json!({ "workspaceId": workspace_id, "threadId": normalized_thread_id }),
+        )
+        .await;
+    }
+
+    ensure_codex_session(&workspace_id, &state, &app).await?;
+    let _ = app.emit(
+        "app-server-event",
+        AppServerEvent {
+            workspace_id: workspace_id.clone(),
+            message: json!({
+                "method": "thread/compacting",
+                "params": {
+                    "threadId": normalized_thread_id,
+                    "thread_id": normalized_thread_id,
+                    "auto": false,
+                    "manual": true
+                }
+            }),
+        },
+    );
+
+    match codex_core::thread_compact_core(
+        &state.sessions,
+        workspace_id.clone(),
+        normalized_thread_id.clone(),
+    )
+    .await
+    {
+        Ok(result) => Ok(result),
+        Err(error) => {
+            let _ = app.emit(
+                "app-server-event",
+                AppServerEvent {
+                    workspace_id,
+                    message: json!({
+                        "method": "thread/compactionFailed",
+                        "params": {
+                            "threadId": normalized_thread_id,
+                            "thread_id": normalized_thread_id,
+                            "auto": false,
+                            "manual": true,
+                            "reason": error
+                        }
+                    }),
+                },
+            );
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]
@@ -1011,9 +1281,7 @@ pub(crate) async fn respond_to_server_request(
             .get_session(&workspace_id)
             .await
         {
-            return session
-                .respond_to_user_input(request_id, result)
-                .await;
+            return session.respond_to_user_input(request_id, result).await;
         }
     }
 
@@ -1883,4 +2151,115 @@ fn sanitize_run_worktree_name(value: &str) -> String {
         }
     }
     format!("feat/{}", cleaned.trim_start_matches('/'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_local_codex_session_preview,
+        build_local_codex_thread_fallback_response_from_sessions, build_thread_list_empty_response,
+        normalize_model_id, pick_model_from_model_list_response,
+    };
+    use crate::types::{LocalUsageSessionSummary, LocalUsageUsageData};
+    use serde_json::json;
+
+    #[test]
+    fn normalize_model_id_trims_and_filters_empty() {
+        assert_eq!(
+            normalize_model_id(Some(" gpt-5 ".to_string())),
+            Some("gpt-5".to_string())
+        );
+        assert_eq!(normalize_model_id(Some("   ".to_string())), None);
+        assert_eq!(normalize_model_id(None), None);
+    }
+
+    #[test]
+    fn pick_model_prefers_default_entry() {
+        let response = json!({
+            "result": {
+                "data": [
+                    { "id": "openai/gpt-4.1", "isDefault": false },
+                    { "model": "openai/gpt-5.3-codex", "isDefault": true }
+                ]
+            }
+        });
+        assert_eq!(
+            pick_model_from_model_list_response(&response),
+            Some("openai/gpt-5.3-codex".to_string())
+        );
+    }
+
+    #[test]
+    fn pick_model_falls_back_to_first_entry() {
+        let response = json!({
+            "data": [
+                { "id": "openai/gpt-5-mini" },
+                { "model": "openai/gpt-5.3-codex" }
+            ]
+        });
+        assert_eq!(
+            pick_model_from_model_list_response(&response),
+            Some("openai/gpt-5-mini".to_string())
+        );
+    }
+
+    #[test]
+    fn build_thread_list_empty_response_has_expected_shape() {
+        let response = build_thread_list_empty_response();
+        assert_eq!(response["result"]["data"], json!([]));
+        assert!(response["result"]["nextCursor"].is_null());
+    }
+
+    #[test]
+    fn build_local_codex_session_preview_prefers_trimmed_summary() {
+        let with_summary = build_local_codex_session_preview(
+            Some("  fixed preview  ".to_string()),
+            "openai/gpt-5".to_string(),
+        );
+        let without_summary =
+            build_local_codex_session_preview(Some("   ".to_string()), "openai/gpt-5".to_string());
+        assert_eq!(with_summary, "fixed preview");
+        assert_eq!(without_summary, "Codex session (openai/gpt-5)");
+    }
+
+    #[test]
+    fn build_local_codex_thread_fallback_response_maps_and_limits_entries() {
+        let sessions = vec![
+            LocalUsageSessionSummary {
+                session_id: "session-a".to_string(),
+                timestamp: 1_700_000_001_000,
+                model: "openai/gpt-5".to_string(),
+                usage: LocalUsageUsageData::default(),
+                cost: 0.0,
+                summary: Some("  hello world  ".to_string()),
+            },
+            LocalUsageSessionSummary {
+                session_id: "session-b".to_string(),
+                timestamp: 1_700_000_002_000,
+                model: "openai/gpt-5-mini".to_string(),
+                usage: LocalUsageUsageData::default(),
+                cost: 0.0,
+                summary: None,
+            },
+        ];
+
+        let response = build_local_codex_thread_fallback_response_from_sessions(
+            "/tmp/workspace",
+            &sessions,
+            1,
+        );
+        let data = response["result"]["data"]
+            .as_array()
+            .expect("fallback data array");
+
+        assert_eq!(data.len(), 1);
+        assert_eq!(data[0]["id"], "session-a");
+        assert_eq!(data[0]["preview"], "hello world");
+        assert_eq!(data[0]["title"], "hello world");
+        assert_eq!(data[0]["cwd"], "/tmp/workspace");
+        assert_eq!(data[0]["createdAt"], 1_700_000_001_000_i64);
+        assert_eq!(data[0]["updatedAt"], 1_700_000_001_000_i64);
+        assert_eq!(data[0]["localFallback"], true);
+        assert!(response["result"]["nextCursor"].is_null());
+    }
 }

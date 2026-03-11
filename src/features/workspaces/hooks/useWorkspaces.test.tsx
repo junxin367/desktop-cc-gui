@@ -248,3 +248,50 @@ describe("useWorkspaces.addWorkspaceFromPath", () => {
     expect(result.current.activeWorkspaceId).toBe("workspace-1");
   });
 });
+
+describe("useWorkspaces.groupedWorkspaces", () => {
+  it("keeps default workspace pinned to top of its section", async () => {
+    const listWorkspacesMock = vi.mocked(listWorkspaces);
+    listWorkspacesMock.mockResolvedValue([
+      {
+        id: "ws-z",
+        name: "zzz",
+        path: "/tmp/zzz",
+        connected: true,
+        kind: "main",
+        parentId: null,
+        worktree: null,
+        settings: { sidebarCollapsed: false, sortOrder: -100 },
+      },
+      {
+        id: "ws-default",
+        name: "workspace",
+        path: "/Users/test/.codemoss/workspace",
+        connected: true,
+        kind: "main",
+        parentId: null,
+        worktree: null,
+        settings: { sidebarCollapsed: false },
+      },
+      {
+        id: "ws-a",
+        name: "aaa",
+        path: "/tmp/aaa",
+        connected: true,
+        kind: "main",
+        parentId: null,
+        worktree: null,
+        settings: { sidebarCollapsed: false, sortOrder: -50 },
+      },
+    ]);
+
+    const { result } = renderHook(() => useWorkspaces());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const [section] = result.current.groupedWorkspaces;
+    expect(section?.workspaces[0]?.id).toBe("ws-default");
+  });
+});

@@ -1,5 +1,6 @@
 import type { MouseEvent } from "react";
 import type { WorkspaceInfo } from "../../../types";
+import { isDefaultWorkspacePath } from "../../workspaces/utils/defaultWorkspace";
 
 type WorkspaceCardProps = {
   workspace: WorkspaceInfo;
@@ -24,6 +25,8 @@ export function WorkspaceCard({
   onToggleWorkspaceCollapse,
   children,
 }: WorkspaceCardProps) {
+  const isDefaultWorkspace = isDefaultWorkspacePath(workspace.path);
+
   const handleRowClick = () => {
     onSelectWorkspace(workspace.id);
     onToggleWorkspaceCollapse(workspace.id, !isCollapsed);
@@ -65,6 +68,11 @@ export function WorkspaceCard({
           </button>
 
           <span className="workspace-name-text">{workspaceName ?? workspace.name}</span>
+          {isDefaultWorkspace ? (
+            <span className="default-workspace-badge" aria-label="Default Workspace">
+              Default
+            </span>
+          ) : null}
 
           <div className="workspace-actions">
             <button

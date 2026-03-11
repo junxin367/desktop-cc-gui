@@ -516,6 +516,30 @@ describe("threadItems", () => {
     }
   });
 
+  it("upserts by id+kind and preserves entries with same id across kinds", () => {
+    const existingAssistant: ConversationItem = {
+      id: "shared-1",
+      kind: "message",
+      role: "assistant",
+      text: "assistant",
+    };
+    const incomingReasoning: ConversationItem = {
+      id: "shared-1",
+      kind: "reasoning",
+      summary: "",
+      content: "thinking",
+    };
+
+    const merged = upsertItem([existingAssistant], incomingReasoning);
+    expect(merged).toHaveLength(2);
+    expect(
+      merged.some((item) => item.kind === "message" && item.id === "shared-1"),
+    ).toBe(true);
+    expect(
+      merged.some((item) => item.kind === "reasoning" && item.id === "shared-1"),
+    ).toBe(true);
+  });
+
   it("ignores glob patterns when summarizing rg --files commands", () => {
     const items: ConversationItem[] = [
       {
@@ -783,6 +807,28 @@ go lang`,
     }
   });
 
+  it("normalizes file change fallback fields from files payload", () => {
+    const item = buildConversationItem({
+      type: "fileChange",
+      id: "change-2",
+      status: "done",
+      files: [
+        {
+          filePath: "src/App.tsx",
+          status: "A",
+          patch: "@@ -0,0 +1 @@\n+const x = 1;",
+        },
+      ],
+      output: "fallback-diff",
+    });
+    expect(item).not.toBeNull();
+    if (item && item.kind === "tool") {
+      expect(item.detail).toBe("A src/App.tsx");
+      expect(item.output).toContain("const x = 1");
+      expect(item.changes?.[0]?.kind).toBe("add");
+    }
+  });
+
   it("builds commandExecution items with structured detail payload", () => {
     const item = buildConversationItem({
       type: "commandExecution",
@@ -818,6 +864,20 @@ go lang`,
       const parsed = JSON.parse(item.detail) as Record<string, string>;
       expect(parsed.description).toBe("Commit staged changes");
       expect(parsed.cwd).toBe("/repo");
+    }
+  });
+
+  it("uses commandExecution output fallback fields when aggregatedOutput is absent", () => {
+    const item = buildConversationItem({
+      type: "commandExecution",
+      id: "cmd-structured-3",
+      description: "Run fallback output",
+      output: "stdout-line",
+      status: "completed",
+    });
+    expect(item).not.toBeNull();
+    if (item && item.kind === "tool") {
+      expect(item.output).toBe("stdout-line");
     }
   });
 
@@ -909,6 +969,28 @@ go lang`,
     if (merged[0].kind === "tool") {
       expect(merged[0].output).toBe("much longer output");
       expect(merged[0].status).toBe("ok");
+    }
+  });
+
+  it("builds webSearch items with query detail and output payload", () => {
+    const item = buildConversationItem({
+      type: "webSearch",
+      id: "web-search-1",
+      status: "completed",
+      search_query: [{ q: "openclaw github" }, { q: "openclaw security advisory" }],
+      result: {
+        items: [
+          { title: "OpenClaw GitHub", url: "https://github.com/openclaw/openclaw" },
+        ],
+      },
+    });
+    expect(item).not.toBeNull();
+    if (item && item.kind === "tool") {
+      expect(item.toolType).toBe("webSearch");
+      expect(item.status).toBe("completed");
+      expect(item.detail).toContain("openclaw github");
+      expect(item.output).toContain("OpenClaw GitHub");
+      expect(item.output).toContain("https://github.com/openclaw/openclaw");
     }
   });
 

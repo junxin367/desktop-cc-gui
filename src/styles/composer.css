@@ -1444,14 +1444,18 @@
   display: grid;
   grid-template-columns: minmax(290px, 1fr) minmax(250px, 0.9fr);
   gap: 10px;
-  min-height: 240px;
-  max-height: min(58vh, 440px);
+  min-height: 0;
+  height: clamp(240px, 58vh, 440px);
+  overflow: hidden;
+  align-items: stretch;
 }
 
 .composer-memory-picker-list {
   min-height: 0;
+  height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   padding-right: 2px;
   display: flex;
   flex-direction: column;
@@ -1595,6 +1599,7 @@
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -1807,7 +1812,7 @@
 
   .composer-memory-picker {
     grid-template-columns: 1fr;
-    max-height: min(64vh, 520px);
+    height: clamp(220px, 64vh, 520px);
   }
 
   .composer-memory-picker-preview {

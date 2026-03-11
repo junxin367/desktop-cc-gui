@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import type { Dispatch, MutableRefObject } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import type {
   AccessMode,
   MemoryContextInjectionMode,
@@ -42,6 +43,11 @@ import {
   extractRpcErrorMessage,
   parseReviewTarget,
 } from "../utils/threadNormalize";
+import {
+  classifyNetworkError,
+  parseFirstPacketTimeoutSeconds,
+  stripBackendErrorPrefix,
+} from "../utils/networkErrors";
 import type { ThreadAction, ThreadState } from "./useThreadsReducer";
 import { useReviewPrompt } from "./useReviewPrompt";
 import { formatRelativeTime } from "../../../utils/time";
@@ -275,6 +281,69 @@ function buildCodexTextWithSpecRootPriority(
   return `[System] ${systemHint}\n[User Input] ${trimmedText}`;
 }
 
+function buildReviewCommandText(target: ReviewTarget): string {
+  if (target.type === "uncommittedChanges") {
+    return "/review";
+  }
+  if (target.type === "baseBranch") {
+    return `/review base ${target.branch}`.trim();
+  }
+  if (target.type === "commit") {
+    const title = target.title?.trim();
+    return title
+      ? `/review commit ${target.sha} ${title}`.trim()
+      : `/review commit ${target.sha}`.trim();
+  }
+  return `/review custom ${target.instructions}`.trim();
+}
+
+function isInvalidReviewThreadIdError(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return (
+    normalized.includes("invalid thread id")
+    || normalized.includes("expected an optional prefix of `urn:uuid:`")
+    || normalized.includes('expected an optional prefix of "urn:uuid:"')
+  );
+}
+
+function mapNetworkErrorToUserMessage(
+  rawMessage: string,
+  t: TFunction,
+): { message: string; isNetwork: boolean } {
+  const timeoutSeconds = parseFirstPacketTimeoutSeconds(rawMessage);
+  if (timeoutSeconds) {
+    return {
+      message: t("threads.firstPacketTimeout", { seconds: timeoutSeconds }),
+      isNetwork: true,
+    };
+  }
+
+  const networkKind = classifyNetworkError(rawMessage);
+  if (networkKind) {
+    if (networkKind === "timeout") {
+      return {
+        message: t("threads.requestTimeoutHint"),
+        isNetwork: true,
+      };
+    }
+    return {
+      message:
+        networkKind === "proxy"
+          ? t("threads.networkProxyHint")
+          : t("threads.networkConnectionHint"),
+      isNetwork: true,
+    };
+  }
+
+  return {
+    message: stripBackendErrorPrefix(rawMessage),
+    isNetwork: false,
+  };
+}
+
 type UseThreadMessagingOptions = {
   activeWorkspace: WorkspaceInfo | null;
   activeThreadId: string | null;
@@ -323,12 +392,6 @@ type UseThreadMessagingOptions = {
   ) => Promise<string | null>;
   resolveOpenCodeAgent?: (threadId: string | null) => string | null;
   resolveOpenCodeVariant?: (threadId: string | null) => string | null;
-  autoNameThread?: (
-    workspaceId: string,
-    threadId: string,
-    sourceText: string,
-    options?: { force?: boolean; clearPendingOnSkip?: boolean },
-  ) => Promise<string | null>;
   onInputMemoryCaptured?: (payload: {
     workspaceId: string;
     threadId: string;
@@ -378,7 +441,6 @@ export function useThreadMessaging({
   startThreadForWorkspace,
   resolveOpenCodeAgent,
   resolveOpenCodeVariant,
-  autoNameThread,
   onInputMemoryCaptured,
   resolveCollaborationRuntimeMode,
 }: UseThreadMessagingOptions) {
@@ -701,7 +763,9 @@ export function useThreadMessaging({
 
       const wasProcessing =
         (threadStatusById[threadId]?.isProcessing ?? false) && steerEnabled;
-      if (wasProcessing) {
+      const shouldAddOptimisticUserBubble =
+        resolvedEngine === "codex" || wasProcessing;
+      if (shouldAddOptimisticUserBubble) {
         const optimisticText = visibleUserText;
         if (optimisticText || images.length > 0) {
           dispatch({
@@ -908,9 +972,22 @@ export function useThreadMessaging({
 
           const rpcError = extractRpcErrorMessage(response);
           if (rpcError) {
+            const normalized = mapNetworkErrorToUserMessage(rpcError, t);
             markProcessing(threadId, false);
             setActiveTurnId(threadId, null);
-            pushThreadErrorMessage(threadId, t("threads.turnFailedWithMessage", { message: rpcError }));
+            pushThreadErrorMessage(
+              threadId,
+              normalized.isNetwork
+                ? normalized.message
+                : t("threads.turnFailedWithMessage", { message: normalized.message }),
+            );
+            if (normalized.isNetwork) {
+              pushErrorToast({
+                title: t("common.error"),
+                message: normalized.message,
+                durationMs: 4800,
+              });
+            }
             safeMessageActivity();
             return;
           }
@@ -934,32 +1011,9 @@ export function useThreadMessaging({
           // and mark processing complete when turn/completed event arrives
           setActiveTurnId(threadId, turnId);
 
-          if (
-            cliEngine !== "opencode" &&
-            autoNameThread &&
-            !getCustomName(workspace.id, threadId)
-          ) {
-            onDebug?.({
-              id: `${Date.now()}-thread-title-trigger-${cliEngine}`,
-              timestamp: Date.now(),
-              source: "client",
-              label: "thread/title trigger",
-              payload: { workspaceId: workspace.id, threadId, engine: cliEngine },
-            });
-            void autoNameThread(workspace.id, threadId, visibleUserText, {
-              clearPendingOnSkip: true,
-            }).catch((error) => {
-              onDebug?.({
-                id: `${Date.now()}-thread-title-trigger-${cliEngine}-error`,
-                timestamp: Date.now(),
-                source: "error",
-                label: "thread/title trigger error",
-                payload: error instanceof Error ? error.message : String(error),
-              });
-            });
-          }
         } else {
-          // Codex is event-driven and emits user/assistant events from backend.
+          // Codex assistant/tool events are event-driven from backend.
+          // User message bubble is inserted optimistically on send for instant feedback.
           const preferredLanguage = i18n.language.toLowerCase().startsWith("zh")
             ? "zh"
             : "en";
@@ -989,9 +1043,22 @@ export function useThreadMessaging({
         });
         const rpcError = extractRpcErrorMessage(response);
         if (rpcError) {
+          const normalized = mapNetworkErrorToUserMessage(rpcError, t);
           markProcessing(threadId, false);
           setActiveTurnId(threadId, null);
-          pushThreadErrorMessage(threadId, t("threads.turnFailedToStartWithMessage", { message: rpcError }));
+          pushThreadErrorMessage(
+            threadId,
+            normalized.isNetwork
+              ? normalized.message
+              : t("threads.turnFailedToStartWithMessage", { message: normalized.message }),
+          );
+          if (normalized.isNetwork) {
+            pushErrorToast({
+              title: t("common.error"),
+              message: normalized.message,
+              durationMs: 4800,
+            });
+          }
           safeMessageActivity();
           return;
         }
@@ -1036,28 +1103,9 @@ export function useThreadMessaging({
               console.warn("[project-memory] auto capture failed:", err);
             }
           });
-
-        if (!cliEngine && autoNameThread && !getCustomName(workspace.id, threadId)) {
-          onDebug?.({
-            id: `${Date.now()}-thread-title-trigger-codex`,
-            timestamp: Date.now(),
-            source: "client",
-            label: "thread/title trigger",
-            payload: { workspaceId: workspace.id, threadId, engine: "codex" },
-          });
-          void autoNameThread(workspace.id, threadId, visibleUserText, {
-            clearPendingOnSkip: true,
-          }).catch((error) => {
-            onDebug?.({
-              id: `${Date.now()}-thread-title-trigger-codex-error`,
-              timestamp: Date.now(),
-              source: "error",
-              label: "thread/title trigger error",
-              payload: error instanceof Error ? error.message : String(error),
-            });
-          });
-        }
       } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const normalized = mapNetworkErrorToUserMessage(rawMessage, t);
         markProcessing(threadId, false);
         setActiveTurnId(threadId, null);
         onDebug?.({
@@ -1065,12 +1113,16 @@ export function useThreadMessaging({
           timestamp: Date.now(),
           source: "error",
           label: "turn/start error",
-          payload: error instanceof Error ? error.message : String(error),
+          payload: rawMessage,
         });
-        pushThreadErrorMessage(
-          threadId,
-          error instanceof Error ? error.message : String(error),
-        );
+        pushThreadErrorMessage(threadId, normalized.message);
+        if (normalized.isNetwork) {
+          pushErrorToast({
+            title: t("common.error"),
+            message: normalized.message,
+            durationMs: 4800,
+          });
+        }
         safeMessageActivity();
       }
     },
@@ -1093,7 +1145,6 @@ export function useThreadMessaging({
       resolveOpenCodeVariant,
       safeMessageActivity,
       setActiveTurnId,
-      autoNameThread,
       i18n,
       steerEnabled,
       t,
@@ -1297,16 +1348,73 @@ export function useThreadMessaging({
       if (!workspaceId) {
         return false;
       }
-      const threadId = workspaceIdOverride
+      let threadId = workspaceIdOverride
         ? await ensureThreadForWorkspace(workspaceId)
         : await ensureThreadForActiveWorkspace();
       if (!threadId) {
         return false;
       }
+      const reviewExecutionEngine: "claude" | "codex" =
+        activeEngine === "claude" ? "claude" : "codex";
+      const threadEngine = resolveThreadEngine(workspaceId, threadId);
+      const threadIdCompatible = isThreadIdCompatibleWithEngine(
+        reviewExecutionEngine,
+        threadId,
+      );
+      if (threadEngine !== reviewExecutionEngine || !threadIdCompatible) {
+        onDebug?.({
+          id: `${Date.now()}-client-review-thread-rebind`,
+          timestamp: Date.now(),
+          source: "client",
+          label: "review/thread rebind",
+          payload: {
+            workspaceId,
+            originalThreadId: threadId,
+            originalThreadEngine: threadEngine,
+            threadIdCompatible,
+            targetEngine: reviewExecutionEngine,
+          },
+        });
+        const reviewThreadId = await startThreadForWorkspace(workspaceId, {
+          activate: workspaceId === activeWorkspace?.id,
+          engine: reviewExecutionEngine,
+        });
+        if (!reviewThreadId) {
+          return false;
+        }
+        threadId = reviewThreadId;
+      }
+
+      if (reviewExecutionEngine === "claude") {
+        const reviewWorkspace =
+          activeWorkspace && activeWorkspace.id === workspaceId ? activeWorkspace : null;
+        if (!reviewWorkspace) {
+          return false;
+        }
+        const reviewCommand = buildReviewCommandText(target);
+        onDebug?.({
+          id: `${Date.now()}-client-review-start`,
+          timestamp: Date.now(),
+          source: "client",
+          label: "review/start (cli command)",
+          payload: {
+            workspaceId,
+            threadId,
+            target,
+            command: reviewCommand,
+            engine: "claude",
+          },
+        });
+        await sendMessageToThread(reviewWorkspace, threadId, reviewCommand, [], {
+          skipPromptExpansion: true,
+        });
+        return true;
+      }
 
       markProcessing(threadId, true);
       markReviewing(threadId, true);
       safeMessageActivity();
+      let reviewThreadId = threadId;
       onDebug?.({
         id: `${Date.now()}-client-review-start`,
         timestamp: Date.now(),
@@ -1319,32 +1427,68 @@ export function useThreadMessaging({
         },
       });
       try {
-        const response = await startReviewService(
-          workspaceId,
-          threadId,
-          target,
-          "inline",
-        );
-        onDebug?.({
-          id: `${Date.now()}-server-review-start`,
-          timestamp: Date.now(),
-          source: "server",
-          label: "review/start response",
-          payload: response,
-        });
-        const rpcError = extractRpcErrorMessage(response);
+        const runStartReview = async (
+          targetThreadId: string,
+          label: "review/start response" | "review/start retry response" = "review/start response",
+        ) => {
+          const response = await startReviewService(
+            workspaceId,
+            targetThreadId,
+            target,
+            "inline",
+          );
+          onDebug?.({
+            id: `${Date.now()}-server-review-start`,
+            timestamp: Date.now(),
+            source: "server",
+            label,
+            payload: response,
+          });
+          return response;
+        };
+
+        let response = await runStartReview(reviewThreadId);
+        let rpcError = extractRpcErrorMessage(response);
+
+        if (rpcError && isInvalidReviewThreadIdError(rpcError)) {
+          const fallbackThreadId = await startThreadForWorkspace(workspaceId, {
+            activate: workspaceId === activeWorkspace?.id,
+            engine: "codex",
+          });
+          if (fallbackThreadId && fallbackThreadId !== reviewThreadId) {
+            onDebug?.({
+              id: `${Date.now()}-client-review-thread-retry`,
+              timestamp: Date.now(),
+              source: "client",
+              label: "review/thread retry",
+              payload: {
+                workspaceId,
+                originalThreadId: reviewThreadId,
+                fallbackThreadId,
+                reason: rpcError,
+              },
+            });
+            markProcessing(reviewThreadId, false);
+            markReviewing(reviewThreadId, false);
+            reviewThreadId = fallbackThreadId;
+            markProcessing(reviewThreadId, true);
+            markReviewing(reviewThreadId, true);
+            response = await runStartReview(reviewThreadId, "review/start retry response");
+            rpcError = extractRpcErrorMessage(response);
+          }
+        }
         if (rpcError) {
-          markProcessing(threadId, false);
-          markReviewing(threadId, false);
-          setActiveTurnId(threadId, null);
-          pushThreadErrorMessage(threadId, `Review failed to start: ${rpcError}`);
+          markProcessing(reviewThreadId, false);
+          markReviewing(reviewThreadId, false);
+          setActiveTurnId(reviewThreadId, null);
+          pushThreadErrorMessage(reviewThreadId, `Review failed to start: ${rpcError}`);
           safeMessageActivity();
           return false;
         }
         return true;
       } catch (error) {
-        markProcessing(threadId, false);
-        markReviewing(threadId, false);
+        markProcessing(reviewThreadId, false);
+        markReviewing(reviewThreadId, false);
         onDebug?.({
           id: `${Date.now()}-client-review-start-error`,
           timestamp: Date.now(),
@@ -1353,7 +1497,7 @@ export function useThreadMessaging({
           payload: error instanceof Error ? error.message : String(error),
         });
         pushThreadErrorMessage(
-          threadId,
+          reviewThreadId,
           error instanceof Error ? error.message : String(error),
         );
         safeMessageActivity();
@@ -1361,15 +1505,20 @@ export function useThreadMessaging({
       }
     },
     [
+      activeEngine,
       activeWorkspace,
       ensureThreadForActiveWorkspace,
       ensureThreadForWorkspace,
+      isThreadIdCompatibleWithEngine,
       markProcessing,
       markReviewing,
       onDebug,
       pushThreadErrorMessage,
+      resolveThreadEngine,
       safeMessageActivity,
+      sendMessageToThread,
       setActiveTurnId,
+      startThreadForWorkspace,
     ],
   );
 
@@ -1611,6 +1760,31 @@ export function useThreadMessaging({
       recordThreadActivity,
       resolveCollaborationRuntimeMode,
       safeMessageActivity,
+    ],
+  );
+
+  const startFast = useCallback(
+    async (text: string) => {
+      if (!activeWorkspace) {
+        return;
+      }
+      const threadId = await ensureThreadForActiveWorkspace();
+      if (!threadId) {
+        return;
+      }
+
+      const match = text.trim().match(/^\/fast(?:\s+(on|off))?/i);
+      const mode = match?.[1]?.toLowerCase();
+      const normalizedCommand = mode === "on" || mode === "off" ? `/fast ${mode}` : "/fast";
+
+      await sendMessageToThread(activeWorkspace, threadId, normalizedCommand, [], {
+        skipPromptExpansion: true,
+      });
+    },
+    [
+      activeWorkspace,
+      ensureThreadForActiveWorkspace,
+      sendMessageToThread,
     ],
   );
 
@@ -2266,6 +2440,7 @@ export function useThreadMessaging({
     startMcp,
     startSpecRoot,
     startStatus,
+    startFast,
     startMode,
     startExport,
     startImport,
