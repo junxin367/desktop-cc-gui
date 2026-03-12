@@ -209,8 +209,10 @@ const LOCK_LIVE_SESSION_LIMIT = 12;
 const LOCK_LIVE_PREVIEW_MAX = 180;
 const OPENCODE_VARIANT_OPTIONS = ["minimal", "low", "medium", "high", "max"];
 const GIT_HISTORY_PANEL_MIN_HEIGHT = 260;
-const GIT_HISTORY_PANEL_MIN_TOP_CLEARANCE = 120;
+const GIT_HISTORY_PANEL_MIN_TOP_CLEARANCE = 44;
 const GIT_HISTORY_PANEL_DEFAULT_RATIO = 0.5;
+const GIT_HISTORY_PANEL_MAX_SNAP_THRESHOLD = 36;
+const GIT_HISTORY_PANEL_CLOSE_THRESHOLD = 48;
 const APP_JANK_DEBUG_FLAG_KEY = "mossx.debug.jank";
 const LOCAL_PLAN_APPLY_REQUEST_PREFIX = "mossx-plan-apply:";
 const PLAN_APPLY_ACTION_QUESTION_ID = "plan_apply_action";
@@ -527,6 +529,12 @@ function MainApp() {
     }
     return getDefaultGitHistoryPanelHeight();
   });
+  const appRootRef = useRef<HTMLDivElement | null>(null);
+  const gitHistoryPanelHeightRef = useRef(gitHistoryPanelHeight);
+
+  useEffect(() => {
+    gitHistoryPanelHeightRef.current = gitHistoryPanelHeight;
+  }, [gitHistoryPanelHeight]);
 
   useEffect(() => {
     writeClientStoreValue("layout", "gitHistoryPanelHeight", gitHistoryPanelHeight);
@@ -548,8 +556,36 @@ function MainApp() {
       event.stopPropagation();
       const pointerId = event.pointerId;
       const startY = event.clientY;
-      const startHeight = gitHistoryPanelHeight;
+      const startHeight = gitHistoryPanelHeightRef.current;
+      const viewportHeight = getViewportHeight();
+      const maxHeight = Math.max(
+        GIT_HISTORY_PANEL_MIN_HEIGHT,
+        viewportHeight - GIT_HISTORY_PANEL_MIN_TOP_CLEARANCE,
+      );
+      const minHeight = Math.min(GIT_HISTORY_PANEL_MIN_HEIGHT, maxHeight);
       const dragHandle = event.currentTarget;
+      const appRoot = appRootRef.current;
+      let latestRawHeight = startHeight;
+      let latestClampedHeight = clampGitHistoryPanelHeight(startHeight, viewportHeight);
+      let animationFrameId: number | null = null;
+
+      const flushDraggedHeight = () => {
+        animationFrameId = null;
+        if (appRoot) {
+          appRoot.style.setProperty(
+            "--git-history-panel-height",
+            `${latestClampedHeight}px`,
+          );
+        }
+      };
+
+      const scheduleDraggedHeightFlush = () => {
+        if (animationFrameId !== null) {
+          return;
+        }
+        animationFrameId = window.requestAnimationFrame(flushDraggedHeight);
+      };
+
       dragHandle.setPointerCapture(pointerId);
       document.body.dataset.gitHistoryResizing = "true";
 
@@ -559,7 +595,9 @@ function MainApp() {
         }
         const delta = moveEvent.clientY - startY;
         const nextHeight = startHeight - delta;
-        setGitHistoryPanelHeight(clampGitHistoryPanelHeight(nextHeight));
+        latestRawHeight = nextHeight;
+        latestClampedHeight = clampGitHistoryPanelHeight(nextHeight, viewportHeight);
+        scheduleDraggedHeightFlush();
       };
 
       const handlePointerUp = (upEvent: globalThis.PointerEvent) => {
@@ -572,10 +610,26 @@ function MainApp() {
         if (dragHandle.hasPointerCapture(pointerId)) {
           dragHandle.releasePointerCapture(pointerId);
         }
+        if (animationFrameId !== null) {
+          window.cancelAnimationFrame(animationFrameId);
+          flushDraggedHeight();
+        }
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
         document.body.style.webkitUserSelect = "";
         delete document.body.dataset.gitHistoryResizing;
+
+        if (latestRawHeight <= minHeight - GIT_HISTORY_PANEL_CLOSE_THRESHOLD) {
+          setAppMode("chat");
+          return;
+        }
+
+        if (latestRawHeight >= maxHeight - GIT_HISTORY_PANEL_MAX_SNAP_THRESHOLD) {
+          setGitHistoryPanelHeight(maxHeight);
+          return;
+        }
+
+        setGitHistoryPanelHeight(latestClampedHeight);
       };
 
       window.addEventListener("pointermove", handlePointerMove);
@@ -585,7 +639,7 @@ function MainApp() {
       document.body.style.userSelect = "none";
       document.body.style.webkitUserSelect = "none";
     },
-    [gitHistoryPanelHeight],
+    [],
   );
 
   const {
@@ -3987,7 +4041,7 @@ function MainApp() {
   const rightPanelAvailable = Boolean(
     !isCompact &&
     activeWorkspace &&
-    appMode === "chat" &&
+    (appMode === "chat" || appMode === "gitHistory") &&
     !settingsOpen &&
     centerMode !== "memory",
   );
@@ -4163,7 +4217,7 @@ function MainApp() {
   }${isMacDesktop ? " macos-desktop" : ""
   }${
     reduceTransparency ? " reduced-transparency" : ""
-  }${!isCompact && sidebarCollapsed && !showGitHistory ? " sidebar-collapsed" : ""}${
+  }${!isCompact && sidebarCollapsed ? " sidebar-collapsed" : ""}${
     !isCompact && rightPanelCollapsed ? " right-panel-collapsed" : ""
   }${shouldShowSidebarTopbarContent ? " sidebar-title-relocated" : ""}${
     showHome ? " home-active" : ""
@@ -4841,6 +4895,7 @@ function MainApp() {
 
   return (
     <div
+      ref={appRootRef}
       className={appClassName}
       style={
         {
@@ -4849,8 +4904,6 @@ function MainApp() {
               ? sidebarWidth
               : settingsOpen
                 ? 0
-              : showGitHistory
-                ? Math.max(sidebarWidth, 360)
                 : sidebarCollapsed
                   ? 0
                   : sidebarWidth
