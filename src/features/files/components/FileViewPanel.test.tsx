@@ -330,6 +330,7 @@ describe("FileViewPanel markdown modes", () => {
 
     await waitFor(() => {
       expect(container.querySelector(".fvp-preview-scroll")).toBeTruthy();
+      expect(screen.getByTestId("file-markdown-preview")).toBeTruthy();
       expect(screen.getByText("Updated")).toBeTruthy();
     });
 
@@ -337,6 +338,32 @@ describe("FileViewPanel markdown modes", () => {
 
     const updatedEditor = (await screen.findByTestId("mock-codemirror")) as HTMLTextAreaElement;
     expect(updatedEditor.value).toBe("# Updated");
+  });
+
+  it("keeps non-markdown preview on the existing code preview path", async () => {
+    vi.mocked(readWorkspaceFile).mockResolvedValue({
+      content: "export const value = 1;",
+      truncated: false,
+    });
+
+    const { container } = render(
+      <FileViewPanel
+        workspaceId="ws-md-3"
+        workspacePath="/repo"
+        filePath="src/value.ts"
+        initialMode="preview"
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector(".fvp-code-preview")).toBeTruthy();
+    });
+    expect(screen.queryByTestId("file-markdown-preview")).toBeNull();
   });
 });
 

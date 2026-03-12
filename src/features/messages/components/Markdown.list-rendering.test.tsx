@@ -73,4 +73,20 @@ describe("Markdown list rendering", () => {
     expect(ordered?.querySelectorAll(":scope > li")).toHaveLength(3);
     expect(container.querySelector("ul")).toBeNull();
   });
+
+  it("keeps nested bullet items under ordered steps for chat-formatted content", () => {
+    const value = [
+      "1. 第一步",
+      " - 先做检查",
+      " - 再继续处理",
+      "2. 第二步",
+    ].join("\n");
+
+    const { container } = render(<Markdown value={value} className="markdown" />);
+
+    const ordered = container.querySelector("ol");
+    const nestedList = ordered?.querySelector("li ul");
+    expect(ordered?.querySelectorAll(":scope > li")).toHaveLength(2);
+    expect(nestedList?.querySelectorAll(":scope > li")).toHaveLength(2);
+  });
 });

@@ -26,7 +26,12 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import { openSearchPanel, search } from "@codemirror/search";
+import {
+  closeSearchPanel,
+  openSearchPanel,
+  search,
+  searchPanelOpen,
+} from "@codemirror/search";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { RangeSetBuilder, type Extension } from "@codemirror/state";
 import {
@@ -37,12 +42,12 @@ import {
   writeWorkspaceFile,
 } from "../../../services/tauri";
 import { highlightLine, languageFromPath } from "../../../utils/syntax";
-import { Markdown } from "../../messages/components/Markdown";
 import { OpenAppMenu } from "../../app/components/OpenAppMenu";
 import FileIcon from "../../../components/FileIcon";
 import { pushErrorToast } from "../../../services/toasts";
 import type { GitFileStatus, OpenAppTarget } from "../../../types";
 import { codeMirrorExtensionsForPath } from "../utils/codemirrorLanguageExtensions";
+import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import {
   lspPositionToEditorLocation,
   offsetToLspPosition,
@@ -1181,6 +1186,18 @@ export function FileViewPanel({
     () =>
       keymap.of([
         {
+          key: "Mod-f",
+          run: (view) => {
+            if (searchPanelOpen(view.state)) {
+              closeSearchPanel(view);
+            } else {
+              openSearchPanel(view);
+            }
+            view.focus();
+            return true;
+          },
+        },
+        {
           key: "Mod-b",
           run: () => {
             runDefinitionFromCursor();
@@ -1208,6 +1225,20 @@ export function FileViewPanel({
     return true;
   }, []);
 
+  const toggleFindPanelInEditor = useCallback(() => {
+    const view = cmRef.current?.view;
+    if (!view) {
+      return false;
+    }
+    if (searchPanelOpen(view.state)) {
+      closeSearchPanel(view as unknown as EditorView);
+    } else {
+      openSearchPanel(view as unknown as EditorView);
+    }
+    view.focus();
+    return true;
+  }, []);
+
   const handleOpenFindPanel = useCallback(() => {
     if (isBinary || truncated) {
       return;
@@ -1217,10 +1248,28 @@ export function FileViewPanel({
       setMode("edit");
       return;
     }
-    if (openFindPanelInEditor()) {
+    if (toggleFindPanelInEditor()) {
       pendingOpenFindPanelRef.current = false;
     }
-  }, [isBinary, mode, openFindPanelInEditor, truncated]);
+  }, [isBinary, mode, toggleFindPanelInEditor, truncated]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f") {
+        return;
+      }
+      const panelRoot = panelRootRef.current;
+      const target = event.target;
+      if (!panelRoot || !(target instanceof Node) || !panelRoot.contains(target)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      handleOpenFindPanel();
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [handleOpenFindPanel]);
 
   const ctrlClickDefinitionExt = useMemo(
     () =>
@@ -1758,10 +1807,9 @@ export function FileViewPanel({
     if (isMarkdown) {
       return (
         <div className="fvp-preview-scroll">
-          <Markdown
+          <FileMarkdownPreview
             value={content}
-            className="fvp-markdown"
-            codeBlockStyle="message"
+            className="fvp-file-markdown fvp-markdown-github"
           />
         </div>
       );
