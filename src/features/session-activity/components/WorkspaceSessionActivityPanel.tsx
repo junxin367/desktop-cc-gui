@@ -39,6 +39,7 @@ type WorkspaceSessionActivityPanelProps = {
 type ActivityTab = "all" | "command" | "fileChange" | "task" | "explore" | "reasoning";
 type SessionActivityTurnGroup = {
   id: string;
+  threadId: string;
   turnIndex: number | null;
   threadName: string;
   sessionRole: SessionActivityEvent["sessionRole"];
@@ -303,17 +304,6 @@ function resolveSessionPillStyle(
   };
 }
 
-function resolveTurnGroupTitleStyle(turnIndex: number | null): CSSProperties & Record<string, string> {
-  const normalizedTurnIndex = turnIndex && turnIndex > 0 ? turnIndex : 1;
-  const paletteEntry =
-    SESSION_PILL_COLOR_PALETTE[(normalizedTurnIndex - 1) % SESSION_PILL_COLOR_PALETTE.length];
-  return {
-    "--session-turn-accent-h": `${paletteEntry.hue}`,
-    "--session-turn-accent-s": `${paletteEntry.saturation}%`,
-    "--session-turn-accent-l": `${paletteEntry.lightness}%`,
-  };
-}
-
 function shouldAutoExpandRunningEvent(
   event: SessionActivityEvent,
   latestRunningReasoningEventId: string | null,
@@ -442,6 +432,7 @@ export function WorkspaceSessionActivityPanel({
       }
       groupsById.set(groupId, {
         id: groupId,
+        threadId: event.threadId,
         turnIndex: groupTurnIndex,
         threadName: event.threadName,
         sessionRole: event.sessionRole,
@@ -509,6 +500,14 @@ export function WorkspaceSessionActivityPanel({
       return right.eventCount - left.eventCount;
     });
   }, [relatedSessionSummaries, stickyChildSessionSummariesByThreadId]);
+
+  const childSessionStyleByThreadId = useMemo(() => {
+    const styleMap = new Map<string, CSSProperties & Record<string, string>>();
+    stickyChildSessionSummaries.forEach((session, index) => {
+      styleMap.set(session.threadId, resolveSessionPillStyle(session, index));
+    });
+    return styleMap;
+  }, [stickyChildSessionSummaries]);
   const latestRunningReasoningEventId = useMemo(() => {
     let latestEvent: SessionActivityEvent | null = null;
     for (const event of viewModel.timeline) {
@@ -1187,33 +1186,37 @@ export function WorkspaceSessionActivityPanel({
       {stickyChildSessionSummaries.length > 0 ? (
         <div
           className="session-activity-related-toolbar"
-          role="toolbar"
           aria-label={t("activityPanel.relatedSessions")}
         >
-          <span className="session-activity-related-toolbar-label">
-            {t("activityPanel.relatedSessions")}
-          </span>
           <div className="session-activity-related-toolbar-scroller">
             {stickyChildSessionSummaries.map((session, index) => {
               const fixedLabel = resolveChildSessionPillLabel(session, index, t);
               const pillStyle = resolveSessionPillStyle(session, index);
               return (
-                <button
+                <div
                   key={session.threadId}
-                  type="button"
                   className={`session-activity-session-pill${session.isProcessing ? " is-processing" : ""}`}
                   style={pillStyle}
-                  onClick={() => onSelectThread(workspaceId, session.threadId)}
-                  title={session.threadName}
+                  role="button"
+                  tabIndex={0}
                   aria-label={fixedLabel}
+                  title={session.threadName}
+                  onClick={() => onSelectThread(workspaceId, session.threadId)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelectThread(workspaceId, session.threadId);
+                    }
+                  }}
                 >
+                  <Bot size={12} aria-hidden />
                   <span className="session-activity-session-name">{fixedLabel}</span>
                   {session.relationshipSource === "fallbackLinking" ? (
                     <span className="session-activity-session-meta">
                       {t("activityPanel.fallbackLinking")}
                     </span>
                   ) : null}
-                </button>
+                </div>
               );
             })}
           </div>
@@ -1238,8 +1241,14 @@ export function WorkspaceSessionActivityPanel({
                 }
               >
                 <span
-                  className="session-activity-turn-group-title"
-                  style={resolveTurnGroupTitleStyle(group.turnIndex)}
+                  className={`session-activity-turn-group-title${
+                    group.sessionRole === "child" ? " is-child" : ""
+                  }`}
+                  style={
+                    group.sessionRole === "child"
+                      ? childSessionStyleByThreadId.get(group.threadId)
+                      : undefined
+                  }
                 >
                   {group.turnIndex
                     ? t("activityPanel.turnGroup", { index: group.turnIndex })
