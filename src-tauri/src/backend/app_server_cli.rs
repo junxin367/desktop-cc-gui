@@ -60,6 +60,26 @@ fn get_extra_search_paths() -> Vec<PathBuf> {
             paths.push(local_app_data.join("Volta\\bin"));
             // pnpm
             paths.push(local_app_data.join("pnpm"));
+            // User-scoped Node.js installs (common on Windows when not installed to Program Files)
+            let programs_root = local_app_data.join("Programs");
+            if programs_root.is_dir() {
+                paths.push(programs_root.join("nodejs"));
+                if let Ok(entries) = std::fs::read_dir(&programs_root) {
+                    for entry in entries.flatten() {
+                        let candidate = entry.path();
+                        if !candidate.is_dir() {
+                            continue;
+                        }
+                        let folder_name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+                        if folder_name == "nodejs"
+                            || folder_name.starts_with("node-v")
+                            || folder_name.starts_with("nodejs-v")
+                        {
+                            paths.push(candidate);
+                        }
+                    }
+                }
+            }
         }
         if let Ok(program_files) = env::var("ProgramFiles") {
             paths.push(Path::new(&program_files).join("nodejs"));
@@ -157,7 +177,14 @@ pub fn find_cli_binary(name: &str, custom_bin: Option<&str>) -> Option<PathBuf> 
     if let Some(bin) = custom_bin.filter(|v| !v.trim().is_empty()) {
         let bin_path = Path::new(bin);
         if bin_path.exists() {
-            return Some(bin_path.to_path_buf());
+            #[cfg(windows)]
+            {
+                return Some(prefer_windows_executable_variant(bin_path.to_path_buf()));
+            }
+            #[cfg(not(windows))]
+            {
+                return Some(bin_path.to_path_buf());
+            }
         }
     }
 
@@ -165,7 +192,7 @@ pub fn find_cli_binary(name: &str, custom_bin: Option<&str>) -> Option<PathBuf> 
     // This is more reliable than relying on PATH/PATHEXT
     #[cfg(windows)]
     {
-        let extensions = ["cmd", "exe", "ps1", "bat"];
+        let extensions = ["cmd", "exe", "bat", "com"];
         for search_path in get_extra_search_paths() {
             // Try with various extensions
             for ext in &extensions {
@@ -173,11 +200,6 @@ pub fn find_cli_binary(name: &str, custom_bin: Option<&str>) -> Option<PathBuf> 
                 if cmd_path.exists() {
                     return Some(cmd_path);
                 }
-            }
-            // Also try without extension
-            let bare_path = search_path.join(name);
-            if bare_path.exists() {
-                return Some(bare_path);
             }
         }
     }
@@ -188,12 +210,55 @@ pub fn find_cli_binary(name: &str, custom_bin: Option<&str>) -> Option<PathBuf> 
     // Use which crate to find the binary
     if let Some(cwd) = std::env::current_dir().ok() {
         if let Ok(found) = which::which_in(name, Some(&search_paths), &cwd) {
+            #[cfg(windows)]
+            {
+                return Some(prefer_windows_executable_variant(found));
+            }
             return Some(found);
         }
     }
 
     // Fallback: try standard which (uses system PATH only)
-    which::which(name).ok()
+    #[cfg(windows)]
+    {
+        return which::which(name)
+            .ok()
+            .map(prefer_windows_executable_variant);
+    }
+    #[cfg(not(windows))]
+    {
+        which::which(name).ok()
+    }
+}
+
+#[cfg(windows)]
+fn prefer_windows_executable_variant(path: PathBuf) -> PathBuf {
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase());
+    if matches!(
+        ext.as_deref(),
+        Some("cmd") | Some("exe") | Some("bat") | Some("com")
+    ) {
+        return path;
+    }
+
+    let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+        return path;
+    };
+    let Some(parent) = path.parent() else {
+        return path;
+    };
+
+    for preferred_ext in ["cmd", "exe", "bat", "com"] {
+        let candidate = parent.join(format!("{file_name}.{preferred_ext}"));
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+
+    path
 }
 
 pub(crate) fn build_codex_path_env(codex_bin: Option<&str>) -> Option<String> {
