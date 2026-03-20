@@ -221,7 +221,7 @@ describe("Sidebar", () => {
       updatedAt: 123,
     };
 
-    const { container } = render(
+    render(
       <Sidebar
         {...baseProps}
         workspaces={[workspace]}

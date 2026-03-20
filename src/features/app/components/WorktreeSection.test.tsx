@@ -20,7 +20,7 @@ afterEach(() => {
 
 describe("WorktreeSection", () => {
   it("does not render older thread controls for worktrees", () => {
-    const { container } = render(
+    render(
       <WorktreeSection
         parentWorkspaceId="workspace-1"
         worktrees={[worktree]}

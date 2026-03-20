@@ -1670,6 +1670,7 @@ export function useThreads({
     startImport,
     startLsp,
     startShare,
+    resolveCanonicalThreadId,
     reviewPrompt,
     openReviewPrompt,
     closeReviewPrompt,

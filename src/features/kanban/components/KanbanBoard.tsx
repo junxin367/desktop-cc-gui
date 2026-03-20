@@ -5,6 +5,8 @@ import type { DropResult } from "@hello-pangea/dnd";
 import { Terminal, X } from "lucide-react";
 import type { AppMode, EngineStatus, EngineType, WorkspaceInfo } from "../../../types";
 import type {
+  KanbanTaskChain,
+  KanbanTaskSchedule,
   KanbanColumnDef,
   KanbanPanel,
   KanbanTask,
@@ -13,6 +15,8 @@ import type {
 import { KanbanBoardHeader } from "./KanbanBoardHeader";
 import { KanbanColumn } from "./KanbanColumn";
 import { TaskCreateModal } from "./TaskCreateModal";
+import { describeSchedule } from "../utils/scheduling";
+import { formatKanbanBlockedReason } from "../utils/blockedReason";
 
 type CreateTaskInput = {
   workspaceId: string;
@@ -24,6 +28,8 @@ type CreateTaskInput = {
   branchName: string;
   images: string[];
   autoStart: boolean;
+  schedule?: KanbanTaskSchedule;
+  chain?: KanbanTaskChain;
 };
 
 type KanbanBoardProps = {
@@ -102,6 +108,13 @@ export function KanbanBoard({
   const selectedTask = selectedTaskId
     ? tasks.find((t) => t.id === selectedTaskId) ?? null
     : null;
+  const selectedTaskSchedule = selectedTask ? describeSchedule(selectedTask.schedule) : null;
+  const selectedTaskBlockedReason = selectedTask
+    ? formatKanbanBlockedReason(
+        t,
+        selectedTask.chain?.blockedReason ?? selectedTask.execution?.blockedReason ?? null,
+      )
+    : null;
 
   const filteredTasks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -144,13 +157,77 @@ export function KanbanBoard({
 
       const sourceStatus = source.droppableId as KanbanTaskStatus;
       const destStatus = destination.droppableId as KanbanTaskStatus;
+      const draggedTask = tasks.find((task) => task.id === draggableId);
+      if (!draggedTask) {
+        return;
+      }
+
+      if (
+        destStatus === "inprogress" &&
+        sourceStatus !== "inprogress" &&
+        draggedTask.chain?.previousTaskId
+      ) {
+        onUpdateTask(draggedTask.id, {
+          chain: {
+            ...(draggedTask.chain ?? {
+              groupId: draggedTask.id,
+              previousTaskId: null,
+            }),
+            blockedReason: "chain_requires_head_trigger",
+          },
+          execution: {
+            ...(draggedTask.execution ?? {}),
+            lastSource: "drag",
+            blockedReason: "chain_requires_head_trigger",
+          },
+        });
+        return;
+      }
+
+      const chainGroupByTaskId = new Map<string, string>();
+      for (const task of tasks) {
+        if (!task.chain?.groupId) {
+          continue;
+        }
+        chainGroupByTaskId.set(task.id, task.chain.groupId);
+        if (task.chain.previousTaskId) {
+          chainGroupByTaskId.set(task.chain.previousTaskId, task.chain.groupId);
+        }
+      }
+      const resolveTaskGroupId = (taskId: string): string | null => {
+        return chainGroupByTaskId.get(taskId) ?? null;
+      };
+      const destinationSlots = [...tasksByColumn[destStatus]];
+      if (sourceStatus === destStatus) {
+        const sourceTaskIndex = destinationSlots.findIndex((task) => task.id === draggableId);
+        if (sourceTaskIndex >= 0) {
+          destinationSlots.splice(sourceTaskIndex, 1);
+        }
+      }
+      const beforeTask = destinationSlots[destination.index - 1];
+      const afterTask = destinationSlots[destination.index];
+      const beforeGroupId = beforeTask ? resolveTaskGroupId(beforeTask.id) : null;
+      const afterGroupId = afterTask ? resolveTaskGroupId(afterTask.id) : null;
+      const slotGroupId =
+        beforeGroupId && afterGroupId && beforeGroupId === afterGroupId
+          ? beforeGroupId
+          : null;
+      const draggedGroupId = resolveTaskGroupId(draggedTask.id);
+      if (slotGroupId && draggedGroupId !== slotGroupId) {
+        onUpdateTask(draggedTask.id, {
+          execution: {
+            ...(draggedTask.execution ?? {}),
+            lastSource: "drag",
+            blockedReason: "drag_into_chain_group_blocked",
+          },
+        });
+        return;
+      }
+
       const destTasks = [...tasksByColumn[destStatus]];
 
       if (source.droppableId !== destination.droppableId) {
-        const task = tasks.find((t) => t.id === draggableId);
-        if (task) {
-          destTasks.splice(destination.index, 0, task);
-        }
+        destTasks.splice(destination.index, 0, draggedTask);
       } else {
         const [moved] = destTasks.splice(source.index, 1);
         if (moved) {
@@ -169,13 +246,10 @@ export function KanbanBoard({
 
       // Auto-execute when dragging to "inprogress" from another column
       if (destStatus === "inprogress" && sourceStatus !== "inprogress") {
-        const draggedTask = tasks.find((t) => t.id === draggableId);
-        if (draggedTask) {
-          onDragToInProgress(draggedTask);
-        }
+        onDragToInProgress(draggedTask);
       }
     },
-    [tasksByColumn, tasks, onReorderTask, onDragToInProgress]
+    [tasksByColumn, tasks, onReorderTask, onDragToInProgress, onUpdateTask]
   );
 
   const handleOpenCreate = (status: KanbanTaskStatus = "todo") => {
@@ -213,6 +287,85 @@ export function KanbanBoard({
     [selectedTaskId, onCloseConversation, onDeleteTask]
   );
 
+  const handleCancelOrBlockTask = useCallback(
+    (task: KanbanTask) => {
+      const activeSchedule = task.schedule && task.schedule.mode !== "manual"
+        ? task.schedule
+        : null;
+      const nextExecution = {
+        ...(task.execution ?? {}),
+        lastSource: "manual" as const,
+        lock: null,
+        blockedReason: activeSchedule ? "manual_cancelled" : "manual_blocked",
+      };
+      if (activeSchedule) {
+        onUpdateTask(task.id, {
+          schedule: {
+            ...activeSchedule,
+            mode: "manual",
+            nextRunAt: null,
+            overdue: false,
+          },
+          execution: nextExecution,
+        });
+        return;
+      }
+      onUpdateTask(task.id, {
+        execution: nextExecution,
+      });
+    },
+    [onUpdateTask],
+  );
+
+  const handleToggleSchedulePausedTask = useCallback(
+    (task: KanbanTask) => {
+      const schedule = task.schedule;
+      if (!schedule || schedule.mode === "manual") {
+        return;
+      }
+      const now = Date.now();
+      if (schedule.paused) {
+        const resumeRemainingMs = Math.max(
+          0,
+          schedule.pausedRemainingMs ??
+            (typeof schedule.nextRunAt === "number" ? schedule.nextRunAt - now : 0),
+        );
+        const resumedNextRunAt = now + resumeRemainingMs;
+        onUpdateTask(task.id, {
+          schedule: {
+            ...schedule,
+            paused: false,
+            pausedRemainingMs: null,
+            overdue: false,
+            nextRunAt: resumedNextRunAt,
+          },
+          execution: {
+            ...(task.execution ?? {}),
+            blockedReason: null,
+          },
+        });
+        return;
+      }
+
+      const pauseRemainingMs =
+        typeof schedule.nextRunAt === "number"
+          ? Math.max(0, schedule.nextRunAt - now)
+          : 0;
+      onUpdateTask(task.id, {
+        schedule: {
+          ...schedule,
+          paused: true,
+          pausedRemainingMs: pauseRemainingMs,
+        },
+        execution: {
+          ...(task.execution ?? {}),
+          blockedReason: null,
+        },
+      });
+    },
+    [onUpdateTask],
+  );
+
   return (
     <div className="kanban-board">
       <KanbanBoardHeader
@@ -238,10 +391,13 @@ export function KanbanBoard({
                   key={col.id}
                   column={col}
                   tasks={tasksByColumn[col.id]}
+                  allTasks={tasks}
                   selectedTaskId={selectedTaskId}
                   taskProcessingMap={taskProcessingMap}
                   onAddTask={() => handleOpenCreate(col.id)}
                   onDeleteTask={handleDeleteTask}
+                  onToggleSchedulePausedTask={handleToggleSchedulePausedTask}
+                  onCancelOrBlockTask={handleCancelOrBlockTask}
                   onSelectTask={onSelectTask}
                   onEditTask={col.id === "todo" ? handleEditTask : undefined}
                 />
@@ -265,9 +421,40 @@ export function KanbanBoard({
               />
             )}
             <div className="kanban-conversation-header">
-              <span className="kanban-conversation-title">
-                {selectedTask.title}
-              </span>
+              <div className="kanban-conversation-header-main">
+                <span className="kanban-conversation-title">
+                  {selectedTask.title}
+                </span>
+                {(selectedTaskSchedule || selectedTask.chain?.previousTaskId || selectedTaskBlockedReason) && (
+                  <div className="kanban-conversation-meta-row">
+                    {selectedTaskSchedule === "once" && (
+                      <span className="kanban-conversation-meta-badge">
+                        {t("kanban.task.schedule.onceBadge")}
+                      </span>
+                    )}
+                    {selectedTaskSchedule === "recurring" && (
+                      <span className="kanban-conversation-meta-badge">
+                        {t("kanban.task.schedule.recurringBadge")}
+                      </span>
+                    )}
+                    {selectedTaskSchedule === "once_overdue" && (
+                      <span className="kanban-conversation-meta-badge kanban-conversation-meta-badge-warn">
+                        {t("kanban.task.schedule.onceOverdueBadge")}
+                      </span>
+                    )}
+                    {selectedTask.chain?.previousTaskId && (
+                      <span className="kanban-conversation-meta-badge">
+                        {t("kanban.task.chain.badge")}
+                      </span>
+                    )}
+                    {selectedTaskBlockedReason && (
+                      <span className="kanban-conversation-meta-badge kanban-conversation-meta-badge-warn">
+                        {t("kanban.task.blocked", { reason: selectedTaskBlockedReason })}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
               <button
                 className="kanban-icon-btn"
                 onClick={onCloseConversation}
@@ -315,6 +502,7 @@ export function KanbanBoard({
           setCreateModalOpen(false);
           setEditingTask(null);
         }}
+        availableTasks={tasks}
         editingTask={editingTask ?? undefined}
         onUpdate={handleUpdateTask}
       />

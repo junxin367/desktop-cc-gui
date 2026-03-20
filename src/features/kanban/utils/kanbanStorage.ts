@@ -1,7 +1,160 @@
-import type { KanbanPanel, KanbanStoreData } from "../types";
+import type {
+  KanbanPanel,
+  KanbanStoreData,
+  KanbanTask,
+  KanbanTaskChain,
+  KanbanTaskExecutionLock,
+  KanbanTaskExecutionState,
+  KanbanTaskResultSnapshot,
+} from "../types";
 import { getClientStoreSync, writeClientStoreValue } from "../../../services/clientStorage";
+import { normalizeTaskSchedule } from "./scheduling";
 
 const EMPTY_STORE: KanbanStoreData = { panels: [], tasks: [] };
+
+function normalizeExecutionLock(raw: unknown): KanbanTaskExecutionLock | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const input = raw as Record<string, unknown>;
+  const source = input.source;
+  if (
+    source !== "manual" &&
+    source !== "autoStart" &&
+    source !== "drag" &&
+    source !== "scheduled" &&
+    source !== "chained"
+  ) {
+    return null;
+  }
+  if (typeof input.token !== "string" || typeof input.acquiredAt !== "number") {
+    return null;
+  }
+  return {
+    token: input.token,
+    source,
+    acquiredAt: input.acquiredAt,
+  };
+}
+
+function normalizeExecutionState(raw: unknown): KanbanTaskExecutionState | undefined {
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const input = raw as Record<string, unknown>;
+  const lastSource = input.lastSource;
+  const normalizedLastSource =
+    lastSource === "manual" ||
+    lastSource === "autoStart" ||
+    lastSource === "drag" ||
+    lastSource === "scheduled" ||
+    lastSource === "chained"
+      ? lastSource
+      : null;
+  const blockedReason =
+    typeof input.blockedReason === "string" ? input.blockedReason : null;
+  const startedAt =
+    typeof input.startedAt === "number" && Number.isFinite(input.startedAt)
+      ? input.startedAt
+      : null;
+  const finishedAt =
+    typeof input.finishedAt === "number" && Number.isFinite(input.finishedAt)
+      ? input.finishedAt
+      : null;
+  return {
+    lastSource: normalizedLastSource,
+    lock: normalizeExecutionLock(input.lock),
+    blockedReason,
+    startedAt,
+    finishedAt,
+  };
+}
+
+function normalizeTaskChain(raw: unknown): KanbanTaskChain | undefined {
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const input = raw as Record<string, unknown>;
+  if (typeof input.groupId !== "string") {
+    return undefined;
+  }
+  const previousTaskId =
+    typeof input.previousTaskId === "string" ? input.previousTaskId : null;
+  const groupCode =
+    typeof input.groupCode === "string" && /^\d{3}$/.test(input.groupCode)
+      ? input.groupCode
+      : null;
+  const blockedReason =
+    typeof input.blockedReason === "string" ? input.blockedReason : null;
+  return {
+    groupId: input.groupId,
+    previousTaskId,
+    groupCode,
+    blockedReason,
+  };
+}
+
+function normalizeResultSnapshot(raw: unknown): KanbanTaskResultSnapshot | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const input = raw as Record<string, unknown>;
+  if (
+    typeof input.sourceThreadId !== "string" ||
+    typeof input.summary !== "string" ||
+    typeof input.capturedAt !== "number"
+  ) {
+    return null;
+  }
+  return {
+    sourceThreadId: input.sourceThreadId,
+    sourceMessageId:
+      typeof input.sourceMessageId === "string" ? input.sourceMessageId : null,
+    summary: input.summary,
+    capturedAt: input.capturedAt,
+    artifactPaths: Array.isArray(input.artifactPaths)
+      ? input.artifactPaths.filter((entry): entry is string => typeof entry === "string")
+      : [],
+  };
+}
+
+function normalizeTask(task: Record<string, unknown>): KanbanTask {
+  return {
+    id: String(task.id ?? ""),
+    workspaceId: String(task.workspaceId ?? ""),
+    panelId: String(task.panelId ?? ""),
+    title: typeof task.title === "string" ? task.title : "",
+    description: typeof task.description === "string" ? task.description : "",
+    status:
+      task.status === "todo" ||
+      task.status === "inprogress" ||
+      task.status === "testing" ||
+      task.status === "done"
+        ? task.status
+        : "todo",
+    engineType:
+      task.engineType === "claude" ||
+      task.engineType === "codex" ||
+      task.engineType === "gemini" ||
+      task.engineType === "opencode"
+        ? task.engineType
+        : "claude",
+    modelId: typeof task.modelId === "string" ? task.modelId : null,
+    branchName: typeof task.branchName === "string" ? task.branchName : "main",
+    images: Array.isArray(task.images)
+      ? task.images.filter((entry): entry is string => typeof entry === "string")
+      : [],
+    autoStart: Boolean(task.autoStart),
+    sortOrder: typeof task.sortOrder === "number" ? task.sortOrder : Date.now(),
+    threadId: typeof task.threadId === "string" ? task.threadId : null,
+    schedule: normalizeTaskSchedule(task.schedule),
+    chain: normalizeTaskChain(task.chain),
+    lastResultSnapshot: normalizeResultSnapshot(task.lastResultSnapshot),
+    execution: normalizeExecutionState(task.execution),
+    createdAt: typeof task.createdAt === "number" ? task.createdAt : Date.now(),
+    updatedAt: typeof task.updatedAt === "number" ? task.updatedAt : Date.now(),
+  };
+}
 
 export function loadKanbanData(): KanbanStoreData {
   const stored = getClientStoreSync<Record<string, unknown>>("app", "kanban");
@@ -26,20 +179,26 @@ export function loadKanbanData(): KanbanStoreData {
       updatedAt: now,
     }));
 
-    const tasks = (stored.tasks as Array<Record<string, unknown>>).map((t) => ({
-      ...t,
-      panelId: (t.panelId as string) ?? `panel_migrated_${t.workspaceId as string}`,
-    }));
+    const tasks = (stored.tasks as Array<Record<string, unknown>>).map((t) =>
+      normalizeTask({
+        ...t,
+        panelId: (t.panelId as string) ?? `panel_migrated_${t.workspaceId as string}`,
+      }),
+    );
 
     const migrated: KanbanStoreData = {
       panels,
-      tasks: tasks as KanbanStoreData["tasks"],
+      tasks,
     };
     saveKanbanData(migrated);
     return migrated;
   }
 
-  return { panels: stored.panels as KanbanPanel[], tasks: stored.tasks as KanbanStoreData["tasks"] };
+  const normalizedTasks = (stored.tasks as Array<Record<string, unknown>>).map(normalizeTask);
+  return {
+    panels: stored.panels as KanbanPanel[],
+    tasks: normalizedTasks,
+  };
 }
 
 export function saveKanbanData(data: KanbanStoreData): void {

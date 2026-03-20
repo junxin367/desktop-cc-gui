@@ -64,6 +64,7 @@ describe("TaskCreateModal", () => {
       panelId: "panel-1",
       defaultStatus: "todo" as const,
       engineStatuses,
+      availableTasks: [],
       onSubmit: vi.fn(),
       onCancel: vi.fn(),
     };
@@ -90,6 +91,7 @@ describe("TaskCreateModal", () => {
       panelId: "panel-1",
       defaultStatus: "todo" as const,
       engineStatuses,
+      availableTasks: [],
       onSubmit: vi.fn(),
       onCancel: vi.fn(),
     };
@@ -130,6 +132,7 @@ describe("TaskCreateModal", () => {
       panelId: "panel-1",
       defaultStatus: "todo" as const,
       engineStatuses,
+      availableTasks: [],
       onSubmit: vi.fn(),
       onCancel: vi.fn(),
     };
@@ -153,5 +156,59 @@ describe("TaskCreateModal", () => {
       title: "kanban.task.generateTitleFailed",
       message: "kanban.task.generateTitleTimeout",
     });
+  });
+
+  it("clears blocked reason when updating an edited task", async () => {
+    const onUpdate = vi.fn();
+    const editingTask = {
+      id: "task-1",
+      workspaceId: "ws-1",
+      panelId: "panel-1",
+      title: "Recurring task",
+      description: "desc",
+      status: "todo",
+      engineType: "claude",
+      modelId: "claude-sonnet",
+      branchName: "main",
+      images: [],
+      autoStart: false,
+      sortOrder: 1,
+      threadId: null,
+      schedule: {
+        mode: "recurring",
+        interval: 1,
+        unit: "minutes",
+        nextRunAt: Date.now() + 60_000,
+      },
+      execution: {
+        lastSource: "manual",
+        blockedReason: "manual_blocked",
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    } as any;
+
+    const props = {
+      workspaceId: "ws-1",
+      workspaceBackendId: "ws-1",
+      panelId: "panel-1",
+      defaultStatus: "todo" as const,
+      engineStatuses,
+      availableTasks: [editingTask],
+      onSubmit: vi.fn(),
+      onCancel: vi.fn(),
+      editingTask,
+      onUpdate,
+    };
+
+    const { getByText } = render(<TaskCreateModal {...props} isOpen />);
+    fireEvent.click(getByText("kanban.task.update"));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalled();
+    });
+
+    const [, changes] = onUpdate.mock.calls[0];
+    expect(changes.execution?.blockedReason).toBeNull();
   });
 });

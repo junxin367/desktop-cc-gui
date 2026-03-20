@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  KanbanTaskChain,
+  KanbanTaskExecutionState,
+  KanbanTaskSchedule,
   KanbanPanel,
   KanbanTask,
   KanbanTaskStatus,
@@ -20,6 +23,8 @@ type CreateTaskInput = {
   branchName: string;
   images: string[];
   autoStart: boolean;
+  schedule?: KanbanTaskSchedule;
+  chain?: KanbanTaskChain;
 };
 
 type CreatePanelInput = {
@@ -102,8 +107,23 @@ export function useKanbanStore(workspaces?: WorkspaceInfo[]) {
 
   const createTask = useCallback((input: CreateTaskInput): KanbanTask => {
     const now = Date.now();
+    const taskId = generateKanbanId();
+    const schedule = input.schedule?.mode === "recurring" &&
+      input.schedule.recurringExecutionMode === "new_thread"
+      ? {
+          ...input.schedule,
+          seriesId: input.schedule.seriesId ?? taskId,
+        }
+      : input.schedule;
+    const execution: KanbanTaskExecutionState = {
+      lastSource: input.autoStart ? "autoStart" : "manual",
+      lock: null,
+      blockedReason: null,
+      startedAt: null,
+      finishedAt: null,
+    };
     const task: KanbanTask = {
-      id: generateKanbanId(),
+      id: taskId,
       workspaceId: input.workspaceId,
       panelId: input.panelId,
       title: input.title,
@@ -116,6 +136,10 @@ export function useKanbanStore(workspaces?: WorkspaceInfo[]) {
       autoStart: input.autoStart,
       sortOrder: now,
       threadId: null,
+      schedule,
+      chain: input.chain,
+      lastResultSnapshot: null,
+      execution,
       createdAt: now,
       updatedAt: now,
     };

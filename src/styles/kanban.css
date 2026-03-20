@@ -703,6 +703,82 @@
   overflow: hidden;
 }
 
+.kanban-card-meta-row {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kanban-card-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary, #4b5563);
+  background: var(--bg-secondary, #eef2f7);
+  border: 1px solid var(--border-color, #dbe3ee);
+}
+
+.kanban-card-badge.is-schedule {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.kanban-card-badge.is-time,
+.kanban-card-badge.is-timestamp {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.kanban-card-badge.is-interval,
+.kanban-card-badge.is-countdown {
+  background: #ecfeff;
+  border-color: #99f6e4;
+  color: #0f766e;
+}
+
+.kanban-card-badge.is-mode,
+.kanban-card-badge.is-result {
+  background: #f5f3ff;
+  border-color: #d8b4fe;
+  color: #6d28d9;
+}
+
+.kanban-card-badge.is-chain,
+.kanban-card-badge.is-chain-code,
+.kanban-card-badge.is-sequence {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.kanban-card-badge-icon {
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.kanban-card-badge-warn {
+  color: #9a3412;
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+
+.kanban-card-blocked-reason {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
 /* --- Card Tags (hidden in new design) --- */
 .kanban-card-tags {
   display: none;
@@ -748,6 +824,54 @@
   margin-bottom: 6px;
   line-height: 1.4;
   animation: kanban-hint-fade-in 0.15s ease-out;
+}
+
+.kanban-task-group-panel {
+  border: 1px solid var(--border-color, #dbe3ee);
+  border-radius: 0;
+  margin: 0 0 10px;
+  background: var(--bg-primary, #fff);
+  overflow: hidden;
+}
+
+.kanban-task-group-panel.is-chain {
+  border-color: #93c5fd;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.12);
+}
+
+.kanban-task-group-header {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  background: var(--bg-secondary, #f8fafc);
+  color: var(--text-secondary, #334155);
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  margin: 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.kanban-task-group-title {
+  font-weight: 600;
+}
+
+.kanban-task-group-code {
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 4px;
+}
+
+.kanban-task-group-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-tertiary, #64748b);
 }
 
 @keyframes kanban-hint-fade-in {
@@ -801,6 +925,14 @@
   flex-shrink: 0;
 }
 
+.kanban-conversation-header-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .kanban-conversation-title {
   font-size: 14px;
   font-weight: 600;
@@ -810,6 +942,34 @@
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+}
+
+.kanban-conversation-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kanban-conversation-meta-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, #dbe3ee);
+  background: var(--bg-secondary, #eef2f7);
+  color: var(--text-secondary, #4b5563);
+  padding: 1px 8px;
+  font-size: 10px;
+  line-height: 1.5;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kanban-conversation-meta-badge-warn {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
 }
 
 .kanban-conversation-body {
@@ -1062,6 +1222,54 @@
 
 .kanban-task-selector {
   display: flex;
+}
+
+.kanban-task-config-block {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 8px;
+  background: var(--bg-secondary, #fafafa);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kanban-task-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kanban-task-config-label {
+  font-size: 12px;
+  color: var(--text-secondary, #555);
+  white-space: nowrap;
+}
+
+.kanban-task-config-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kanban-task-date-input {
+  width: 220px;
+}
+
+.kanban-task-interval-input {
+  width: 82px;
+  padding: 8px 10px;
+}
+
+.kanban-task-form-error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .kanban-task-title-row {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { stripComposerKanbanTagsPreserveFormatting } from "./useAppShellSections";
+import {
+  resolvePendingSessionThreadCandidate,
+  resolveTaskThreadId,
+  stripComposerKanbanTagsPreserveFormatting,
+} from "./useAppShellSections";
 
 describe("stripComposerKanbanTagsPreserveFormatting", () => {
   it("keeps multiline formatting when no kanban tag is present", () => {
@@ -26,5 +30,48 @@ describe("stripComposerKanbanTagsPreserveFormatting", () => {
     expect(stripComposerKanbanTagsPreserveFormatting("&@看板A 第一行")).toBe("第一行");
     expect(stripComposerKanbanTagsPreserveFormatting("第二行")).toBe("第二行");
     expect(stripComposerKanbanTagsPreserveFormatting("&@看板B 第三行")).toBe("第三行");
+  });
+});
+
+describe("resolveTaskThreadId", () => {
+  it("returns canonical thread id when resolver provides an alias", () => {
+    const resolved = resolveTaskThreadId(
+      "claude-pending-1",
+      (threadId) => (threadId === "claude-pending-1" ? "claude:session-1" : threadId),
+    );
+    expect(resolved).toBe("claude:session-1");
+  });
+
+  it("keeps original thread id when resolver is absent", () => {
+    expect(resolveTaskThreadId("claude-pending-1")).toBe("claude-pending-1");
+  });
+});
+
+describe("resolvePendingSessionThreadCandidate", () => {
+  it("maps pending thread only when exactly one unoccupied session candidate exists", () => {
+    const resolved = resolvePendingSessionThreadCandidate({
+      pendingThreadId: "claude-pending-1",
+      workspaceThreadIds: ["claude:session-a", "claude:session-b"],
+      occupiedThreadIds: new Set(["claude:session-a"]),
+    });
+    expect(resolved).toBe("claude:session-b");
+  });
+
+  it("returns null when session candidate is ambiguous", () => {
+    const resolved = resolvePendingSessionThreadCandidate({
+      pendingThreadId: "claude-pending-1",
+      workspaceThreadIds: ["claude:session-a", "claude:session-b"],
+      occupiedThreadIds: new Set<string>(),
+    });
+    expect(resolved).toBeNull();
+  });
+
+  it("returns null for non-pending thread ids", () => {
+    const resolved = resolvePendingSessionThreadCandidate({
+      pendingThreadId: "claude:session-1",
+      workspaceThreadIds: ["claude:session-a"],
+      occupiedThreadIds: new Set<string>(),
+    });
+    expect(resolved).toBeNull();
   });
 });

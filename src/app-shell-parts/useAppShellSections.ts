@@ -11,7 +11,21 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ensureWorkspacePathDir } from "../services/tauri";
 import { resolveKanbanThreadCreationStrategy } from "../features/kanban/utils/contextMode";
 import { deriveKanbanTaskTitle } from "../features/kanban/utils/taskTitle";
-import type { KanbanTask } from "../features/kanban/types";
+import { findTaskDownstream } from "../features/kanban/utils/chaining";
+import { buildChainedPromptPrefix, extractKanbanResultSnapshot } from "../features/kanban/utils/resultSnapshot";
+import {
+  applyMissedRunPolicy,
+  hasReachedRecurringRoundLimit,
+  isScheduleDue,
+  markRecurringScheduleCompleted,
+  markScheduleTriggered,
+  resolvePostProcessingStatus,
+} from "../features/kanban/utils/scheduling";
+import type {
+  KanbanTask,
+  KanbanTaskExecutionSource,
+  KanbanTaskStatus,
+} from "../features/kanban/types";
 import { useSoloMode } from "../features/layout/hooks/useSoloMode";
 import { useLiveEditPreview } from "../features/live-edit-preview/hooks/useLiveEditPreview";
 import { useArchiveShortcut } from "../features/app/hooks/useArchiveShortcut";
@@ -24,6 +38,7 @@ import type { EngineType, MessageSendOptions, WorkspaceInfo } from "../types";
 import type { KanbanContextMode } from "../features/kanban/utils/contextMode";
 
 const KANBAN_TAG_REGEX = /&@[^\s]+/g;
+const KANBAN_SCHEDULER_INTERVAL_MS = 20_000;
 
 export function stripComposerKanbanTagsPreserveFormatting(text: string): string {
   if (!text || !text.includes("&@")) {
@@ -35,6 +50,39 @@ export function stripComposerKanbanTagsPreserveFormatting(text: string): string 
     .replace(/(\r?\n)[ \t]+/g, "$1")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+export function resolveTaskThreadId(
+  threadId: string | null | undefined,
+  resolveCanonicalThreadId?: ((threadId: string) => string) | null,
+): string | null {
+  if (!threadId) {
+    return null;
+  }
+  if (!resolveCanonicalThreadId) {
+    return threadId;
+  }
+  const canonical = resolveCanonicalThreadId(threadId);
+  return canonical || threadId;
+}
+
+export function resolvePendingSessionThreadCandidate(params: {
+  pendingThreadId: string;
+  workspaceThreadIds: string[];
+  occupiedThreadIds: Set<string>;
+}): string | null {
+  const isClaudePending = params.pendingThreadId.startsWith("claude-pending-");
+  const isOpenCodePending = params.pendingThreadId.startsWith("opencode-pending-");
+  if (!isClaudePending && !isOpenCodePending) {
+    return null;
+  }
+  const sessionPrefix = isClaudePending ? "claude:" : "opencode:";
+  const candidates = params.workspaceThreadIds.filter(
+    (threadId) =>
+      threadId.startsWith(sessionPrefix) &&
+      !params.occupiedThreadIds.has(threadId),
+  );
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 export function useAppShellSections(ctx: any) {
@@ -80,6 +128,7 @@ export function useAppShellSections(ctx: any) {
     t,
     setSelectedModelId,
     setEngineSelectedModelIdByType,
+    threadItemsByThread,
     threadStatusById,
     kanbanTasks,
     appMode,
@@ -148,6 +197,7 @@ export function useAppShellSections(ctx: any) {
     setSelectedPullRequest,
     setSelectedCommitSha,
     setDiffSource,
+    resolveCanonicalThreadId,
   } = ctx;
 
   const [selectedComposerKanbanPanelId, setSelectedComposerKanbanPanelId] =
@@ -699,6 +749,175 @@ export function useAppShellSections(ctx: any) {
     [clearDraftForThread, removeImagesForThread, removeThread, t],
   );
 
+  const kanbanTasksRef = useRef(kanbanTasks);
+  const schedulerStartedAtRef = useRef(Date.now());
+  const kanbanExecutionLocksRef = useRef<
+    Record<string, { token: string; source: KanbanTaskExecutionSource; acquiredAt: number }>
+  >({});
+
+  useEffect(() => {
+    kanbanTasksRef.current = kanbanTasks;
+  }, [kanbanTasks]);
+
+  const updateTaskExecution = useCallback(
+    (taskId: string, changes: Record<string, unknown>) => {
+      const current = kanbanTasksRef.current.find((task) => task.id === taskId);
+      if (!current) {
+        return;
+      }
+      kanbanUpdateTask(taskId, {
+        execution: {
+          ...(current.execution ?? {}),
+          ...changes,
+        },
+      });
+    },
+    [kanbanUpdateTask],
+  );
+
+  const setTaskChainBlockedReason = useCallback(
+    (taskId: string, blockedReason: string | null) => {
+      const current = kanbanTasksRef.current.find((task) => task.id === taskId);
+      if (!current?.chain) {
+        return;
+      }
+      kanbanUpdateTask(taskId, {
+        chain: {
+          ...current.chain,
+          blockedReason,
+        },
+      });
+    },
+    [kanbanUpdateTask],
+  );
+
+  const launchKanbanTaskExecution = useCallback(
+    async (params: {
+      taskId: string;
+      source: KanbanTaskExecutionSource;
+      activate?: boolean;
+      injectedPrefix?: string;
+      forceNewThread?: boolean;
+    }): Promise<{ ok: true; threadId: string } | { ok: false; reason: string }> => {
+      const task = kanbanTasksRef.current.find((entry) => entry.id === params.taskId);
+      if (!task) {
+        return { ok: false, reason: "task_not_found" };
+      }
+      if (params.source !== "chained" && task.chain?.previousTaskId) {
+        setTaskChainBlockedReason(task.id, "chain_requires_head_trigger");
+        updateTaskExecution(task.id, {
+          lastSource: params.source,
+          blockedReason: "chain_requires_head_trigger",
+        });
+        return { ok: false, reason: "chain_requires_head_trigger" };
+      }
+      if (params.source === "chained" && task.chain?.previousTaskId) {
+        setTaskChainBlockedReason(task.id, null);
+      }
+      const existingLock = kanbanExecutionLocksRef.current[task.id];
+      if (existingLock) {
+        updateTaskExecution(task.id, {
+          lastSource: params.source,
+          blockedReason: "non_reentrant_trigger_blocked",
+        });
+        return { ok: false, reason: "non_reentrant_trigger_blocked" };
+      }
+
+      const lock = {
+        token: `${params.source}-${Date.now()}`,
+        source: params.source,
+        acquiredAt: Date.now(),
+      } as const;
+      kanbanExecutionLocksRef.current[task.id] = lock;
+      updateTaskExecution(task.id, {
+        lastSource: params.source,
+        lock,
+        blockedReason: null,
+      });
+
+      try {
+        const workspace = workspacesByPath.get(task.workspaceId);
+        if (!workspace) {
+          throw new Error("workspace_not_found");
+        }
+
+        await connectWorkspace(workspace);
+        const engine = (task.engineType ?? activeEngine) as "claude" | "codex";
+        await setActiveEngine(engine);
+
+        if (task.modelId) {
+          if (engine === "codex") {
+            setSelectedModelId(task.modelId);
+          } else {
+            setEngineSelectedModelIdByType((prev) => ({
+              ...prev,
+              [engine]: task.modelId,
+            }));
+          }
+        }
+
+        const shouldForceNewThread = Boolean(params.forceNewThread);
+        let threadId = shouldForceNewThread ? null : task.threadId;
+        if (shouldForceNewThread && task.threadId) {
+          // Keep previous run in review state before switching task to the new execution thread.
+          kanbanUpdateTask(task.id, { status: "testing" });
+        }
+        if (!threadId) {
+          threadId = await startThreadForWorkspace(workspace.id, {
+            engine,
+            activate: params.activate ?? false,
+          });
+          if (!threadId) {
+            throw new Error("thread_create_failed");
+          }
+          kanbanUpdateTask(task.id, { threadId });
+        }
+
+        const executionStartedAt = Date.now();
+        const baseMessage = task.description?.trim() || task.title;
+        const firstMessage = params.injectedPrefix
+          ? `${params.injectedPrefix}\n\n${baseMessage}`
+          : baseMessage;
+        if (firstMessage) {
+          await sendUserMessageToThread(workspace, threadId, firstMessage, task.images ?? []);
+        }
+
+        kanbanUpdateTask(task.id, { status: "inprogress" });
+        updateTaskExecution(task.id, {
+          lastSource: params.source,
+          lock: null,
+          blockedReason: null,
+          startedAt: executionStartedAt,
+          finishedAt: null,
+        });
+        return { ok: true, threadId };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        updateTaskExecution(task.id, {
+          lastSource: params.source,
+          lock: null,
+          blockedReason: reason,
+        });
+        return { ok: false, reason };
+      } finally {
+        delete kanbanExecutionLocksRef.current[task.id];
+      }
+    },
+    [
+      workspacesByPath,
+      connectWorkspace,
+      activeEngine,
+      setActiveEngine,
+      setSelectedModelId,
+      setEngineSelectedModelIdByType,
+      startThreadForWorkspace,
+      kanbanUpdateTask,
+      sendUserMessageToThread,
+      updateTaskExecution,
+      setTaskChainBlockedReason,
+    ],
+  );
+
   // --- Kanban conversation handlers ---
   const handleOpenTaskConversation = useCallback(
     async (task: KanbanTask) => {
@@ -725,34 +944,61 @@ export function useAppShellSections(ctx: any) {
       }
 
       if (task.threadId) {
-        let resolvedThreadId = task.threadId;
-        // If the stored threadId is a stale claude-pending-* that was already renamed,
-        // resolve to the new ID by checking threadsByWorkspace.
-        if (
-          resolvedThreadId.startsWith("claude-pending-") &&
-          !threadStatusById[resolvedThreadId]
-        ) {
-          const threads = threadsByWorkspace[workspace.id] ?? [];
-          const otherTaskThreadIds = new Set(
+        const threads = threadsByWorkspace[workspace.id] ?? [];
+        let resolvedThreadId =
+          resolveTaskThreadId(task.threadId, resolveCanonicalThreadId) ?? task.threadId;
+        if (resolvedThreadId !== task.threadId) {
+          kanbanUpdateTask(task.id, { threadId: resolvedThreadId });
+        }
+
+        const isPendingThread =
+          resolvedThreadId.startsWith("claude-pending-") ||
+          resolvedThreadId.startsWith("opencode-pending-");
+        const hasThreadStatus = threadStatusById[resolvedThreadId] !== undefined;
+        const existsInWorkspaceThreads = threads.some((entry) => entry.id === resolvedThreadId);
+
+        if (isPendingThread && !hasThreadStatus && !existsInWorkspaceThreads) {
+          const occupiedThreadIds = new Set(
             kanbanTasks
-              .filter((t) => t.id !== task.id && t.threadId && !t.threadId.startsWith("claude-pending-"))
-              .map((t) => t.threadId as string)
+              .filter((entry) => entry.id !== task.id && entry.threadId)
+              .map((entry) =>
+                resolveTaskThreadId(entry.threadId, resolveCanonicalThreadId),
+              )
+              .filter(
+                (threadId): threadId is string =>
+                  Boolean(
+                    threadId &&
+                      !threadId.startsWith("claude-pending-") &&
+                      !threadId.startsWith("opencode-pending-"),
+                  ),
+              ),
           );
-          const match = threads.find(
-            (t) => t.id.startsWith("claude:") && !otherTaskThreadIds.has(t.id)
-          );
-          if (match) {
-            resolvedThreadId = match.id;
+          const uniqueCandidate = resolvePendingSessionThreadCandidate({
+            pendingThreadId: resolvedThreadId,
+            workspaceThreadIds: threads.map((entry) => entry.id),
+            occupiedThreadIds,
+          });
+          if (uniqueCandidate) {
+            resolvedThreadId = uniqueCandidate;
             kanbanUpdateTask(task.id, { threadId: resolvedThreadId });
           }
         }
-        setActiveThreadId(resolvedThreadId, workspace.id);
-      } else {
-        const threadId = await startThreadForWorkspace(workspace.id, { engine });
-        if (threadId) {
-          kanbanUpdateTask(task.id, { threadId });
-          setActiveThreadId(threadId, workspace.id);
+
+        const canActivateExistingThread =
+          threadStatusById[resolvedThreadId] !== undefined ||
+          threads.some((entry) => entry.id === resolvedThreadId) ||
+          resolvedThreadId.startsWith("claude-pending-") ||
+          resolvedThreadId.startsWith("opencode-pending-");
+        if (canActivateExistingThread) {
+          setActiveThreadId(resolvedThreadId, workspace.id);
+          return;
         }
+      }
+
+      const threadId = await startThreadForWorkspace(workspace.id, { engine });
+      if (threadId) {
+        kanbanUpdateTask(task.id, { threadId });
+        setActiveThreadId(threadId, workspace.id);
       }
     },
     [
@@ -769,6 +1015,7 @@ export function useAppShellSections(ctx: any) {
       threadStatusById,
       threadsByWorkspace,
       kanbanTasks,
+      resolveCanonicalThreadId,
     ]
   );
 
@@ -780,92 +1027,80 @@ export function useAppShellSections(ctx: any) {
     (input: Parameters<typeof kanbanCreateTask>[0]) => {
       const task = kanbanCreateTask(input);
       if (input.autoStart) {
-        // Auto-execute: create thread and send first message (without opening conversation panel)
-        const executeAutoStart = async () => {
-          const workspace = workspacesByPath.get(task.workspaceId);
-          if (!workspace) return;
-
-          await connectWorkspace(workspace);
-          selectWorkspace(workspace.id);
-
-          const engine = (task.engineType ?? activeEngine) as "claude" | "codex";
-          await setActiveEngine(engine);
-
-          // Apply the model that was selected when the task was created
-          if (task.modelId) {
-            if (engine === "codex") {
-              setSelectedModelId(task.modelId);
-            } else {
-              setEngineSelectedModelIdByType((prev) => ({
-                ...prev,
-                [engine]: task.modelId,
-              }));
-            }
-          }
-
-          const threadId = await startThreadForWorkspace(workspace.id, { engine });
-          if (!threadId) return;
-          kanbanUpdateTask(task.id, { threadId });
-          setActiveThreadId(threadId, workspace.id);
-
-          // Send task description (or title if no description) as first message
-          const firstMessage = task.description?.trim() || task.title;
-          if (firstMessage) {
-            // Small delay to let activeWorkspace state settle after selectWorkspace
-            await new Promise((r) => setTimeout(r, 100));
-            await sendUserMessageToThread(workspace, threadId, firstMessage, task.images ?? []);
-          }
-        };
-        executeAutoStart().catch((err) => {
-          console.error("[kanban] autoStart execute failed:", err);
+        void launchKanbanTaskExecution({
+          taskId: task.id,
+          source: "autoStart",
+          activate: false,
         });
       }
       return task;
     },
-    [
-      kanbanCreateTask,
-      kanbanUpdateTask,
-      workspacesByPath,
-      connectWorkspace,
-      selectWorkspace,
-      activeEngine,
-      setActiveEngine,
-      setSelectedModelId,
-      setEngineSelectedModelIdByType,
-      startThreadForWorkspace,
-      setActiveThreadId,
-      sendUserMessageToThread,
-    ]
+    [kanbanCreateTask, launchKanbanTaskExecution],
   );
 
-  // Sync kanban task threadIds when Claude renames pending → session.
-  // Must cover ALL tasks (not just selected) because background tasks get renamed too.
+  // Sync kanban task threadIds when pending IDs are renamed to session IDs.
+  // Strategy:
+  // 1) Prefer canonical alias resolution from useThreads (deterministic).
+  // 2) Fallback to unique-candidate mapping only when there is exactly one safe target.
+  // Never guess by taking the first candidate.
   useEffect(() => {
-    const usedNewIds = new Set<string>();
     for (const task of kanbanTasks) {
-      if (!task.threadId || !task.threadId.startsWith("claude-pending-")) continue;
-      // If the old ID still exists in the thread system, no rename happened yet
-      if (threadStatusById[task.threadId] !== undefined) continue;
-      // Thread was renamed — find the new ID from threadsByWorkspace
+      if (!task.threadId) {
+        continue;
+      }
+      const canonicalThreadId = resolveTaskThreadId(task.threadId, resolveCanonicalThreadId);
+      if (canonicalThreadId && canonicalThreadId !== task.threadId) {
+        kanbanUpdateTask(task.id, { threadId: canonicalThreadId });
+        continue;
+      }
+
+      const taskThreadId = canonicalThreadId ?? task.threadId;
+      const isPendingThread =
+        taskThreadId.startsWith("claude-pending-") ||
+        taskThreadId.startsWith("opencode-pending-");
+      if (!isPendingThread) {
+        continue;
+      }
+      if (threadStatusById[taskThreadId] !== undefined) {
+        continue;
+      }
       const wsId = workspacesByPath.get(task.workspaceId)?.id;
       const threads = wsId ? (threadsByWorkspace[wsId] ?? []) : [];
+      if (threads.some((entry) => entry.id === taskThreadId)) {
+        continue;
+      }
       const otherTaskThreadIds = new Set(
         kanbanTasks
-          .filter((t) => t.id !== task.id && t.threadId && !t.threadId.startsWith("claude-pending-"))
-          .map((t) => t.threadId as string)
+          .filter((entry) => entry.id !== task.id && entry.threadId)
+          .map((entry) =>
+            resolveTaskThreadId(entry.threadId, resolveCanonicalThreadId),
+          )
+          .filter(
+            (threadId): threadId is string =>
+              Boolean(
+                threadId &&
+                  !threadId.startsWith("claude-pending-") &&
+                  !threadId.startsWith("opencode-pending-"),
+              ),
+          ),
       );
-      const newThread = threads.find(
-        (t) =>
-          t.id.startsWith("claude:") &&
-          !otherTaskThreadIds.has(t.id) &&
-          !usedNewIds.has(t.id)
-      );
-      if (newThread) {
-        usedNewIds.add(newThread.id);
-        kanbanUpdateTask(task.id, { threadId: newThread.id });
+      const uniqueCandidate = resolvePendingSessionThreadCandidate({
+        pendingThreadId: taskThreadId,
+        workspaceThreadIds: threads.map((entry) => entry.id),
+        occupiedThreadIds: otherTaskThreadIds,
+      });
+      if (uniqueCandidate) {
+        kanbanUpdateTask(task.id, { threadId: uniqueCandidate });
       }
     }
-  }, [kanbanTasks, threadStatusById, threadsByWorkspace, kanbanUpdateTask, workspacesByPath]);
+  }, [
+    kanbanTasks,
+    threadStatusById,
+    threadsByWorkspace,
+    kanbanUpdateTask,
+    workspacesByPath,
+    resolveCanonicalThreadId,
+  ]);
 
   useEffect(() => {
     if (appMode !== "kanban") {
@@ -888,8 +1123,9 @@ export function useAppShellSections(ctx: any) {
   const taskProcessingMap = useMemo(() => {
     const map: Record<string, { isProcessing: boolean; startedAt: number | null }> = {};
     for (const task of kanbanTasks) {
-      if (task.threadId) {
-        const status = threadStatusById[task.threadId];
+      const taskThreadId = resolveTaskThreadId(task.threadId, resolveCanonicalThreadId);
+      if (taskThreadId) {
+        const status = threadStatusById[taskThreadId];
         map[task.id] = {
           isProcessing: status?.isProcessing ?? false,
           startedAt: status?.processingStartedAt ?? null,
@@ -897,10 +1133,175 @@ export function useAppShellSections(ctx: any) {
       }
     }
     return map;
-  }, [kanbanTasks, threadStatusById]);
+  }, [kanbanTasks, threadStatusById, resolveCanonicalThreadId]);
+
+  useEffect(() => {
+    const runSchedulerTick = () => {
+      const nowTs = Date.now();
+      for (const task of kanbanTasksRef.current) {
+        if (task.execution?.blockedReason === "scheduled_trigger_blocked") {
+          updateTaskExecution(task.id, { blockedReason: null });
+        }
+        const schedule = task.schedule;
+        if (!schedule || schedule.mode === "manual") {
+          continue;
+        }
+        if (schedule.paused) {
+          continue;
+        }
+        const taskThreadId = resolveTaskThreadId(task.threadId, resolveCanonicalThreadId);
+        if (taskThreadId && task.threadId && taskThreadId !== task.threadId) {
+          kanbanUpdateTask(task.id, { threadId: taskThreadId });
+        }
+        const isTaskProcessing = taskThreadId
+          ? (threadStatusById[taskThreadId]?.isProcessing ?? false)
+          : false;
+        const shouldPromoteTestingToTodo =
+          schedule.mode === "recurring" &&
+          schedule.recurringExecutionMode !== "new_thread" &&
+          task.status === "testing" &&
+          !isTaskProcessing &&
+          typeof schedule.nextRunAt === "number" &&
+          schedule.nextRunAt <= nowTs;
+        const normalizedStatus = shouldPromoteTestingToTodo ? "todo" : task.status;
+        if (normalizedStatus !== task.status) {
+          kanbanUpdateTask(task.id, { status: normalizedStatus });
+        }
+        if (normalizedStatus !== "todo") {
+          continue;
+        }
+
+        const missedRunResult = applyMissedRunPolicy(
+          task,
+          schedulerStartedAtRef.current,
+          nowTs,
+        );
+        let effectiveSchedule = schedule;
+        if (missedRunResult) {
+          effectiveSchedule = missedRunResult.schedule;
+          kanbanUpdateTask(task.id, {
+            schedule: missedRunResult.schedule,
+          });
+          updateTaskExecution(task.id, {
+            lastSource: "scheduled",
+            blockedReason: missedRunResult.blockedReason,
+          });
+          continue;
+        }
+
+        if (!isScheduleDue(effectiveSchedule, nowTs)) {
+          continue;
+        }
+
+        if (effectiveSchedule.mode === "recurring" && hasReachedRecurringRoundLimit(effectiveSchedule)) {
+          kanbanUpdateTask(task.id, {
+            status: "done",
+            schedule: {
+              ...effectiveSchedule,
+              nextRunAt: null,
+            },
+          });
+          updateTaskExecution(task.id, {
+            lastSource: "scheduled",
+            blockedReason: "max_rounds_reached_auto_completed",
+          });
+          continue;
+        }
+
+        if (isTaskProcessing || Boolean(kanbanExecutionLocksRef.current[task.id])) {
+          // Running/locked is an expected transient condition for due recurring tasks.
+          // Do not expose it as user-facing "blocked" state.
+          updateTaskExecution(task.id, { lastSource: "scheduled", blockedReason: null });
+          continue;
+        }
+
+        if (effectiveSchedule.mode === "once") {
+          const triggeredSchedule = markScheduleTriggered(
+            effectiveSchedule,
+            "scheduled",
+            nowTs,
+          );
+          kanbanUpdateTask(task.id, { schedule: triggeredSchedule });
+        } else {
+          kanbanUpdateTask(task.id, {
+            schedule: {
+              ...effectiveSchedule,
+              overdue: false,
+              lastTriggeredAt: nowTs,
+              lastTriggerSource: "scheduled",
+            },
+          });
+        }
+        updateTaskExecution(task.id, {
+          lastSource: "scheduled",
+          blockedReason: null,
+        });
+        const forceNewThread =
+          effectiveSchedule.mode === "recurring" &&
+          effectiveSchedule.recurringExecutionMode === "new_thread";
+        const injectedPrefix =
+          forceNewThread &&
+          effectiveSchedule.newThreadResultMode !== "none" &&
+          task.lastResultSnapshot
+            ? buildChainedPromptPrefix(task.lastResultSnapshot)
+            : undefined;
+        void launchKanbanTaskExecution({
+          taskId: task.id,
+          source: "scheduled",
+          activate: false,
+          forceNewThread,
+          injectedPrefix,
+        });
+      }
+    };
+
+    runSchedulerTick();
+    const timer = window.setInterval(runSchedulerTick, KANBAN_SCHEDULER_INTERVAL_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [
+    threadStatusById,
+    kanbanUpdateTask,
+    updateTaskExecution,
+    launchKanbanTaskExecution,
+    resolveCanonicalThreadId,
+    kanbanCreateTask,
+  ]);
 
   // Track previous processing state to detect transitions
   const prevProcessingMapRef = useRef<Record<string, boolean>>({});
+  const prevTaskStatusMapRef = useRef<Record<string, KanbanTaskStatus>>({});
+
+  useEffect(() => {
+    const previousStatusMap = prevTaskStatusMapRef.current;
+    const nextStatusMap: Record<string, KanbanTaskStatus> = {};
+    for (const task of kanbanTasks) {
+      nextStatusMap[task.id] = task.status;
+      const previousStatus = previousStatusMap[task.id];
+      if (previousStatus === task.status) {
+        continue;
+      }
+      if (task.status === "inprogress") {
+        const hasStartedAt = typeof task.execution?.startedAt === "number";
+        const hasFinishedAt = typeof task.execution?.finishedAt === "number";
+        if (!hasStartedAt || hasFinishedAt) {
+          updateTaskExecution(task.id, {
+            startedAt: Date.now(),
+            finishedAt: null,
+          });
+        }
+        continue;
+      }
+      if (previousStatus === "inprogress") {
+        updateTaskExecution(task.id, {
+          finishedAt: Date.now(),
+        });
+      }
+    }
+    prevTaskStatusMapRef.current = nextStatusMap;
+  }, [kanbanTasks, updateTaskExecution]);
+
   useEffect(() => {
     const prev = prevProcessingMapRef.current;
     for (const task of kanbanTasks) {
@@ -910,11 +1311,198 @@ export function useAppShellSections(ctx: any) {
 
       // AI finished processing (true → false): auto-move inprogress → testing
       if (wasProcessing && !nowProcessing && task.status === "inprogress") {
-        kanbanUpdateTask(task.id, { status: "testing" });
+        const completedAt = Date.now();
+        updateTaskExecution(task.id, {
+          finishedAt: completedAt,
+        });
+        const nextStatus = resolvePostProcessingStatus(task);
+        if (task.schedule?.mode === "recurring") {
+          const completionSource = task.execution?.lastSource ?? "scheduled";
+          const recurringSignature = [
+            task.workspaceId,
+            task.panelId,
+            task.title,
+            String(task.schedule.interval ?? 1),
+            task.schedule.unit ?? "days",
+            task.schedule.newThreadResultMode ?? "pass",
+          ].join("|");
+          const recurringSiblings = kanbanTasksRef.current.filter((entry) => {
+            const schedule = entry.schedule;
+            if (
+              !schedule ||
+              schedule.mode !== "recurring" ||
+              schedule.recurringExecutionMode !== "new_thread"
+            ) {
+              return false;
+            }
+            const signature = [
+              entry.workspaceId,
+              entry.panelId,
+              entry.title,
+              String(schedule.interval ?? 1),
+              schedule.unit ?? "days",
+              schedule.newThreadResultMode ?? "pass",
+            ].join("|");
+            return signature === recurringSignature;
+          });
+          const siblingSeriesIds = Array.from(new Set(
+            recurringSiblings
+              .map((entry) => entry.schedule?.seriesId)
+              .filter((seriesId): seriesId is string =>
+                typeof seriesId === "string" && seriesId.trim().length > 0),
+          ));
+          const recurringSeriesId =
+            task.schedule.recurringExecutionMode === "new_thread"
+              ? (
+                task.schedule.seriesId ??
+                (siblingSeriesIds.length === 1 ? siblingSeriesIds[0] : null) ??
+                task.id
+              )
+              : task.schedule.seriesId ?? null;
+          if (task.schedule.recurringExecutionMode === "new_thread" && siblingSeriesIds.length <= 1) {
+            for (const sibling of recurringSiblings) {
+              if (!sibling.schedule || sibling.schedule.seriesId === recurringSeriesId) {
+                continue;
+              }
+              kanbanUpdateTask(sibling.id, {
+                schedule: {
+                  ...sibling.schedule,
+                  seriesId: recurringSeriesId,
+                },
+              });
+            }
+          }
+          const completedSchedule = markRecurringScheduleCompleted(
+            {
+              ...task.schedule,
+              seriesId: recurringSeriesId,
+            },
+            completionSource,
+            completedAt,
+          );
+          const reachedRoundLimit = hasReachedRecurringRoundLimit(completedSchedule);
+          if (task.schedule.recurringExecutionMode === "new_thread") {
+            kanbanUpdateTask(task.id, {
+              status: reachedRoundLimit ? "done" : nextStatus,
+              // Freeze this completed run card in review; next cycle will use a new cloned task.
+              schedule: {
+                ...completedSchedule,
+                nextRunAt: null,
+              },
+            });
+            if (!reachedRoundLimit) {
+              kanbanCreateTask({
+                workspaceId: task.workspaceId,
+                panelId: task.panelId,
+                title: task.title,
+                description: task.description,
+                engineType: task.engineType,
+                modelId: task.modelId,
+                branchName: task.branchName,
+                images: task.images ?? [],
+                autoStart: false,
+                schedule: completedSchedule,
+                chain: task.chain
+                  ? {
+                      ...task.chain,
+                      blockedReason: null,
+                    }
+                  : undefined,
+              });
+            } else {
+              updateTaskExecution(task.id, {
+                lastSource: completionSource,
+                blockedReason: "max_rounds_reached_auto_completed",
+              });
+            }
+          } else {
+            kanbanUpdateTask(task.id, {
+              status: reachedRoundLimit ? "done" : nextStatus,
+              schedule: reachedRoundLimit
+                ? {
+                    ...completedSchedule,
+                    nextRunAt: null,
+                  }
+                : completedSchedule,
+            });
+            if (reachedRoundLimit) {
+              updateTaskExecution(task.id, {
+                lastSource: completionSource,
+                blockedReason: "max_rounds_reached_auto_completed",
+              });
+            }
+          }
+        } else {
+          kanbanUpdateTask(task.id, { status: nextStatus });
+        }
+
+        const snapshot = extractKanbanResultSnapshot(
+          resolveTaskThreadId(task.threadId, resolveCanonicalThreadId),
+          (() => {
+            const taskThreadId = resolveTaskThreadId(task.threadId, resolveCanonicalThreadId);
+            return taskThreadId ? threadItemsByThread[taskThreadId] : undefined;
+          })(),
+        );
+        if (snapshot) {
+          const taskThreadId = resolveTaskThreadId(task.threadId, resolveCanonicalThreadId);
+          kanbanUpdateTask(task.id, {
+            ...(taskThreadId && task.threadId && taskThreadId !== task.threadId
+              ? { threadId: taskThreadId }
+              : null),
+            lastResultSnapshot: snapshot,
+          });
+        }
+
+        const downstreamTask = findTaskDownstream(kanbanTasksRef.current, task.id);
+        if (downstreamTask) {
+          if (!snapshot) {
+            setTaskChainBlockedReason(downstreamTask.id, "missing_upstream_snapshot");
+            updateTaskExecution(downstreamTask.id, {
+              lastSource: "chained",
+              blockedReason: "missing_upstream_snapshot",
+            });
+          } else if (downstreamTask.status !== "todo") {
+            setTaskChainBlockedReason(downstreamTask.id, "downstream_not_todo");
+            updateTaskExecution(downstreamTask.id, {
+              lastSource: "chained",
+              blockedReason: "downstream_not_todo",
+            });
+          } else if (downstreamTask.schedule?.mode && downstreamTask.schedule.mode !== "manual") {
+            setTaskChainBlockedReason(downstreamTask.id, "downstream_has_schedule");
+            updateTaskExecution(downstreamTask.id, {
+              lastSource: "chained",
+              blockedReason: "downstream_has_schedule",
+            });
+          } else {
+            setTaskChainBlockedReason(downstreamTask.id, null);
+            updateTaskExecution(downstreamTask.id, {
+              lastSource: "chained",
+              blockedReason: null,
+            });
+            void launchKanbanTaskExecution({
+              taskId: downstreamTask.id,
+              source: "chained",
+              activate: false,
+              injectedPrefix: buildChainedPromptPrefix(snapshot),
+            }).then((result) => {
+              if (!result.ok) {
+                setTaskChainBlockedReason(downstreamTask.id, result.reason);
+                updateTaskExecution(downstreamTask.id, {
+                  lastSource: "chained",
+                  blockedReason: result.reason,
+                });
+              }
+            });
+          }
+        }
       }
       // User sent follow-up (false → true): auto-move testing → inprogress
       if (!wasProcessing && nowProcessing && task.status === "testing") {
         kanbanUpdateTask(task.id, { status: "inprogress" });
+        updateTaskExecution(task.id, {
+          startedAt: taskProcessingMap[task.id]?.startedAt ?? Date.now(),
+          finishedAt: null,
+        });
       }
     }
     const boolMap: Record<string, boolean> = {};
@@ -922,69 +1510,27 @@ export function useAppShellSections(ctx: any) {
       boolMap[id] = val.isProcessing;
     }
     prevProcessingMapRef.current = boolMap;
-  }, [taskProcessingMap, kanbanTasks, kanbanUpdateTask]);
+  }, [
+    taskProcessingMap,
+    kanbanTasks,
+    kanbanUpdateTask,
+    threadItemsByThread,
+    setTaskChainBlockedReason,
+    updateTaskExecution,
+    launchKanbanTaskExecution,
+    resolveCanonicalThreadId,
+  ]);
 
   // Drag to "inprogress" auto-execute: create thread and send first message (without opening conversation panel)
   const handleDragToInProgress = useCallback(
     (task: KanbanTask) => {
-      // Auto-execute regardless of existing threadId — reuse thread if present
-      const executeTask = async () => {
-        const workspace = workspacesByPath.get(task.workspaceId);
-        if (!workspace) return;
-
-        await connectWorkspace(workspace);
-        selectWorkspace(workspace.id);
-
-        const engine = (task.engineType ?? activeEngine) as "claude" | "codex";
-        await setActiveEngine(engine);
-
-        // Apply the model that was selected when the task was created
-        if (task.modelId) {
-          if (engine === "codex") {
-            setSelectedModelId(task.modelId);
-          } else {
-            setEngineSelectedModelIdByType((prev) => ({
-              ...prev,
-              [engine]: task.modelId,
-            }));
-          }
-        }
-
-        let threadId = task.threadId;
-        if (!threadId) {
-          // activate: false — this is background execution, must not switch
-          // the global active thread (which would hijack any conversation
-          // panel the user is currently viewing).
-          threadId = await startThreadForWorkspace(workspace.id, {
-            engine,
-            activate: false,
-          });
-          if (!threadId) return;
-          kanbanUpdateTask(task.id, { threadId });
-        }
-
-        const firstMessage = task.description?.trim() || task.title;
-        if (firstMessage) {
-          await new Promise((r) => setTimeout(r, 100));
-          await sendUserMessageToThread(workspace, threadId, firstMessage, task.images ?? []);
-        }
-      };
-      executeTask().catch((err) => {
-        console.error("[kanban] drag-to-inprogress auto-execute failed:", err);
+      void launchKanbanTaskExecution({
+        taskId: task.id,
+        source: "drag",
+        activate: false,
       });
     },
-    [
-      workspacesByPath,
-      connectWorkspace,
-      selectWorkspace,
-      activeEngine,
-      setActiveEngine,
-      setSelectedModelId,
-      setEngineSelectedModelIdByType,
-      startThreadForWorkspace,
-      kanbanUpdateTask,
-      sendUserMessageToThread,
-    ]
+    [launchKanbanTaskExecution],
   );
 
   const orderValue = (entry: WorkspaceInfo) =>

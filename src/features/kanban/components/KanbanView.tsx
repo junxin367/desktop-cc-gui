@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { useMemo } from "react";
 import type { AppMode, EngineStatus, EngineType, WorkspaceInfo } from "../../../types";
 import type {
+  KanbanTaskChain,
+  KanbanTaskSchedule,
   KanbanPanel,
   KanbanTask,
   KanbanTaskStatus,
@@ -22,6 +24,8 @@ type CreateTaskInput = {
   branchName: string;
   images: string[];
   autoStart: boolean;
+  schedule?: KanbanTaskSchedule;
+  chain?: KanbanTaskChain;
 };
 
 type KanbanViewProps = {
