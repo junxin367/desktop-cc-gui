@@ -158,7 +158,9 @@
 }
 
 .selector-dropdown--model {
-  width: 252px;
+  width: max-content;
+  min-width: 252px;
+  max-width: min(90vw, 560px);
 }
 
 .selector-dropdown--mode {
@@ -218,6 +220,12 @@
   font-style: italic;
   font-family: inherit;
   margin-top: 0;
+}
+
+.selector-dropdown--model .selector-option .model-description {
+  white-space: normal;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .selector-option .mode-description {
