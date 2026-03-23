@@ -212,7 +212,7 @@ function extractAgentMessageDeltaPayload(
       partObj.item_id ??
       turn.itemId ??
       turn.item_id ??
-      turn.id ??
+      (!isTextAliasMethod ? turn.id : "") ??
       "",
   ).trim();
   const itemId =
@@ -252,6 +252,10 @@ function toNumber(value: unknown): number {
     }
   }
   return 0;
+}
+
+function isClaudeThreadId(threadId: string): boolean {
+  return threadId.startsWith("claude:") || threadId.startsWith("claude-pending-");
 }
 
 function extractTokenUsageFromNormalizedEvent(
@@ -337,6 +341,14 @@ function routeNormalizedRealtimeEvent({
       }
       return false;
     case "appendAgentMessageDelta": {
+      const isClaudeAgentSnapshotDelta =
+        isClaudeThreadId(threadId) &&
+        (event.sourceMethod === "item/started" || event.sourceMethod === "item/updated");
+      if (isClaudeAgentSnapshotDelta) {
+        // Claude streaming already arrives through item/agentMessage/delta.
+        // Ignore snapshot-as-delta aliases to avoid duplicated assistant body.
+        return true;
+      }
       const delta = event.delta ?? (event.item.kind === "message" ? event.item.text : "");
       if (!delta) {
         return false;
@@ -1087,6 +1099,9 @@ export function useAppServerEvents(
               )
             : undefined;
         if (threadId && item) {
+          if (isClaudeThreadId(threadId) && String(item.type ?? "") === "agentMessage") {
+            return;
+          }
           handlers.onItemStarted?.(workspace_id, threadId, item);
         }
         return;
@@ -1103,6 +1118,9 @@ export function useAppServerEvents(
               )
             : undefined;
         if (threadId && item) {
+          if (isClaudeThreadId(threadId) && String(item.type ?? "") === "agentMessage") {
+            return;
+          }
           handlers.onItemUpdated?.(workspace_id, threadId, item);
         }
         return;

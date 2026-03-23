@@ -10,6 +10,13 @@ import type {
 } from "../../../types";
 import { normalizeItem, prepareThreadItems, upsertItem } from "../../../utils/threadItems";
 import { settlePlanInProgressSteps } from "../utils/threadNormalize";
+import {
+  isIncrementalDerivationEnabled,
+  isReducerNoopGuardEnabled,
+} from "../utils/realtimePerfFlags";
+
+const REDUCER_NOOP_GUARD_ENABLED = isReducerNoopGuardEnabled();
+const INCREMENTAL_DERIVATION_ENABLED = isIncrementalDerivationEnabled();
 
 function formatThreadName(text: string) {
   const trimmed = text.trim();
@@ -1341,6 +1348,36 @@ function findAssistantMessageIndexByPrefix(
   return -1;
 }
 
+function buildLegacyTextDeltaItemId(threadId: string) {
+  return `${threadId}:text-delta`;
+}
+
+function isLegacyTextDeltaItemId(threadId: string, itemId: string) {
+  if (!threadId || !itemId) {
+    return false;
+  }
+  const legacyId = buildLegacyTextDeltaItemId(threadId);
+  return itemId === legacyId || itemId.startsWith(`${legacyId}-seg-`);
+}
+
+function findAssistantMessageIndexByLegacyTextDelta(
+  list: ConversationItem[],
+  threadId: string,
+) {
+  const legacyId = buildLegacyTextDeltaItemId(threadId);
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const item = list[index];
+    if (
+      item.kind === "message" &&
+      item.role === "assistant" &&
+      (item.id === legacyId || item.id.startsWith(`${legacyId}-seg-`))
+    ) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 function resolveLiveAssistantMessageId(
   state: ThreadState,
   threadId: string,
@@ -1774,6 +1811,9 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       const lastDurationMs = previous?.lastDurationMs ?? null;
       const heartbeatPulse = previous?.heartbeatPulse ?? 0;
       if (action.isProcessing) {
+        if (REDUCER_NOOP_GUARD_ENABLED && wasProcessing) {
+          return state;
+        }
         return {
           ...state,
           threadStatusById: {
@@ -1790,6 +1830,15 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             },
           },
         };
+      }
+      if (
+        REDUCER_NOOP_GUARD_ENABLED &&
+        (!previous ||
+          (!wasProcessing &&
+            previous.processingStartedAt == null &&
+            (previous.heartbeatPulse ?? 0) === 0))
+      ) {
+        return state;
       }
       const nextDuration =
         wasProcessing && startedAt
@@ -2025,15 +2074,38 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       );
 
       const list = [...(state.itemsByThread[action.threadId] ?? [])];
-      const index = findAssistantMessageIndexById(list, segmentedItemId);
+      let index = findAssistantMessageIndexById(list, segmentedItemId);
+      let shouldCanonicalizeLegacyId = false;
+      if (index < 0 && !isLegacyTextDeltaItemId(action.threadId, segmentedItemId)) {
+        const legacySegmentedItemId = resolveLiveAssistantMessageId(
+          state,
+          action.threadId,
+          buildLegacyTextDeltaItemId(action.threadId),
+        );
+        index = findAssistantMessageIndexById(list, legacySegmentedItemId);
+        if (index < 0) {
+          index = findAssistantMessageIndexByLegacyTextDelta(list, action.threadId);
+        }
+        shouldCanonicalizeLegacyId = index >= 0;
+      }
       if (index >= 0) {
         const existing = list[index];
         if (existing.kind !== "message" || existing.role !== "assistant") {
           return state;
         }
+        const nextId = shouldCanonicalizeLegacyId ? segmentedItemId : existing.id;
+        const nextText = mergeAgentMessageText(existing.text, action.delta);
+        if (
+          INCREMENTAL_DERIVATION_ENABLED &&
+          nextId === existing.id &&
+          nextText === existing.text
+        ) {
+          return state;
+        }
         list[index] = {
           ...existing,
-          text: mergeAgentMessageText(existing.text, action.delta),
+          id: nextId,
+          text: nextText,
         };
       } else {
         list.push({
@@ -2075,7 +2147,25 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       if (index < 0) {
         index = findAssistantMessageIndexByPrefix(list, action.itemId);
       }
-      const targetItemId = index >= 0 ? list[index].id : segmentedItemId;
+      let shouldCanonicalizeLegacyId = false;
+      if (index < 0 && !isLegacyTextDeltaItemId(action.threadId, segmentedItemId)) {
+        const legacySegmentedItemId = resolveLiveAssistantMessageId(
+          state,
+          action.threadId,
+          buildLegacyTextDeltaItemId(action.threadId),
+        );
+        index = findAssistantMessageIndexById(list, legacySegmentedItemId);
+        if (index < 0) {
+          index = findAssistantMessageIndexByLegacyTextDelta(list, action.threadId);
+        }
+        shouldCanonicalizeLegacyId = index >= 0;
+      }
+      const targetItemId =
+        index >= 0
+          ? shouldCanonicalizeLegacyId
+            ? segmentedItemId
+            : list[index].id
+          : segmentedItemId;
       const existingItem = index >= 0 ? list[index] : null;
       if (
         existingItem &&
@@ -2084,6 +2174,7 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       ) {
         list[index] = {
           ...existingItem,
+          id: targetItemId,
           text: mergeCompletedAgentText(existingItem.text, action.text),
         };
       } else {
@@ -2469,13 +2560,22 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               summary: "",
               content: "",
             };
+      const nextSummary = mergeReasoningTextForThread(
+        action.threadId,
+        "summary" in base ? base.summary : "",
+        action.delta,
+      );
+      if (
+        INCREMENTAL_DERIVATION_ENABLED &&
+        index >= 0 &&
+        "summary" in base &&
+        nextSummary === base.summary
+      ) {
+        return state;
+      }
       const updated: ConversationItem = {
         ...base,
-        summary: mergeReasoningTextForThread(
-          action.threadId,
-          "summary" in base ? base.summary : "",
-          action.delta,
-        ),
+        summary: nextSummary,
       } as ConversationItem;
       const next = index >= 0 ? [...list] : [...list, updated];
       if (index >= 0) {
@@ -2504,9 +2604,18 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               summary: "",
               content: "",
             };
+      const nextSummary = addSummaryBoundary("summary" in base ? base.summary : "");
+      if (
+        INCREMENTAL_DERIVATION_ENABLED &&
+        index >= 0 &&
+        "summary" in base &&
+        nextSummary === base.summary
+      ) {
+        return state;
+      }
       const updated: ConversationItem = {
         ...base,
-        summary: addSummaryBoundary("summary" in base ? base.summary : ""),
+        summary: nextSummary,
       } as ConversationItem;
       const next = index >= 0 ? [...list] : [...list, updated];
       if (index >= 0) {
@@ -2555,13 +2664,22 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               summary: "",
               content: "",
             };
+      const nextContent = mergeReasoningTextForThread(
+        action.threadId,
+        "content" in base ? base.content : "",
+        action.delta,
+      );
+      if (
+        INCREMENTAL_DERIVATION_ENABLED &&
+        index >= 0 &&
+        "content" in base &&
+        nextContent === base.content
+      ) {
+        return state;
+      }
       const updated: ConversationItem = {
         ...base,
-        content: mergeReasoningTextForThread(
-          action.threadId,
-          "content" in base ? base.content : "",
-          action.delta,
-        ),
+        content: nextContent,
       } as ConversationItem;
       const next = index >= 0 ? [...list] : [...list, updated];
       if (index >= 0) {
@@ -2614,9 +2732,16 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
         return state;
       }
       const existing = list[index];
+      const nextOutput = mergeStreamingText(existing.output ?? "", action.delta);
+      if (
+        INCREMENTAL_DERIVATION_ENABLED &&
+        nextOutput === (existing.output ?? "")
+      ) {
+        return state;
+      }
       const updated: ConversationItem = {
         ...existing,
-        output: mergeStreamingText(existing.output ?? "", action.delta),
+        output: nextOutput,
       } as ConversationItem;
       const next = [...list];
       next[index] = updated;

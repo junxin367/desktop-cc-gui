@@ -227,7 +227,9 @@ export function mapCommonRealtimeEvent(
     if (!delta) {
       return null;
     }
-    const itemId = asString(params.itemId ?? params.item_id ?? params.turnId ?? params.turn_id ?? "");
+    const itemId = asString(
+      params.itemId ?? params.item_id ?? turn.itemId ?? turn.item_id ?? "",
+    );
     const resolvedItemId = itemId || `${threadId}:text-delta`;
     return createEvent({
       engine,

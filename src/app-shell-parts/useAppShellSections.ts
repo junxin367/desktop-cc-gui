@@ -86,6 +86,46 @@ export function resolvePendingSessionThreadCandidate(params: {
   return candidates.length === 1 ? candidates[0] : null;
 }
 
+export function shouldSyncComposerEngineForKanbanExecution(params: {
+  activate?: boolean;
+}): boolean {
+  return params.activate !== false;
+}
+
+export async function syncKanbanExecutionEngineAndModel(params: {
+  activate?: boolean;
+  engine: "claude" | "codex";
+  modelId?: string | null;
+  setActiveEngine: (engine: "claude" | "codex") => Promise<void> | void;
+  setSelectedModelId: (modelId: string) => void;
+  setEngineSelectedModelIdByType: (
+    updater: (prev: Record<string, string>) => Record<string, string>,
+  ) => void;
+}): Promise<{ shouldSyncComposerSelection: boolean; outboundModel?: string }> {
+  const shouldSyncComposerSelection = shouldSyncComposerEngineForKanbanExecution({
+    activate: params.activate,
+  });
+  if (shouldSyncComposerSelection) {
+    await params.setActiveEngine(params.engine);
+  }
+  let outboundModel: string | undefined;
+  if (params.modelId) {
+    if (shouldSyncComposerSelection) {
+      if (params.engine === "codex") {
+        params.setSelectedModelId(params.modelId);
+      } else {
+        params.setEngineSelectedModelIdByType((prev) => ({
+          ...prev,
+          [params.engine]: params.modelId,
+        }));
+      }
+    } else {
+      outboundModel = params.modelId;
+    }
+  }
+  return { shouldSyncComposerSelection, outboundModel };
+}
+
 export function useAppShellSections(ctx: any) {
   const {
     activeWorkspace,
@@ -845,18 +885,14 @@ export function useAppShellSections(ctx: any) {
 
         await connectWorkspace(workspace);
         const engine = (task.engineType ?? activeEngine) as "claude" | "codex";
-        await setActiveEngine(engine);
-
-        if (task.modelId) {
-          if (engine === "codex") {
-            setSelectedModelId(task.modelId);
-          } else {
-            setEngineSelectedModelIdByType((prev) => ({
-              ...prev,
-              [engine]: task.modelId,
-            }));
-          }
-        }
+        const { outboundModel } = await syncKanbanExecutionEngineAndModel({
+          activate: params.activate,
+          engine,
+          modelId: task.modelId,
+          setActiveEngine,
+          setSelectedModelId,
+          setEngineSelectedModelIdByType,
+        });
 
         const shouldForceNewThread = Boolean(params.forceNewThread);
         let threadId = shouldForceNewThread ? null : task.threadId;
@@ -881,7 +917,9 @@ export function useAppShellSections(ctx: any) {
           ? `${params.injectedPrefix}\n\n${baseMessage}`
           : baseMessage;
         if (firstMessage) {
-          await sendUserMessageToThread(workspace, threadId, firstMessage, task.images ?? []);
+          await sendUserMessageToThread(workspace, threadId, firstMessage, task.images ?? [], {
+            ...(outboundModel ? { model: outboundModel } : {}),
+          });
         }
 
         kanbanUpdateTask(task.id, { status: "inprogress" });
@@ -1032,11 +1070,24 @@ export function useAppShellSections(ctx: any) {
     (input: Parameters<typeof kanbanCreateTask>[0]) => {
       const task = kanbanCreateTask(input);
       if (input.autoStart) {
-        void launchKanbanTaskExecution({
-          taskId: task.id,
-          source: "autoStart",
-          activate: false,
-        });
+        const tryLaunch = (attempt: number) => {
+          void launchKanbanTaskExecution({
+            taskId: task.id,
+            source: "autoStart",
+            activate: false,
+          }).then((result) => {
+            if (result.ok) {
+              return;
+            }
+            if (result.reason !== "task_not_found" || attempt >= 3) {
+              return;
+            }
+            window.setTimeout(() => {
+              tryLaunch(attempt + 1);
+            }, (attempt + 1) * 40);
+          });
+        };
+        tryLaunch(0);
       }
       return task;
     },

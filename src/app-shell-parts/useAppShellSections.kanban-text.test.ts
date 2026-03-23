@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   resolvePendingSessionThreadCandidate,
+  shouldSyncComposerEngineForKanbanExecution,
+  syncKanbanExecutionEngineAndModel,
   resolveTaskThreadId,
   stripComposerKanbanTagsPreserveFormatting,
 } from "./useAppShellSections";
@@ -73,5 +75,101 @@ describe("resolvePendingSessionThreadCandidate", () => {
       occupiedThreadIds: new Set<string>(),
     });
     expect(resolved).toBeNull();
+  });
+});
+
+describe("shouldSyncComposerEngineForKanbanExecution", () => {
+  it("returns false for background execution", () => {
+    expect(
+      shouldSyncComposerEngineForKanbanExecution({
+        activate: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("returns true when activate is true", () => {
+    expect(
+      shouldSyncComposerEngineForKanbanExecution({
+        activate: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("defaults to true when activate is omitted", () => {
+    expect(shouldSyncComposerEngineForKanbanExecution({})).toBe(true);
+  });
+});
+
+describe("syncKanbanExecutionEngineAndModel", () => {
+  it("does not sync global composer engine for background execution", async () => {
+    const setActiveEngine = vi.fn(async () => undefined);
+    const setSelectedModelId = vi.fn();
+    const setEngineSelectedModelIdByType = vi.fn();
+
+    const result = await syncKanbanExecutionEngineAndModel({
+      activate: false,
+      engine: "claude",
+      modelId: "claude-sonnet-4-5",
+      setActiveEngine,
+      setSelectedModelId,
+      setEngineSelectedModelIdByType,
+    });
+
+    expect(setActiveEngine).not.toHaveBeenCalled();
+    expect(setSelectedModelId).not.toHaveBeenCalled();
+    expect(setEngineSelectedModelIdByType).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      shouldSyncComposerSelection: false,
+      outboundModel: "claude-sonnet-4-5",
+    });
+  });
+
+  it("syncs codex model into composer state for foreground execution", async () => {
+    const setActiveEngine = vi.fn(async () => undefined);
+    const setSelectedModelId = vi.fn();
+    const setEngineSelectedModelIdByType = vi.fn();
+
+    const result = await syncKanbanExecutionEngineAndModel({
+      activate: true,
+      engine: "codex",
+      modelId: "gpt-5.4",
+      setActiveEngine,
+      setSelectedModelId,
+      setEngineSelectedModelIdByType,
+    });
+
+    expect(setActiveEngine).toHaveBeenCalledWith("codex");
+    expect(setSelectedModelId).toHaveBeenCalledWith("gpt-5.4");
+    expect(setEngineSelectedModelIdByType).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      shouldSyncComposerSelection: true,
+      outboundModel: undefined,
+    });
+  });
+
+  it("syncs claude model into engine model map for foreground execution", async () => {
+    const setActiveEngine = vi.fn(async () => undefined);
+    const setSelectedModelId = vi.fn();
+    const setEngineSelectedModelIdByType = vi.fn(
+      (updater: (prev: Record<string, string>) => Record<string, string>) =>
+      updater({ claude: "claude-sonnet-3-7", codex: "gpt-5.3-codex" }),
+    );
+
+    await syncKanbanExecutionEngineAndModel({
+      activate: true,
+      engine: "claude",
+      modelId: "claude-sonnet-4-5",
+      setActiveEngine,
+      setSelectedModelId,
+      setEngineSelectedModelIdByType,
+    });
+
+    expect(setActiveEngine).toHaveBeenCalledWith("claude");
+    expect(setSelectedModelId).not.toHaveBeenCalled();
+    expect(setEngineSelectedModelIdByType).toHaveBeenCalledTimes(1);
+    expect(setEngineSelectedModelIdByType.mock.results[0]?.value).toEqual({
+      claude: "claude-sonnet-4-5",
+      codex: "gpt-5.3-codex",
+    });
   });
 });

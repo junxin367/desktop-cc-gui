@@ -128,7 +128,7 @@ export function useKanbanStore(workspaces?: WorkspaceInfo[]) {
       panelId: input.panelId,
       title: input.title,
       description: input.description,
-      status: input.autoStart ? "inprogress" : "todo",
+      status: "todo",
       engineType: input.engineType,
       modelId: input.modelId,
       branchName: input.branchName,

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ConversationItem, ThreadSummary, WorkspaceInfo } from "../../../types";
 import { resolveLockLivePreview } from "../../../app-shell-parts/utils";
 import { getClientStoreSync, writeClientStoreValue } from "../../../services/clientStorage";
+import { isIncrementalDerivationEnabled } from "../../threads/utils/realtimePerfFlags";
 import {
   SESSION_RADAR_DISMISSED_COMPLETED_AT_BY_ID_KEY,
   SESSION_RADAR_HISTORY_UPDATED_EVENT,
@@ -71,6 +72,13 @@ type PersistedRecentSessionRef = {
   durationMs: number | null;
 };
 
+type CachedLiveThreadEntry = {
+  signature: string;
+  entry: SessionRadarEntry;
+};
+
+const latestUserMessageByItemsRef = new WeakMap<ConversationItem[], string>();
+
 function buildRecentCompletionId(workspaceId: string, threadId: string) {
   return `${workspaceId}:${threadId}`;
 }
@@ -79,15 +87,20 @@ function resolveLatestUserMessage(items: ConversationItem[] | undefined) {
   if (!Array.isArray(items) || items.length === 0) {
     return "";
   }
+  if (latestUserMessageByItemsRef.has(items)) {
+    return latestUserMessageByItemsRef.get(items) ?? "";
+  }
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const candidate = items[index];
     if (candidate?.kind === "message" && candidate.role === "user") {
       const text = candidate.text?.trim();
       if (text) {
+        latestUserMessageByItemsRef.set(items, text);
         return text;
       }
     }
   }
+  latestUserMessageByItemsRef.set(items, "");
   return "";
 }
 
@@ -108,6 +121,100 @@ function clampDurationMs(durationMs: number | null | undefined) {
     return null;
   }
   return Math.max(0, durationMs);
+}
+
+function fingerprintConversationItem(item: ConversationItem | undefined) {
+  if (!item) {
+    return "";
+  }
+  if (item.kind === "tool") {
+    return [
+      item.id,
+      item.kind,
+      item.toolType,
+      item.status ?? "",
+      item.title ?? "",
+      item.output?.length ?? 0,
+      item.changes?.length ?? 0,
+    ].join(":");
+  }
+  if (item.kind === "reasoning") {
+    return [item.id, item.kind, item.summary.length, item.content.length].join(":");
+  }
+  if (item.kind === "explore") {
+    return [item.id, item.kind, item.status ?? "", item.entries?.length ?? 0].join(":");
+  }
+  if (item.kind === "message") {
+    return [item.id, item.kind, item.role, item.text.length].join(":");
+  }
+  return [item.id, item.kind].join(":");
+}
+
+function buildLiveThreadSignature(
+  workspaceId: string,
+  thread: ThreadSummary,
+  status: ThreadStatusSnapshot | undefined,
+  items: ConversationItem[] | undefined,
+  lastAgent: LastAgentSnapshot | undefined,
+) {
+  const resolvedItems = items ?? [];
+  const lastItem = resolvedItems[resolvedItems.length - 1];
+  const previousItem = resolvedItems[resolvedItems.length - 2];
+  return [
+    workspaceId,
+    thread.id,
+    thread.name ?? "",
+    String(thread.updatedAt ?? 0),
+    String(Boolean(status?.isProcessing)),
+    String(status?.processingStartedAt ?? 0),
+    String(status?.lastDurationMs ?? 0),
+    String(lastAgent?.timestamp ?? 0),
+    lastAgent?.text ?? "",
+    String(resolvedItems.length),
+    fingerprintConversationItem(resolvedItems[0]),
+    fingerprintConversationItem(previousItem),
+    fingerprintConversationItem(lastItem),
+  ].join("|");
+}
+
+function buildLiveSessionRadarEntry(input: {
+  workspace: WorkspaceInfo;
+  thread: ThreadSummary;
+  status: ThreadStatusSnapshot | undefined;
+  items: ConversationItem[] | undefined;
+  lastAgent: LastAgentSnapshot | undefined;
+  now: number;
+}): SessionRadarEntry {
+  const { workspace, thread, status, items, lastAgent, now } = input;
+  const isProcessing = Boolean(status?.isProcessing);
+  const updatedAt = resolveEntryTimestamp(thread, status, lastAgent);
+  const preview =
+    resolveLatestUserMessage(items) ||
+    resolveLockLivePreview(items, lastAgent?.text);
+
+  const entry: SessionRadarEntry = {
+    id: `${workspace.id}:${thread.id}`,
+    workspaceId: workspace.id,
+    workspaceName: workspace.name,
+    threadId: thread.id,
+    threadName: thread.name?.trim() || "Untitled Thread",
+    engine: (thread.engineSource || "codex").toUpperCase(),
+    preview,
+    updatedAt,
+    isProcessing,
+    startedAt: null,
+    completedAt: null,
+    durationMs: null,
+  };
+
+  if (!isProcessing) {
+    return entry;
+  }
+
+  const startedAt = status?.processingStartedAt ?? null;
+  entry.startedAt = startedAt;
+  entry.durationMs = startedAt ? Math.max(0, now - startedAt) : null;
+  return entry;
 }
 
 function buildRecentCountByWorkspace(entries: SessionRadarEntry[]) {
@@ -279,30 +386,17 @@ export function buildSessionRadarFeed(input: BuildSessionRadarFeedInput): Sessio
     const threads = threadsByWorkspace[workspace.id] ?? [];
     for (const thread of threads) {
       const status = threadStatusById[thread.id];
-      const isProcessing = Boolean(status?.isProcessing);
       const lastAgent = lastAgentMessageByThread[thread.id];
-      const updatedAt = resolveEntryTimestamp(thread, status, lastAgent);
-      const entry: SessionRadarEntry = {
-        id: `${workspace.id}:${thread.id}`,
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-        threadId: thread.id,
-        threadName: thread.name?.trim() || "Untitled Thread",
-        engine: (thread.engineSource || "codex").toUpperCase(),
-        preview:
-          resolveLatestUserMessage(threadItemsByThread[thread.id]) ||
-          resolveLockLivePreview(threadItemsByThread[thread.id], lastAgent?.text),
-        updatedAt,
-        isProcessing,
-        startedAt: null,
-        completedAt: null,
-        durationMs: null,
-      };
+      const entry = buildLiveSessionRadarEntry({
+        workspace,
+        thread,
+        status,
+        items: threadItemsByThread[thread.id],
+        lastAgent,
+        now,
+      });
 
-      if (isProcessing) {
-        const startedAt = status?.processingStartedAt ?? null;
-        entry.startedAt = startedAt;
-        entry.durationMs = startedAt ? Math.max(0, now - startedAt) : null;
+      if (entry.isProcessing) {
         if (!seenRunningIds.has(entry.id)) {
           seenRunningIds.add(entry.id);
           runningSessions.push(entry);
@@ -345,18 +439,115 @@ export function useSessionRadarFeed(input: UseSessionRadarFeedInput): SessionRad
   } = input;
   const resolvedRecentLimit = recentLimit ?? DEFAULT_RECENT_LIMIT;
   const [historyMutationVersion, setHistoryMutationVersion] = useState(0);
+  const [durationRefreshTick, setDurationRefreshTick] = useState(0);
+  const cachedLiveThreadEntriesRef = useRef<Record<string, CachedLiveThreadEntry>>({});
+  const hasRunningThread = useMemo(
+    () => Object.values(threadStatusById).some((status) => Boolean(status?.isProcessing)),
+    [threadStatusById],
+  );
+
+  useEffect(() => {
+    if (!hasRunningThread) {
+      return;
+    }
+    const timerId = window.setInterval(() => {
+      setDurationRefreshTick((previous) => previous + 1);
+    }, 1000);
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [hasRunningThread]);
 
   const liveFeed = useMemo(
-    () =>
-      buildSessionRadarFeed({
-        workspaces,
-        threadsByWorkspace,
-        threadStatusById,
-        threadItemsByThread,
-        lastAgentMessageByThread,
-        runningLimit,
-        recentLimit: resolvedRecentLimit,
-      }),
+    () => {
+      if (!isIncrementalDerivationEnabled()) {
+        cachedLiveThreadEntriesRef.current = {};
+        return buildSessionRadarFeed({
+          workspaces,
+          threadsByWorkspace,
+          threadStatusById,
+          threadItemsByThread,
+          lastAgentMessageByThread,
+          runningLimit,
+          recentLimit: resolvedRecentLimit,
+        });
+      }
+
+      const now = Date.now();
+      const runningSessions: SessionRadarEntry[] = [];
+      const runningCountByWorkspaceId: Record<string, number> = {};
+      const recentCountByWorkspaceId: Record<string, number> = {};
+      const seenRunningIds = new Set<string>();
+      const nextCachedEntries: Record<string, CachedLiveThreadEntry> = {};
+
+      for (const workspace of workspaces) {
+        const threads = threadsByWorkspace[workspace.id] ?? [];
+        for (const thread of threads) {
+          const threadId = thread.id;
+          const entryId = `${workspace.id}:${threadId}`;
+          const status = threadStatusById[threadId];
+          const items = threadItemsByThread[threadId];
+          const lastAgent = lastAgentMessageByThread[threadId];
+          const signature = buildLiveThreadSignature(
+            workspace.id,
+            thread,
+            status,
+            items,
+            lastAgent,
+          );
+          const cachedEntry = cachedLiveThreadEntriesRef.current[entryId];
+          const entry =
+            cachedEntry && cachedEntry.signature === signature
+              ? (() => {
+                  const preserved = cachedEntry.entry;
+                  if (!preserved.isProcessing || preserved.startedAt == null) {
+                    return preserved;
+                  }
+                  const nextDurationMs = Math.max(0, now - preserved.startedAt);
+                  const previousSeconds = Math.floor((preserved.durationMs ?? 0) / 1000);
+                  const nextSeconds = Math.floor(nextDurationMs / 1000);
+                  if (previousSeconds === nextSeconds) {
+                    return preserved;
+                  }
+                  return {
+                    ...preserved,
+                    durationMs: nextDurationMs,
+                  };
+                })()
+              : buildLiveSessionRadarEntry({
+                  workspace,
+                  thread,
+                  status,
+                  items,
+                  lastAgent,
+                  now,
+                });
+          nextCachedEntries[entryId] = {
+            signature,
+            entry,
+          };
+          if (!entry.isProcessing) {
+            continue;
+          }
+          if (!seenRunningIds.has(entry.id)) {
+            seenRunningIds.add(entry.id);
+            runningSessions.push(entry);
+          }
+          runningCountByWorkspaceId[workspace.id] =
+            (runningCountByWorkspaceId[workspace.id] ?? 0) + 1;
+        }
+      }
+
+      cachedLiveThreadEntriesRef.current = nextCachedEntries;
+      runningSessions.sort((a, b) => b.updatedAt - a.updatedAt);
+
+      return {
+        runningSessions: runningSessions.slice(0, runningLimit ?? DEFAULT_RUNNING_LIMIT),
+        recentCompletedSessions: [],
+        runningCountByWorkspaceId,
+        recentCountByWorkspaceId,
+      };
+    },
     [
       lastAgentMessageByThread,
       resolvedRecentLimit,
@@ -365,6 +556,7 @@ export function useSessionRadarFeed(input: UseSessionRadarFeedInput): SessionRad
       threadStatusById,
       threadsByWorkspace,
       workspaces,
+      durationRefreshTick,
     ],
   );
 

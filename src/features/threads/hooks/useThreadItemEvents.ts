@@ -1,9 +1,10 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject } from "react";
 import { buildConversationItem } from "../../../utils/threadItems";
 import { asString } from "../utils/threadNormalize";
 import type { DebugEntry } from "../../../types";
 import type { ThreadAction } from "./useThreadsReducer";
+import { isRealtimeBatchingEnabled } from "../utils/realtimePerfFlags";
 
 const CLAUDE_STREAM_DEBUG_FLAG_KEY = "mossx.debug.claude.stream";
 
@@ -80,6 +81,44 @@ type UseThreadItemEventsOptions = {
   }) => void;
 };
 
+type RealtimeDeltaOperation =
+  | {
+      kind: "agentDelta";
+      workspaceId: string;
+      threadId: string;
+      itemId: string;
+      delta: string;
+    }
+  | {
+      kind: "reasoningSummaryDelta";
+      workspaceId: string;
+      threadId: string;
+      itemId: string;
+      delta: string;
+    }
+  | {
+      kind: "reasoningSummaryBoundary";
+      workspaceId: string;
+      threadId: string;
+      itemId: string;
+    }
+  | {
+      kind: "reasoningContentDelta";
+      workspaceId: string;
+      threadId: string;
+      itemId: string;
+      delta: string;
+    }
+  | {
+      kind: "toolOutputDelta";
+      workspaceId: string;
+      threadId: string;
+      itemId: string;
+      delta: string;
+    };
+
+const REALTIME_DELTA_BATCH_FLUSH_MS = 12;
+
 export function useThreadItemEvents({
   activeThreadId,
   dispatch,
@@ -94,6 +133,11 @@ export function useThreadItemEvents({
   onDebug,
   onAgentMessageCompletedExternal,
 }: UseThreadItemEventsOptions) {
+  const enableRealtimeBatchingRef = useRef(isRealtimeBatchingEnabled());
+  const pendingRealtimeDeltaOpsRef = useRef<RealtimeDeltaOperation[]>([]);
+  const realtimeFlushTimerRef = useRef<number | null>(null);
+  const isFlushingRealtimeDeltaOpsRef = useRef(false);
+
   const logReasoningRoute = useCallback(
     (
       label: string,
@@ -151,6 +195,140 @@ export function useThreadItemEvents({
     [activeThreadId, onDebug],
   );
 
+  const applyRealtimeDeltaOperation = useCallback(
+    (
+      operation: RealtimeDeltaOperation,
+      context?: {
+        ensuredThreads?: Set<string>;
+        markedProcessingThreads?: Set<string>;
+      },
+    ) => {
+      const ensuredThreads = context?.ensuredThreads;
+      const markedProcessingThreads = context?.markedProcessingThreads;
+      if (!ensuredThreads || !ensuredThreads.has(operation.threadId)) {
+        dispatch({
+          type: "ensureThread",
+          workspaceId: operation.workspaceId,
+          threadId: operation.threadId,
+          engine: inferEngineFromThreadId(operation.threadId),
+        });
+        ensuredThreads?.add(operation.threadId);
+      }
+      if (!markedProcessingThreads || !markedProcessingThreads.has(operation.threadId)) {
+        markProcessing(operation.threadId, true);
+        markedProcessingThreads?.add(operation.threadId);
+      }
+
+      if (operation.kind === "agentDelta") {
+        dispatch({
+          type: "appendAgentDelta",
+          workspaceId: operation.workspaceId,
+          threadId: operation.threadId,
+          itemId: operation.itemId,
+          delta: operation.delta,
+          hasCustomName: Boolean(getCustomName(operation.workspaceId, operation.threadId)),
+        });
+        return;
+      }
+      if (operation.kind === "reasoningSummaryDelta") {
+        dispatch({
+          type: "appendReasoningSummary",
+          threadId: operation.threadId,
+          itemId: operation.itemId,
+          delta: operation.delta,
+        });
+        return;
+      }
+      if (operation.kind === "reasoningSummaryBoundary") {
+        dispatch({
+          type: "appendReasoningSummaryBoundary",
+          threadId: operation.threadId,
+          itemId: operation.itemId,
+        });
+        return;
+      }
+      if (operation.kind === "reasoningContentDelta") {
+        dispatch({
+          type: "appendReasoningContent",
+          threadId: operation.threadId,
+          itemId: operation.itemId,
+          delta: operation.delta,
+        });
+        return;
+      }
+
+      dispatch({
+        type: "appendToolOutput",
+        threadId: operation.threadId,
+        itemId: operation.itemId,
+        delta: operation.delta,
+      });
+    },
+    [dispatch, getCustomName, markProcessing],
+  );
+
+  const flushRealtimeDeltaOps = useCallback(() => {
+    if (!enableRealtimeBatchingRef.current) {
+      return;
+    }
+    if (isFlushingRealtimeDeltaOpsRef.current) {
+      return;
+    }
+    if (realtimeFlushTimerRef.current !== null) {
+      window.clearTimeout(realtimeFlushTimerRef.current);
+      realtimeFlushTimerRef.current = null;
+    }
+    if (pendingRealtimeDeltaOpsRef.current.length === 0) {
+      return;
+    }
+    isFlushingRealtimeDeltaOpsRef.current = true;
+    try {
+      const bufferedOps = pendingRealtimeDeltaOpsRef.current;
+      pendingRealtimeDeltaOpsRef.current = [];
+      const ensuredThreads = new Set<string>();
+      const markedProcessingThreads = new Set<string>();
+      for (const operation of bufferedOps) {
+        applyRealtimeDeltaOperation(operation, {
+          ensuredThreads,
+          markedProcessingThreads,
+        });
+      }
+      safeMessageActivity();
+    } finally {
+      isFlushingRealtimeDeltaOpsRef.current = false;
+    }
+  }, [applyRealtimeDeltaOperation, safeMessageActivity]);
+
+  const enqueueRealtimeDeltaOperation = useCallback(
+    (operation: RealtimeDeltaOperation) => {
+      if (!enableRealtimeBatchingRef.current) {
+        applyRealtimeDeltaOperation(operation);
+        safeMessageActivity();
+        return;
+      }
+      pendingRealtimeDeltaOpsRef.current.push(operation);
+      if (realtimeFlushTimerRef.current !== null) {
+        return;
+      }
+      realtimeFlushTimerRef.current = window.setTimeout(() => {
+        flushRealtimeDeltaOps();
+      }, REALTIME_DELTA_BATCH_FLUSH_MS);
+    },
+    [applyRealtimeDeltaOperation, flushRealtimeDeltaOps, safeMessageActivity],
+  );
+
+  useEffect(
+    () => () => {
+      flushRealtimeDeltaOps();
+      if (realtimeFlushTimerRef.current !== null) {
+        window.clearTimeout(realtimeFlushTimerRef.current);
+        realtimeFlushTimerRef.current = null;
+      }
+      pendingRealtimeDeltaOpsRef.current = [];
+    },
+    [],
+  );
+
   const handleItemUpdate = useCallback(
     (
       workspaceId: string,
@@ -159,6 +337,7 @@ export function useThreadItemEvents({
       shouldMarkProcessing: boolean,
       shouldIncrementAgentSegment: boolean,
     ) => {
+      flushRealtimeDeltaOps();
       dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
       if (shouldMarkProcessing) {
         markProcessing(threadId, true);
@@ -274,6 +453,7 @@ export function useThreadItemEvents({
     [
       applyCollabThreadLinks,
       dispatch,
+      flushRealtimeDeltaOps,
       getCustomName,
       logReasoningRoute,
       markProcessing,
@@ -290,17 +470,15 @@ export function useThreadItemEvents({
       itemId: string,
       delta: string,
     ) => {
-      dispatch({
-        type: "ensureThread",
+      enqueueRealtimeDeltaOperation({
+        kind: "toolOutputDelta",
         workspaceId,
         threadId,
-        engine: inferEngineFromThreadId(threadId),
+        itemId,
+        delta,
       });
-      markProcessing(threadId, true);
-      dispatch({ type: "appendToolOutput", threadId, itemId, delta });
-      safeMessageActivity();
     },
-    [dispatch, markProcessing, safeMessageActivity],
+    [enqueueRealtimeDeltaOperation],
   );
 
   const handleTerminalInteraction = useCallback(
@@ -345,16 +523,12 @@ export function useThreadItemEvents({
         });
         return;
       }
-      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      markProcessing(threadId, true);
-      const hasCustomName = Boolean(getCustomName(workspaceId, threadId));
-      dispatch({
-        type: "appendAgentDelta",
+      enqueueRealtimeDeltaOperation({
+        kind: "agentDelta",
         workspaceId,
         threadId,
         itemId,
         delta,
-        hasCustomName,
       });
       logClaudeStream("agent-delta", {
         workspaceId,
@@ -363,9 +537,8 @@ export function useThreadItemEvents({
         deltaLength: delta.length,
         textPreview: createDebugPreview(delta),
       });
-      safeMessageActivity();
     },
-    [dispatch, getCustomName, interruptedThreadsRef, logClaudeStream, markProcessing, safeMessageActivity],
+    [enqueueRealtimeDeltaOperation, interruptedThreadsRef, logClaudeStream],
   );
 
   const onAgentMessageCompleted = useCallback(
@@ -380,6 +553,7 @@ export function useThreadItemEvents({
       itemId: string;
       text: string;
     }) => {
+      flushRealtimeDeltaOps();
       const timestamp = Date.now();
       dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
       const hasCustomName = Boolean(getCustomName(workspaceId, threadId));
@@ -420,6 +594,7 @@ export function useThreadItemEvents({
     [
       activeThreadId,
       dispatch,
+      flushRealtimeDeltaOps,
       getCustomName,
       logClaudeStream,
       onAgentMessageCompletedExternal,
@@ -469,9 +644,13 @@ export function useThreadItemEvents({
         });
         return;
       }
-      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      markProcessing(threadId, true);
-      dispatch({ type: "appendReasoningSummary", threadId, itemId, delta });
+      enqueueRealtimeDeltaOperation({
+        kind: "reasoningSummaryDelta",
+        workspaceId,
+        threadId,
+        itemId,
+        delta,
+      });
       logClaudeStream("reasoning-summary-delta", {
         workspaceId,
         threadId,
@@ -479,9 +658,8 @@ export function useThreadItemEvents({
         deltaLength: delta.length,
         textPreview: createDebugPreview(delta),
       });
-      safeMessageActivity();
     },
-    [dispatch, interruptedThreadsRef, logClaudeStream, logReasoningRoute, markProcessing, safeMessageActivity],
+    [enqueueRealtimeDeltaOperation, interruptedThreadsRef, logClaudeStream, logReasoningRoute],
   );
 
   const onReasoningSummaryBoundary = useCallback(
@@ -501,17 +679,19 @@ export function useThreadItemEvents({
         });
         return;
       }
-      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      markProcessing(threadId, true);
-      dispatch({ type: "appendReasoningSummaryBoundary", threadId, itemId });
+      enqueueRealtimeDeltaOperation({
+        kind: "reasoningSummaryBoundary",
+        workspaceId,
+        threadId,
+        itemId,
+      });
       logClaudeStream("reasoning-summary-boundary", {
         workspaceId,
         threadId,
         itemId,
       });
-      safeMessageActivity();
     },
-    [dispatch, interruptedThreadsRef, logClaudeStream, logReasoningRoute, markProcessing, safeMessageActivity],
+    [enqueueRealtimeDeltaOperation, interruptedThreadsRef, logClaudeStream, logReasoningRoute],
   );
 
   const onReasoningTextDelta = useCallback(
@@ -534,9 +714,13 @@ export function useThreadItemEvents({
         });
         return;
       }
-      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      markProcessing(threadId, true);
-      dispatch({ type: "appendReasoningContent", threadId, itemId, delta });
+      enqueueRealtimeDeltaOperation({
+        kind: "reasoningContentDelta",
+        workspaceId,
+        threadId,
+        itemId,
+        delta,
+      });
       logClaudeStream("reasoning-text-delta", {
         workspaceId,
         threadId,
@@ -544,9 +728,8 @@ export function useThreadItemEvents({
         deltaLength: delta.length,
         textPreview: createDebugPreview(delta),
       });
-      safeMessageActivity();
     },
-    [dispatch, interruptedThreadsRef, logClaudeStream, logReasoningRoute, markProcessing, safeMessageActivity],
+    [enqueueRealtimeDeltaOperation, interruptedThreadsRef, logClaudeStream, logReasoningRoute],
   );
 
   const onCommandOutputDelta = useCallback(

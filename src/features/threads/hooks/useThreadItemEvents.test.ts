@@ -40,7 +40,7 @@ const makeOptions = (overrides: SetupOverrides = {}) => {
   const onAgentMessageCompletedExternal =
     overrides.onAgentMessageCompletedExternal ?? undefined;
 
-  const { result } = renderHook(() =>
+  const { result, unmount } = renderHook(() =>
     useThreadItemEvents({
       activeThreadId: overrides.activeThreadId ?? null,
       dispatch,
@@ -58,6 +58,7 @@ const makeOptions = (overrides: SetupOverrides = {}) => {
 
   return {
     result,
+    unmount,
     dispatch,
     markProcessing,
     markReviewing,
@@ -80,6 +81,7 @@ describe("useThreadItemEvents", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.removeItem("mossx.perf.realtimeBatching");
     vi.mocked(buildConversationItem).mockReturnValue(convertedItem);
   });
 
@@ -503,5 +505,116 @@ describe("useThreadItemEvents", () => {
       hasCustomName: false,
     });
     expect(safeMessageActivity).toHaveBeenCalled();
+  });
+
+  it("batches realtime deltas in one flush window while preserving operation order", () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem("mossx.perf.realtimeBatching", "1");
+    const { result, dispatch, markProcessing, safeMessageActivity } = makeOptions();
+
+    act(() => {
+      result.current.onAgentMessageDelta({
+        workspaceId: "ws-1",
+        threadId: "claude:session-1",
+        itemId: "assistant-1",
+        delta: "A",
+      });
+      result.current.onReasoningTextDelta(
+        "ws-1",
+        "claude:session-1",
+        "reasoning-1",
+        "B",
+      );
+      result.current.onAgentMessageDelta({
+        workspaceId: "ws-1",
+        threadId: "claude:session-1",
+        itemId: "assistant-1",
+        delta: "C",
+      });
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(markProcessing).not.toHaveBeenCalled();
+    expect(safeMessageActivity).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
+
+    expect(dispatch).toHaveBeenNthCalledWith(1, {
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      engine: "claude",
+    });
+    expect(markProcessing).toHaveBeenCalledTimes(1);
+    expect(markProcessing).toHaveBeenCalledWith("claude:session-1", true);
+    expect(dispatch).toHaveBeenNthCalledWith(2, {
+      type: "appendAgentDelta",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      itemId: "assistant-1",
+      delta: "A",
+      hasCustomName: false,
+    });
+    expect(dispatch).toHaveBeenNthCalledWith(3, {
+      type: "appendReasoningContent",
+      threadId: "claude:session-1",
+      itemId: "reasoning-1",
+      delta: "B",
+    });
+    expect(dispatch).toHaveBeenNthCalledWith(4, {
+      type: "appendAgentDelta",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      itemId: "assistant-1",
+      delta: "C",
+      hasCustomName: false,
+    });
+    expect(safeMessageActivity).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
+
+  it("flushes buffered realtime deltas on unmount so the last batch is not dropped", () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem("mossx.perf.realtimeBatching", "1");
+    const { result, dispatch, markProcessing, safeMessageActivity, unmount } = makeOptions();
+
+    act(() => {
+      result.current.onAgentMessageDelta({
+        workspaceId: "ws-1",
+        threadId: "claude:session-1",
+        itemId: "assistant-1",
+        delta: "closing text",
+      });
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(markProcessing).not.toHaveBeenCalled();
+    expect(safeMessageActivity).not.toHaveBeenCalled();
+
+    act(() => {
+      unmount();
+    });
+
+    expect(dispatch).toHaveBeenNthCalledWith(1, {
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      engine: "claude",
+    });
+    expect(markProcessing).toHaveBeenCalledWith("claude:session-1", true);
+    expect(dispatch).toHaveBeenNthCalledWith(2, {
+      type: "appendAgentDelta",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      itemId: "assistant-1",
+      delta: "closing text",
+      hasCustomName: false,
+    });
+    expect(safeMessageActivity).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
   });
 });

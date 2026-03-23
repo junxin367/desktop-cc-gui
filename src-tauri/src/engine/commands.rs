@@ -1888,8 +1888,16 @@ pub async fn engine_send_message(
                     let recv_result = tokio::time::timeout_at(deadline, receiver.recv()).await;
                     let turn_event = match recv_result {
                         Ok(Ok(event)) => event,
-                        Ok(Err(_)) => break, // channel closed
-                        Err(_) => break,     // timeout reached
+                        Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => break,
+                        Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped))) => {
+                            log::warn!(
+                                "Claude event forwarder lagged; skipped {} events for turn {}",
+                                skipped,
+                                turn_id_for_forwarder
+                            );
+                            continue;
+                        }
+                        Err(_) => break, // timeout reached
                     };
                     if turn_event.turn_id != turn_id_for_forwarder {
                         continue;
@@ -1974,11 +1982,11 @@ pub async fn engine_send_message(
             let session_clone = session.clone();
             let turn_id_clone = turn_id.clone();
             tokio::spawn(async move {
-                if let Err(e) = session_clone.send_message(params, &turn_id_clone).await {
+                if let Err(e) = session_clone
+                    .send_message_with_auto_compact_retry(params, &turn_id_clone)
+                    .await
+                {
                     log::error!("Claude send_message failed: {}", e);
-                    // Emit TurnError so the frontend event forwarder receives a terminal
-                    // event and the user sees the error instead of an infinite loading state.
-                    session_clone.emit_error(&turn_id_clone, e);
                 }
             });
 
@@ -2079,7 +2087,15 @@ pub async fn engine_send_message(
                     let recv_result = tokio::time::timeout_at(deadline, receiver.recv()).await;
                     let turn_event = match recv_result {
                         Ok(Ok(event)) => event,
-                        Ok(Err(_)) => break,
+                        Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => break,
+                        Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped))) => {
+                            log::warn!(
+                                "OpenCode event forwarder lagged; skipped {} events for turn {}",
+                                skipped,
+                                turn_id_for_forwarder
+                            );
+                            continue;
+                        }
                         Err(_) => break,
                     };
                     if turn_event.turn_id != turn_id_for_forwarder {
@@ -2219,7 +2235,7 @@ pub async fn engine_send_message_sync(
             let turn_id = format!("claude-sync-{}", uuid::Uuid::new_v4());
             let response = timeout(
                 Duration::from_secs(900),
-                session.send_message(params, &turn_id),
+                session.send_message_with_auto_compact_retry(params, &turn_id),
             )
             .await
             .map_err(|_| "Claude response timed out".to_string())??;

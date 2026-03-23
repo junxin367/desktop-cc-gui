@@ -252,6 +252,26 @@ describe("realtime adapters", () => {
     expect(heartbeatEvent).toBeNull();
   });
 
+  it("maps claude text:delta without itemId to a thread-scoped fallback id", () => {
+    const event = claudeRealtimeAdapter.mapEvent({
+      workspaceId: "ws-claude",
+      message: {
+        method: "text:delta",
+        params: {
+          threadId: "claude:session-7",
+          turnId: "turn-7",
+          delta: "streaming text",
+        },
+      },
+    });
+    expect(event).toBeTruthy();
+    expect(event?.engine).toBe("claude");
+    expect(event?.operation).toBe("appendAgentMessageDelta");
+    expect(event?.item.kind).toBe("message");
+    expect(event?.item.id).toBe("claude:session-7:text-delta");
+    expect(event?.delta).toBe("streaming text");
+  });
+
   it("returns null when required fields are missing", () => {
     const event = codexRealtimeAdapter.mapEvent({
       workspaceId: "ws-1",

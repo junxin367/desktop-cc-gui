@@ -266,6 +266,12 @@ export function TaskCreateModal({
     }
   }, [scheduleMode, previousTaskId]);
 
+  useEffect(() => {
+    if (scheduleMode !== "manual" && autoStart) {
+      setAutoStart(false);
+    }
+  }, [scheduleMode, autoStart]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -436,6 +442,7 @@ export function TaskCreateModal({
   };
 
   if (!isOpen) return null;
+  const showAutoStartToggle = !editingTask && scheduleMode === "manual";
 
   return (
     <div className="kanban-modal-overlay">
@@ -711,7 +718,7 @@ export function TaskCreateModal({
           </div>
 
           <div className="kanban-modal-footer">
-            {!editingTask && (
+            {showAutoStartToggle ? (
               <label className="kanban-toggle-label">
                 <input
                   type="checkbox"
@@ -722,8 +729,7 @@ export function TaskCreateModal({
                 <span className="kanban-toggle-switch" />
                 <span>{t("kanban.task.start")}</span>
               </label>
-            )}
-            {editingTask && <div />}
+            ) : <div />}
             <button
               type="submit"
               className="kanban-btn kanban-btn-primary"

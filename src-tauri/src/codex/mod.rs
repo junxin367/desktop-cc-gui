@@ -1316,16 +1316,6 @@ pub(crate) async fn respond_to_server_request(
         if session.has_pending_user_input(&request_id) {
             return session.respond_to_user_input(request_id, result).await;
         }
-        let looks_like_user_input_response = result
-            .get("answers")
-            .and_then(|answers| answers.as_object())
-            .is_some();
-        if looks_like_user_input_response && session.has_any_pending_user_input() {
-            log::warn!(
-                "respond_to_server_request: request_id mismatch but Claude has pending AskUserQuestion; routing answer to Claude fallback path"
-            );
-            return session.respond_to_user_input(request_id, result).await;
-        }
     }
 
     codex_core::respond_to_server_request_core(&state.sessions, workspace_id, request_id, result)

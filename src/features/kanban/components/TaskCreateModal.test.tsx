@@ -298,4 +298,59 @@ describe("TaskCreateModal", () => {
       getByRole("option", { name: "[kanban.task.schedule.recurring] Recurring task" }),
     ).toBeTruthy();
   });
+
+  it("shows start toggle only for manual schedule mode", () => {
+    const props = {
+      workspaceId: "ws-1",
+      workspaceBackendId: "ws-1",
+      panelId: "panel-1",
+      defaultStatus: "todo" as const,
+      engineStatuses,
+      availableTasks: [],
+      onSubmit: vi.fn(),
+      onCancel: vi.fn(),
+    };
+
+    const { getByRole, queryByText } = render(<TaskCreateModal {...props} isOpen />);
+
+    expect(queryByText("kanban.task.start")).toBeTruthy();
+    fireEvent.click(getByRole("radio", { name: "kanban.task.schedule.once" }));
+    expect(queryByText("kanban.task.start")).toBeNull();
+    fireEvent.click(getByRole("radio", { name: "kanban.task.schedule.manual" }));
+    expect(queryByText("kanban.task.start")).toBeTruthy();
+  });
+
+  it("forces autoStart off when switching to non-manual schedule", async () => {
+    const onSubmit = vi.fn();
+    const props = {
+      workspaceId: "ws-1",
+      workspaceBackendId: "ws-1",
+      panelId: "panel-1",
+      defaultStatus: "inprogress" as const,
+      engineStatuses,
+      availableTasks: [],
+      onSubmit,
+      onCancel: vi.fn(),
+    };
+
+    const { container, getByPlaceholderText, getByRole, getByText } = render(
+      <TaskCreateModal {...props} isOpen />,
+    );
+
+    const startToggle = container.querySelector(".kanban-toggle-input") as HTMLInputElement;
+    expect(startToggle?.checked).toBe(true);
+
+    fireEvent.click(getByRole("radio", { name: "kanban.task.schedule.recurring" }));
+    fireEvent.change(getByPlaceholderText("kanban.task.titlePlaceholder"), {
+      target: { value: "Recurring task" },
+    });
+    fireEvent.click(getByText("kanban.task.create"));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onSubmit.mock.calls[0][0].autoStart).toBe(false);
+    expect(onSubmit.mock.calls[0][0].schedule?.mode).toBe("recurring");
+  });
 });

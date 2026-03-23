@@ -28,6 +28,8 @@
     "check:large-files:near-threshold:baseline": "node scripts/check-large-files.mjs --threshold 2500 --mode report --markdown-output docs/architecture/large-file-near-threshold-watchlist.md",
     "check:large-files:ci": "node scripts/check-large-files.mjs --threshold 3000 --mode warn",
     "check:large-files:gate": "node scripts/check-large-files.mjs --threshold 3000 --mode fail",
+    "perf:realtime:report": "pnpm vite-node scripts/realtime-perf-report.ts",
+    "perf:realtime:boundary-guard": "pnpm vitest run src/features/threads/contracts/realtimeBoundaryGuard.test.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "node scripts/test-batched.mjs",
     "test:integration": "VITEST_INCLUDE_HEAVY=1 node scripts/test-batched.mjs",

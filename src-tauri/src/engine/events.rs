@@ -245,6 +245,56 @@ fn resolve_tool_item_kind(tool_name: Option<&str>) -> ToolItemKind {
     ToolItemKind::MpcToolCall
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ClaudeCompactionSignal {
+    Compacting,
+    CompactBoundary,
+    CompactionFailed,
+}
+
+fn normalize_claude_signal_token(value: &str) -> String {
+    value.trim().to_ascii_lowercase().replace(['-', ' '], "_")
+}
+
+fn detect_claude_compaction_signal(data: &Value) -> Option<ClaudeCompactionSignal> {
+    let candidates = [
+        "subtype",
+        "subType",
+        "event",
+        "event_type",
+        "eventType",
+        "name",
+        "kind",
+        "status",
+        "phase",
+        "state",
+        "type",
+    ];
+    for key in candidates {
+        let Some(raw) = data.get(key).and_then(|value| value.as_str()) else {
+            continue;
+        };
+        let normalized = normalize_claude_signal_token(raw);
+        if normalized.contains("compaction_failed")
+            || normalized.contains("compact_failed")
+            || normalized.contains("compactfailure")
+        {
+            return Some(ClaudeCompactionSignal::CompactionFailed);
+        }
+        if normalized.contains("compact_boundary") || normalized.contains("compacted") {
+            return Some(ClaudeCompactionSignal::CompactBoundary);
+        }
+        if normalized.contains("compacting") {
+            return Some(ClaudeCompactionSignal::Compacting);
+        }
+    }
+    None
+}
+
+fn get_value_by_aliases<'a>(data: &'a Value, aliases: &[&str]) -> Option<&'a Value> {
+    aliases.iter().find_map(|alias| data.get(*alias))
+}
+
 /// Convert an EngineEvent to an AppServerEvent using Codex-compatible JSON-RPC format.
 /// This allows the frontend's existing useAppServerEvents hook to handle Claude events
 /// identically to Codex events.
@@ -558,10 +608,91 @@ pub fn engine_event_to_app_server_event(
             },
             "id": request_id,
         }),
-        EngineEvent::Raw { data, engine, .. } => json!({
-            "method": format!("{}/raw", engine.icon()),
-            "params": data,
-        }),
+        EngineEvent::Raw { data, engine, .. } => {
+            if matches!(engine, EngineType::Claude) {
+                if let Some(signal) = detect_claude_compaction_signal(data) {
+                    match signal {
+                        ClaudeCompactionSignal::Compacting => {
+                            let mut params = serde_json::Map::new();
+                            params.insert(
+                                "threadId".to_string(),
+                                Value::String(thread_id.to_string()),
+                            );
+                            if let Some(value) =
+                                get_value_by_aliases(data, &["usagePercent", "usage_percent"])
+                            {
+                                params.insert("usagePercent".to_string(), value.clone());
+                            }
+                            if let Some(value) = get_value_by_aliases(
+                                data,
+                                &["thresholdPercent", "threshold_percent"],
+                            ) {
+                                params.insert("thresholdPercent".to_string(), value.clone());
+                            }
+                            if let Some(value) =
+                                get_value_by_aliases(data, &["targetPercent", "target_percent"])
+                            {
+                                params.insert("targetPercent".to_string(), value.clone());
+                            }
+                            json!({
+                                "method": "thread/compacting",
+                                "params": Value::Object(params),
+                            })
+                        }
+                        ClaudeCompactionSignal::CompactBoundary => {
+                            let turn_id_value = get_value_by_aliases(
+                                data,
+                                &["turnId", "turn_id", "requestId", "request_id"],
+                            )
+                            .and_then(|value| value.as_str())
+                            .filter(|value| !value.trim().is_empty())
+                            .unwrap_or(item_id)
+                            .to_string();
+                            json!({
+                                "method": "thread/compacted",
+                                "params": {
+                                    "threadId": thread_id,
+                                    "turnId": turn_id_value,
+                                },
+                            })
+                        }
+                        ClaudeCompactionSignal::CompactionFailed => {
+                            let reason =
+                                get_value_by_aliases(data, &["reason", "message", "error"])
+                                    .and_then(|value| {
+                                        if let Some(text) = value.as_str() {
+                                            return Some(text.to_string());
+                                        }
+                                        if value.is_object() || value.is_array() {
+                                            return serde_json::to_string(value).ok();
+                                        }
+                                        None
+                                    })
+                                    .unwrap_or_else(|| {
+                                        "Automatic context compaction failed".to_string()
+                                    });
+                            json!({
+                                "method": "thread/compactionFailed",
+                                "params": {
+                                    "threadId": thread_id,
+                                    "reason": reason,
+                                },
+                            })
+                        }
+                    }
+                } else {
+                    json!({
+                        "method": format!("{}/raw", engine.icon()),
+                        "params": data,
+                    })
+                }
+            } else {
+                json!({
+                    "method": format!("{}/raw", engine.icon()),
+                    "params": data,
+                })
+            }
+        }
         _ => return None,
     };
 
@@ -784,6 +915,110 @@ mod tests {
         assert_eq!(
             mapped.message["method"],
             Value::String("item/fileChange/outputDelta".to_string())
+        );
+    }
+
+    #[test]
+    fn claude_raw_compacting_maps_to_thread_compacting() {
+        let event = EngineEvent::Raw {
+            workspace_id: "ws-compact".to_string(),
+            engine: EngineType::Claude,
+            data: json!({
+                "type": "system",
+                "subtype": "compacting",
+                "usage_percent": 96,
+                "threshold_percent": 95,
+                "target_percent": 70,
+            }),
+        };
+
+        let mapped = engine_event_to_app_server_event(&event, "claude:thread-1", "item-1")
+            .expect("mapped event");
+        assert_eq!(
+            mapped.message["method"],
+            Value::String("thread/compacting".to_string())
+        );
+        assert_eq!(
+            mapped.message["params"]["usagePercent"],
+            Value::Number(96.into())
+        );
+        assert_eq!(
+            mapped.message["params"]["thresholdPercent"],
+            Value::Number(95.into())
+        );
+        assert_eq!(
+            mapped.message["params"]["targetPercent"],
+            Value::Number(70.into())
+        );
+    }
+
+    #[test]
+    fn claude_raw_compact_boundary_maps_to_thread_compacted() {
+        let event = EngineEvent::Raw {
+            workspace_id: "ws-compact".to_string(),
+            engine: EngineType::Claude,
+            data: json!({
+                "type": "system",
+                "event": "compact_boundary",
+            }),
+        };
+
+        let mapped = engine_event_to_app_server_event(&event, "claude:thread-1", "item-42")
+            .expect("mapped event");
+        assert_eq!(
+            mapped.message["method"],
+            Value::String("thread/compacted".to_string())
+        );
+        assert_eq!(
+            mapped.message["params"]["threadId"],
+            Value::String("claude:thread-1".to_string())
+        );
+        assert_eq!(
+            mapped.message["params"]["turnId"],
+            Value::String("item-42".to_string())
+        );
+    }
+
+    #[test]
+    fn claude_raw_compaction_failed_maps_to_thread_compaction_failed() {
+        let event = EngineEvent::Raw {
+            workspace_id: "ws-compact".to_string(),
+            engine: EngineType::Claude,
+            data: json!({
+                "type": "system",
+                "subtype": "compaction_failed",
+                "reason": "auto compact failed",
+            }),
+        };
+
+        let mapped = engine_event_to_app_server_event(&event, "claude:thread-1", "item-1")
+            .expect("mapped event");
+        assert_eq!(
+            mapped.message["method"],
+            Value::String("thread/compactionFailed".to_string())
+        );
+        assert_eq!(
+            mapped.message["params"]["reason"],
+            Value::String("auto compact failed".to_string())
+        );
+    }
+
+    #[test]
+    fn non_claude_raw_compaction_signal_stays_raw_passthrough() {
+        let event = EngineEvent::Raw {
+            workspace_id: "ws-compact".to_string(),
+            engine: EngineType::OpenCode,
+            data: json!({
+                "type": "system",
+                "subtype": "compacting",
+            }),
+        };
+
+        let mapped = engine_event_to_app_server_event(&event, "opencode:thread-1", "item-1")
+            .expect("mapped event");
+        assert_eq!(
+            mapped.message["method"],
+            Value::String("opencode/raw".to_string())
         );
     }
 }

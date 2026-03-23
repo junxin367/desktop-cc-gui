@@ -880,6 +880,63 @@ describe("threadReducer", () => {
     expect(messages[1]?.text).toBe("第二段（完整）");
   });
 
+  it("reconciles legacy text-delta id with later canonical assistant id", () => {
+    const first = threadReducer(initialState, {
+      type: "appendAgentDelta",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      itemId: "claude:session-1:text-delta",
+      delta: "你好！我看到你列出了三个饮料品牌。",
+      hasCustomName: false,
+    });
+    const second = threadReducer(first, {
+      type: "appendAgentDelta",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      itemId: "assistant-msg-1",
+      delta: "你好！我看到你列出了三个饮料品牌。请问你需要什么帮助呢？",
+      hasCustomName: false,
+    });
+
+    const messages = (second.itemsByThread["claude:session-1"] ?? []).filter(
+      (item): item is Extract<ConversationItem, { kind: "message" }> =>
+        item.kind === "message" && item.role === "assistant",
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.id).toBe("assistant-msg-1");
+    expect(messages[0]?.text).toBe(
+      "你好！我看到你列出了三个饮料品牌。请问你需要什么帮助呢？",
+    );
+  });
+
+  it("reconciles legacy text-delta id when completed assistant id arrives", () => {
+    const streamed = "你好！我看到你列出了三个饮料品牌。";
+    const first = threadReducer(initialState, {
+      type: "appendAgentDelta",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      itemId: "claude:session-1:text-delta",
+      delta: streamed,
+      hasCustomName: false,
+    });
+    const completed = threadReducer(first, {
+      type: "completeAgentMessage",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      itemId: "assistant-msg-1",
+      text: `${streamed}请问你需要什么帮助呢？`,
+      hasCustomName: false,
+    });
+
+    const messages = (completed.itemsByThread["claude:session-1"] ?? []).filter(
+      (item): item is Extract<ConversationItem, { kind: "message" }> =>
+        item.kind === "message" && item.role === "assistant",
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.id).toBe("assistant-msg-1");
+    expect(messages[0]?.text).toBe("你好！我看到你列出了三个饮料品牌。请问你需要什么帮助呢？");
+  });
+
   it("updates thread timestamp when newer activity arrives", () => {
     const threads: ThreadSummary[] = [
       { id: "thread-1", name: "Agent 1", updatedAt: 1000 },
@@ -957,6 +1014,47 @@ describe("threadReducer", () => {
       timestamp: 1500,
     });
     expect(stopped.threadStatusById["thread-1"]?.heartbeatPulse ?? 0).toBe(0);
+  });
+
+  it("keeps state identity for repeated markProcessing true updates", () => {
+    const started = threadReducer(initialState, {
+      type: "markProcessing",
+      threadId: "thread-1",
+      isProcessing: true,
+      timestamp: 1000,
+    });
+    const repeated = threadReducer(started, {
+      type: "markProcessing",
+      threadId: "thread-1",
+      isProcessing: true,
+      timestamp: 1200,
+    });
+    expect(repeated).toBe(started);
+  });
+
+  it("keeps state identity when duplicate tool output delta does not change content", () => {
+    const baseTool: ConversationItem = {
+      id: "cmd-1",
+      kind: "tool",
+      toolType: "commandExecution",
+      title: "Command",
+      detail: "",
+      status: "running",
+      output: "hello",
+    };
+    const baseState: ThreadState = {
+      ...initialState,
+      itemsByThread: {
+        "thread-1": [baseTool],
+      },
+    };
+    const next = threadReducer(baseState, {
+      type: "appendToolOutput",
+      threadId: "thread-1",
+      itemId: "cmd-1",
+      delta: "hello",
+    });
+    expect(next).toBe(baseState);
   });
 
   it("tracks request user input queue", () => {
