@@ -166,6 +166,55 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
     expect(mockState.setClaudeAlwaysThinkingEnabled).toHaveBeenCalledWith(false);
   });
 
+  it('falls back to direct claude settings when active provider lacks thinking field', async () => {
+    mockState.getClaudeProviders.mockResolvedValue([
+      {
+        id: '__local_settings_json__',
+        name: 'Local settings.json',
+        isActive: true,
+        isLocalProvider: true,
+        settingsConfig: {},
+      },
+    ]);
+    mockState.getClaudeAlwaysThinkingEnabled.mockResolvedValue(true);
+
+    renderAdapter();
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+    const latest = mockState.latestProps as {
+      alwaysThinkingEnabled?: boolean;
+    };
+    await waitFor(() => expect(latest.alwaysThinkingEnabled).toBe(true));
+    expect(mockState.getClaudeAlwaysThinkingEnabled).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses direct claude settings write when local provider is active', async () => {
+    mockState.getClaudeProviders.mockResolvedValue([
+      {
+        id: '__local_settings_json__',
+        name: 'Local settings.json',
+        isActive: true,
+        isLocalProvider: true,
+        settingsConfig: {},
+      },
+    ]);
+
+    renderAdapter();
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+    const latest = mockState.latestProps as {
+      onToggleThinking?: (enabled: boolean) => void | Promise<void>;
+    };
+
+    await act(async () => {
+      await Promise.resolve(latest.onToggleThinking?.(true));
+    });
+
+    expect(mockState.setClaudeAlwaysThinkingEnabled).toHaveBeenCalledWith(true);
+    expect(mockState.updateClaudeProvider).not.toHaveBeenCalled();
+    expect(mockState.switchClaudeProvider).not.toHaveBeenCalled();
+  });
+
   it('forwards send shortcut to ChatInputBox', async () => {
     renderAdapter({ sendShortcut: 'cmdEnter' });
 

@@ -50,11 +50,13 @@ export type { ChatInputBoxHandle };
 
 const STREAMING_ENABLED_STORAGE_KEY = 'mossx.composer.streaming-enabled';
 const MESSAGE_QUEUE_PREVIEW_LIMIT = 120;
+const LOCAL_SETTINGS_PROVIDER_ID = '__local_settings_json__';
 
 type ClaudeProviderLike = {
   id: string;
   name: string;
   isActive?: boolean;
+  isLocalProvider?: boolean;
   settingsConfig?: {
     alwaysThinkingEnabled?: boolean;
     [key: string]: unknown;
@@ -86,6 +88,13 @@ function readStoredStreamingEnabled(): boolean {
 
 function findActiveClaudeProvider(providers: ClaudeProviderLike[]): ClaudeProviderLike | null {
   return providers.find((provider) => provider?.isActive) ?? null;
+}
+
+function isLocalClaudeProvider(provider: ClaudeProviderLike | null): boolean {
+  if (!provider) {
+    return false;
+  }
+  return Boolean(provider.isLocalProvider) || provider.id === LOCAL_SETTINGS_PROVIDER_ID;
 }
 
 function buildQueuePreviewText(content: string): string {
@@ -482,9 +491,11 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
             return;
           }
           const activeProvider = findActiveClaudeProvider(providers);
-          if (activeProvider) {
+          const activeProviderThinking =
+            activeProvider?.settingsConfig?.alwaysThinkingEnabled;
+          if (typeof activeProviderThinking === 'boolean') {
             setLocalAlwaysThinkingEnabled(
-              Boolean(activeProvider.settingsConfig?.alwaysThinkingEnabled),
+              activeProviderThinking,
             );
             return;
           }
@@ -543,7 +554,7 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
         try {
           const providers = (await getClaudeProviders()) as ClaudeProviderLike[];
           const activeProvider = findActiveClaudeProvider(providers);
-          if (!activeProvider) {
+          if (!activeProvider || isLocalClaudeProvider(activeProvider)) {
             await setClaudeAlwaysThinkingEnabled(enabled);
             return;
           }
