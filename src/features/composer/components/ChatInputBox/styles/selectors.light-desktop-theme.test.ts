@@ -30,4 +30,13 @@ describe("selector light desktop theme guards", () => {
     const opacityMatches = selectorsCss.match(/opacity:\s*0\.68;/g) ?? [];
     expect(opacityMatches.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("keeps selected options driven by selected foreground/background tokens", () => {
+    expect(selectorsCss).toContain(
+      "background: var(--dropdown-selected, var(--dropdown-hover-color, #EDEEF1));",
+    );
+    expect(selectorsCss).toContain(
+      "color: var(--dropdown-selected-text, var(--dropdown-text-color, #0D0D0D));",
+    );
+  });
 });

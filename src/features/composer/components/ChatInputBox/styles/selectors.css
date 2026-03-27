@@ -197,7 +197,13 @@
 }
 
 .selector-option.selected {
-  color: var(--dropdown-text-color, #0D0D0D);
+  background: var(--dropdown-selected, var(--dropdown-hover-color, #EDEEF1));
+  color: var(--dropdown-selected-text, var(--dropdown-text-color, #0D0D0D));
+}
+
+.selector-option.selected .model-description,
+.selector-option.selected .mode-description {
+  color: color-mix(in srgb, currentColor 78%, transparent);
 }
 
 
