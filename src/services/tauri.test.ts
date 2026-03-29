@@ -48,6 +48,7 @@ import {
   readExternalSpecFile,
   readExternalAbsoluteFile,
   writeExternalSpecFile,
+  writeExternalAbsoluteFile,
   engineSendMessageSync,
 } from "./tauri";
 
@@ -433,6 +434,23 @@ describe("tauri invoke wrappers", () => {
       specRoot: "/tmp/external-spec-root",
       path: "openspec/project.md",
       content: "# Project Context",
+    });
+  });
+
+  it("maps write external absolute file payload", async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockResolvedValueOnce({});
+
+    await writeExternalAbsoluteFile(
+      "ws-41",
+      "/Users/demo/.codex/skills/openspec-apply-change/SKILL.md",
+      "# Updated skill",
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith("write_external_absolute_file", {
+      workspaceId: "ws-41",
+      path: "/Users/demo/.codex/skills/openspec-apply-change/SKILL.md",
+      content: "# Updated skill",
     });
   });
 

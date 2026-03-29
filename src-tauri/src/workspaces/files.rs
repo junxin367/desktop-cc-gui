@@ -717,6 +717,90 @@ pub(crate) fn list_workspace_directory_children_inner(
     })
 }
 
+pub(crate) fn list_external_absolute_directory_children_inner(
+    absolute_directory_path: &str,
+    max_entries: usize,
+) -> Result<WorkspaceFilesResponse, String> {
+    let trimmed = absolute_directory_path.trim();
+    if trimmed.is_empty() {
+        return Err("Invalid directory path.".to_string());
+    }
+
+    let raw_path = PathBuf::from(trimmed);
+    if !raw_path.is_absolute() {
+        return Err("Invalid directory path.".to_string());
+    }
+
+    let canonical_path = raw_path
+        .canonicalize()
+        .map_err(|err| format!("Failed to resolve directory path: {err}"))?;
+    let metadata = std::fs::metadata(&canonical_path)
+        .map_err(|err| format!("Failed to read directory metadata: {err}"))?;
+    if !metadata.is_dir() {
+        return Err("Path is not a directory.".to_string());
+    }
+
+    let entries = std::fs::read_dir(&canonical_path)
+        .map_err(|err| format!("Failed to read directory: {err}"))?;
+    let scan_started_at = Instant::now();
+    let max_scanned_entries = max_entries
+        .saturating_mul(WORKSPACE_DIRECTORY_SCAN_BUDGET_MULTIPLIER)
+        .max(max_entries);
+    let mut sorted_entries = Vec::new();
+    for entry in entries {
+        if scan_started_at.elapsed() >= WORKSPACE_SCAN_TIME_BUDGET {
+            break;
+        }
+        if sorted_entries.len() >= max_scanned_entries {
+            break;
+        }
+        if let Ok(entry) = entry {
+            sorted_entries.push((entry.file_name().to_string_lossy().to_string(), entry));
+        }
+    }
+    sort_and_truncate_named_entries(&mut sorted_entries, max_scanned_entries);
+
+    let mut files = Vec::new();
+    let mut directories = Vec::new();
+    for (name, entry) in sorted_entries {
+        let path = entry.path();
+        let normalized = normalize_git_path(&path.to_string_lossy());
+        if normalized.is_empty() {
+            continue;
+        }
+        let file_type = match entry.file_type() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if file_type.is_dir() {
+            if should_always_skip(&name) {
+                continue;
+            }
+            directories.push(normalized);
+        } else if file_type.is_file() {
+            if name == ".DS_Store" {
+                continue;
+            }
+            files.push(normalized);
+        }
+
+        if files.len() + directories.len() >= max_entries {
+            break;
+        }
+    }
+
+    files.sort();
+    files.dedup();
+    directories.sort();
+    directories.dedup();
+    Ok(WorkspaceFilesResponse {
+        files,
+        directories,
+        gitignored_files: Vec::new(),
+        gitignored_directories: Vec::new(),
+    })
+}
+
 const MAX_WORKSPACE_FILE_BYTES: u64 = 400_000;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -1066,6 +1150,38 @@ pub(crate) fn read_external_absolute_file_inner(
     Ok(WorkspaceFileResponse { content, truncated })
 }
 
+pub(crate) fn write_external_absolute_file_inner(
+    absolute_path: &str,
+    content: &str,
+) -> Result<(), String> {
+    if content.len() > MAX_WORKSPACE_FILE_BYTES as usize {
+        return Err("File content exceeds maximum allowed size".to_string());
+    }
+
+    let trimmed = absolute_path.trim();
+    if trimmed.is_empty() {
+        return Err("Invalid file path".to_string());
+    }
+
+    let raw_path = PathBuf::from(trimmed);
+    if !raw_path.is_absolute() {
+        return Err("Invalid file path".to_string());
+    }
+
+    let canonical_path = raw_path
+        .canonicalize()
+        .map_err(|err| format!("Failed to open file: {err}"))?;
+    let metadata = std::fs::metadata(&canonical_path)
+        .map_err(|err| format!("Failed to read file metadata: {err}"))?;
+    if !metadata.is_file() {
+        return Err("Path is not a file".to_string());
+    }
+
+    std::fs::write(&canonical_path, content)
+        .map_err(|err| format!("Failed to write file: {err}"))?;
+    Ok(())
+}
+
 pub(crate) fn write_workspace_file_inner(
     root: &PathBuf,
     relative_path: &str,
@@ -1256,12 +1372,14 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
 mod tests {
     use super::{
         compile_search_regex, create_workspace_directory_inner, is_special_directory_path,
-        list_external_spec_tree_inner, list_workspace_directory_children_inner,
-        list_workspace_files_inner, normalize_workspace_relative_path,
-        read_external_absolute_file_inner, read_external_spec_file_inner,
-        read_workspace_file_inner, search_workspace_text_inner, sort_and_truncate_named_entries,
+        list_external_absolute_directory_children_inner, list_external_spec_tree_inner,
+        list_workspace_directory_children_inner, list_workspace_files_inner,
+        normalize_workspace_relative_path, read_external_absolute_file_inner,
+        read_external_spec_file_inner, read_workspace_file_inner, search_workspace_text_inner,
+        sort_and_truncate_named_entries, write_external_absolute_file_inner,
         WorkspaceTextSearchOptions,
     };
+    use crate::utils::normalize_git_path;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use uuid::Uuid;
@@ -1469,6 +1587,45 @@ mod tests {
     }
 
     #[test]
+    fn list_external_absolute_directory_children_returns_sorted_entries() {
+        let root =
+            std::env::temp_dir().join(format!("mossx-external-dir-children-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("skill")).expect("create skill dir");
+        std::fs::write(root.join("skill/z.ts"), "z\n").expect("write z");
+        std::fs::write(root.join("skill/a.ts"), "a\n").expect("write a");
+        std::fs::write(root.join("skill/m.ts"), "m\n").expect("write m");
+        let canonical_skill_dir = root
+            .join("skill")
+            .canonicalize()
+            .expect("canonical skill dir");
+        let expected_base = normalize_git_path(&canonical_skill_dir.to_string_lossy());
+
+        let response = list_external_absolute_directory_children_inner(
+            root.join("skill").to_str().expect("directory path"),
+            3,
+        )
+        .expect("list children");
+
+        assert_eq!(
+            response.files,
+            vec![
+                format!("{expected_base}/a.ts"),
+                format!("{expected_base}/m.ts"),
+                format!("{expected_base}/z.ts")
+            ]
+        );
+
+        std::fs::remove_dir_all(&root).expect("cleanup root");
+    }
+
+    #[test]
+    fn list_external_absolute_directory_children_rejects_relative_path() {
+        let result = list_external_absolute_directory_children_inner("relative/path", 20);
+        assert!(result.is_err());
+        assert_eq!(result.err().as_deref(), Some("Invalid directory path."));
+    }
+
+    #[test]
     fn read_workspace_file_decodes_gb18030_text() {
         let root = std::env::temp_dir().join(format!("mossx-read-{}", Uuid::new_v4()));
         std::fs::create_dir_all(root.join("docs")).expect("create docs");
@@ -1506,6 +1663,29 @@ mod tests {
     #[test]
     fn read_external_absolute_file_rejects_relative_path() {
         let result = read_external_absolute_file_inner("relative/path.md");
+        assert!(result.is_err());
+        assert_eq!(result.err().as_deref(), Some("Invalid file path"));
+    }
+
+    #[test]
+    fn write_external_absolute_file_updates_existing_file() {
+        let root = std::env::temp_dir().join(format!("mossx-write-absolute-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("docs")).expect("create docs");
+        let file_path = root.join("docs/skill.md");
+        std::fs::write(&file_path, "before").expect("write file");
+
+        write_external_absolute_file_inner(file_path.to_str().expect("file path"), "after")
+            .expect("write absolute file");
+
+        let content = std::fs::read_to_string(&file_path).expect("read updated file");
+        assert_eq!(content, "after");
+
+        std::fs::remove_dir_all(&root).expect("cleanup root");
+    }
+
+    #[test]
+    fn write_external_absolute_file_rejects_relative_path() {
+        let result = write_external_absolute_file_inner("relative/path.md", "content");
         assert!(result.is_err());
         assert_eq!(result.err().as_deref(), Some("Invalid file path"));
     }

@@ -869,6 +869,90 @@ fn list_workspace_directory_children_inner(
     })
 }
 
+fn list_external_absolute_directory_children_inner(
+    absolute_directory_path: &str,
+    max_entries: usize,
+) -> Result<WorkspaceFilesResponse, String> {
+    let trimmed = absolute_directory_path.trim();
+    if trimmed.is_empty() {
+        return Err("Invalid directory path.".to_string());
+    }
+
+    let raw_path = PathBuf::from(trimmed);
+    if !raw_path.is_absolute() {
+        return Err("Invalid directory path.".to_string());
+    }
+
+    let canonical_path = raw_path
+        .canonicalize()
+        .map_err(|err| format!("Failed to resolve directory path: {err}"))?;
+    let metadata = std::fs::metadata(&canonical_path)
+        .map_err(|err| format!("Failed to read directory metadata: {err}"))?;
+    if !metadata.is_dir() {
+        return Err("Path is not a directory.".to_string());
+    }
+
+    let entries = std::fs::read_dir(&canonical_path)
+        .map_err(|err| format!("Failed to read directory: {err}"))?;
+    let scan_started_at = Instant::now();
+    let max_scanned_entries = max_entries
+        .saturating_mul(WORKSPACE_DIRECTORY_SCAN_BUDGET_MULTIPLIER)
+        .max(max_entries);
+    let mut sorted_entries = Vec::new();
+    for entry in entries {
+        if scan_started_at.elapsed() >= WORKSPACE_SCAN_TIME_BUDGET {
+            break;
+        }
+        if sorted_entries.len() >= max_scanned_entries {
+            break;
+        }
+        if let Ok(entry) = entry {
+            sorted_entries.push((entry.file_name().to_string_lossy().to_string(), entry));
+        }
+    }
+    sort_and_truncate_named_entries(&mut sorted_entries, max_scanned_entries);
+
+    let mut files = Vec::new();
+    let mut directories = Vec::new();
+    for (name, entry) in sorted_entries {
+        let path = entry.path();
+        let normalized = normalize_git_path(&path.to_string_lossy());
+        if normalized.is_empty() {
+            continue;
+        }
+        let file_type = match entry.file_type() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if file_type.is_dir() {
+            if should_always_skip(&name) {
+                continue;
+            }
+            directories.push(normalized);
+        } else if file_type.is_file() {
+            if name == ".DS_Store" {
+                continue;
+            }
+            files.push(normalized);
+        }
+
+        if files.len() + directories.len() >= max_entries {
+            break;
+        }
+    }
+
+    files.sort();
+    files.dedup();
+    directories.sort();
+    directories.dedup();
+    Ok(WorkspaceFilesResponse {
+        files,
+        directories,
+        gitignored_files: Vec::new(),
+        gitignored_directories: Vec::new(),
+    })
+}
+
 const MAX_WORKSPACE_FILE_BYTES: u64 = 400_000;
 
 fn read_external_spec_file_inner(
@@ -1042,6 +1126,36 @@ fn read_external_absolute_file_inner(absolute_path: &str) -> Result<WorkspaceFil
 
     let content = decode_text_bytes(&buffer, "File")?;
     Ok(WorkspaceFileResponse { content, truncated })
+}
+
+fn write_external_absolute_file_inner(absolute_path: &str, content: &str) -> Result<(), String> {
+    if content.len() > MAX_WORKSPACE_FILE_BYTES as usize {
+        return Err("File content exceeds maximum allowed size".to_string());
+    }
+
+    let trimmed = absolute_path.trim();
+    if trimmed.is_empty() {
+        return Err("Invalid file path".to_string());
+    }
+
+    let raw_path = PathBuf::from(trimmed);
+    if !raw_path.is_absolute() {
+        return Err("Invalid file path".to_string());
+    }
+
+    let canonical_path = raw_path
+        .canonicalize()
+        .map_err(|err| format!("Failed to open file: {err}"))?;
+
+    let metadata = std::fs::metadata(&canonical_path)
+        .map_err(|err| format!("Failed to read file metadata: {err}"))?;
+    if !metadata.is_file() {
+        return Err("Path is not a file".to_string());
+    }
+
+    std::fs::write(&canonical_path, content)
+        .map_err(|err| format!("Failed to write file: {err}"))?;
+    Ok(())
 }
 
 fn default_data_dir() -> PathBuf {
@@ -1641,6 +1755,14 @@ async fn handle_rpc_request(
                 .await?;
             serde_json::to_value(files).map_err(|err| err.to_string())
         }
+        "list_external_absolute_directory_children" => {
+            let workspace_id = parse_string(&params, "workspaceId")?;
+            let path = parse_string(&params, "path")?;
+            let files = state
+                .list_external_absolute_directory_children(workspace_id, path)
+                .await?;
+            serde_json::to_value(files).map_err(|err| err.to_string())
+        }
         "read_workspace_file" => {
             let workspace_id = parse_string(&params, "workspaceId")?;
             let path = parse_string(&params, "path")?;
@@ -1679,6 +1801,15 @@ async fn handle_rpc_request(
             let content = parse_string(&params, "content")?;
             state
                 .write_external_spec_file(workspace_id, spec_root, path, content)
+                .await?;
+            serde_json::to_value(json!({ "ok": true })).map_err(|err| err.to_string())
+        }
+        "write_external_absolute_file" => {
+            let workspace_id = parse_string(&params, "workspaceId")?;
+            let path = parse_string(&params, "path")?;
+            let content = parse_string(&params, "content")?;
+            state
+                .write_external_absolute_file(workspace_id, path, content)
                 .await?;
             serde_json::to_value(json!({ "ok": true })).map_err(|err| err.to_string())
         }

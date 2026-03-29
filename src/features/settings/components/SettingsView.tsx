@@ -654,8 +654,7 @@ export function SettingsView({
     [],
   );
   const shouldShowWorkspaceSelector =
-    activeSection === "prompts" ||
-    activeSection === "skills";
+    activeSection === "prompts";
   const mcpSectionDisabled = TEMPORARILY_DISABLED_SIDEBAR_SECTIONS.has("mcp");
   const permissionsSectionDisabled = TEMPORARILY_DISABLED_SIDEBAR_SECTIONS.has("permissions");
   const promptsSectionDisabled = TEMPORARILY_DISABLED_SIDEBAR_SECTIONS.has("prompts");

@@ -1320,6 +1320,20 @@ impl DaemonState {
         .await
     }
 
+    pub(super) async fn list_external_absolute_directory_children(
+        &self,
+        workspace_id: String,
+        path: String,
+    ) -> Result<WorkspaceFilesResponse, String> {
+        {
+            let workspaces = self.workspaces.lock().await;
+            if !workspaces.contains_key(&workspace_id) {
+                return Err(format!("Workspace not found: {workspace_id}"));
+            }
+        }
+        list_external_absolute_directory_children_inner(&path, 2_000)
+    }
+
     pub(super) async fn read_workspace_file(
         &self,
         workspace_id: String,
@@ -1391,6 +1405,21 @@ impl DaemonState {
             }
         }
         write_external_spec_file_inner(&spec_root, &path, &content)
+    }
+
+    pub(super) async fn write_external_absolute_file(
+        &self,
+        workspace_id: String,
+        path: String,
+        content: String,
+    ) -> Result<(), String> {
+        {
+            let workspaces = self.workspaces.lock().await;
+            if !workspaces.contains_key(&workspace_id) {
+                return Err(format!("Workspace not found: {workspace_id}"));
+            }
+        }
+        write_external_absolute_file_inner(&path, &content)
     }
 
     pub(super) async fn file_read(

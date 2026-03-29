@@ -6,19 +6,41 @@
 
 English:
 
+✨ Features
+- Complete Web Git RPC support in local daemon and improve Git operation coverage in Web mode
+- Harden multi-engine history-chain recovery in Web mode for more reliable cross-engine session replay
+- Enhance Session Activity with richer `search_query` tool-chain rendering and history restoration
+- Add a client icon before Home Chat title and polish the welcome-area presentation
+
 🔧 Improvements
 - Unify File changes and Batch icons with refined theme color palette for better visual consistency
 
 🐛 Fixes
 - Fix Claude Thread session switching and history chain disruption caused by screenshot messages
+- Reduce noisy "missing file" warnings in detached file-explorer monitoring
+- Fix daemon binary path resolution failure during local web-service auto-start
+- Fix history-fetch lock-up for non-default projects after a single failed request
+- Align file-tree Git folder status coloring with change-path semantics
+- Fix packaged-build white screen caused by missing Web static resources
 
 中文：
+
+✨ Features
+- 补齐本地 daemon 的 Web Git RPC 能力，完善 Web 模式下的 Git 操作覆盖
+- 加固 Web 模式多引擎历史链路恢复，提升跨引擎会话回放稳定性
+- 增强 Session Activity 的 `search_query` 工具链路展示与历史恢复能力
+- 在 Home Chat 标题前新增客户端图标，并优化欢迎区域展示
 
 🔧 Improvements
 - 统一 File changes 与 Batch 图标并完善主题配色，提升视觉一致性
 
 🐛 Fixes
 - 修复截图消息导致 Claude Thread 会话切换和历史链路断裂的问题
+- 降噪 detached 文件窗口监控中的“缺失文件”告警提示
+- 修复本地 web-service 自动启动时 daemon 二进制路径定位失败
+- 修复非默认项目历史拉取在单次失败后锁死的问题
+- 对齐文件树 Git 文件夹状态着色与变更路径语义
+- 修复安装包缺失 Web 静态资源导致白屏路径异常
 
 ---
 

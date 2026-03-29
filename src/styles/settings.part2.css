@@ -1538,68 +1538,6 @@
   color: var(--text-muted);
 }
 
-.settings-search-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 220px;
-}
-
-.settings-search-field > svg {
-  color: var(--text-faint);
-}
-
-.settings-skills-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 8px;
-}
-
-.settings-skills-card {
-  border: 1px solid var(--border-muted);
-  border-radius: 10px;
-  background: var(--surface-card);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.settings-skills-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.settings-skills-name {
-  font-size: 13px;
-  color: var(--text-strong);
-  font-weight: 600;
-}
-
-.settings-skills-source {
-  font-size: 11px;
-  color: var(--text-muted);
-  border-radius: 999px;
-  border: 1px solid var(--border-muted);
-  padding: 2px 8px;
-}
-
-.settings-skills-description {
-  font-size: 12px;
-  color: var(--text-subtle);
-}
-
-.settings-skills-path {
-  font-size: 11px;
-  color: var(--text-faint);
-  word-break: break-all;
-}
-
-.settings-skills-actions {
-  display: flex;
-}
 
 .settings-prompt-editor-card,
 .settings-prompt-card {

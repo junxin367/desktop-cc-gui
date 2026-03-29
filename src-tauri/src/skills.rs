@@ -19,9 +19,11 @@ const SKILL_SOURCE_WORKSPACE_MANAGED: &str = "workspace_managed";
 const SKILL_SOURCE_PROJECT_CLAUDE: &str = "project_claude";
 const SKILL_SOURCE_PROJECT_CODEX: &str = "project_codex";
 const SKILL_SOURCE_PROJECT_AGENTS: &str = "project_agents";
+const SKILL_SOURCE_PROJECT_GEMINI: &str = "project_gemini";
 const SKILL_SOURCE_GLOBAL_CLAUDE: &str = "global_claude";
 const SKILL_SOURCE_GLOBAL_CODEX: &str = "global_codex";
 const SKILL_SOURCE_GLOBAL_AGENTS: &str = "global_agents";
+const SKILL_SOURCE_GLOBAL_GEMINI: &str = "global_gemini";
 
 #[derive(Serialize, Clone, Debug)]
 pub(crate) struct SkillEntry {
@@ -126,6 +128,19 @@ fn default_agents_skills_dir() -> Option<PathBuf> {
     resolve_default_agents_home().map(|home| home.join("skills"))
 }
 
+fn resolve_default_gemini_home() -> Option<PathBuf> {
+    if let Ok(value) = env::var("GEMINI_HOME") {
+        if let Some(path) = normalize_home_path(&value) {
+            return Some(path);
+        }
+    }
+    dirs::home_dir().map(|home| home.join(".gemini"))
+}
+
+fn default_gemini_skills_dir() -> Option<PathBuf> {
+    resolve_default_gemini_home().map(|home| home.join("skills"))
+}
+
 fn workspace_skills_dir(state: &AppState, entry: &WorkspaceEntry) -> Result<PathBuf, String> {
     let data_dir = state
         .settings_path
@@ -152,7 +167,10 @@ fn normalize_skill_name(name: &str) -> String {
 }
 
 fn is_global_source(source: &str) -> bool {
-    source.starts_with("global_")
+    source == SKILL_SOURCE_GLOBAL_CLAUDE
+        || source == SKILL_SOURCE_GLOBAL_CODEX
+        || source == SKILL_SOURCE_GLOBAL_AGENTS
+        || source == SKILL_SOURCE_GLOBAL_GEMINI
 }
 
 /// Extract description from YAML frontmatter of a .md file.
@@ -200,6 +218,9 @@ fn extract_description(path: &Path) -> Option<String> {
                     if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
                         val = val[1..val.len() - 1].to_string();
                     }
+                }
+                if matches!(val.as_str(), "|" | ">" | "|-" | ">-" | "|+" | ">+") {
+                    continue;
                 }
                 if !val.is_empty() {
                     description = Some(val);
@@ -330,20 +351,23 @@ fn discover_skills_in(dir: &Path, source: &str) -> Result<Vec<SkillEntry>, Skill
 fn merge_skills_by_priority(sources: Vec<Vec<SkillEntry>>) -> Vec<SkillEntry> {
     let mut merged: Vec<SkillEntry> = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
-    let mut seen_global_names: HashSet<String> = HashSet::new();
+    let mut seen_global_keys: HashSet<String> = HashSet::new();
 
     for source in sources {
         for skill in source {
             let normalized_name = normalize_skill_name(&skill.name);
-            let seen = if is_global_source(&skill.source) {
-                &mut seen_global_names
+            if is_global_source(&skill.source) {
+                let global_key = format!("{}::{normalized_name}", skill.source);
+                if seen_global_keys.contains(&global_key) {
+                    continue;
+                }
+                seen_global_keys.insert(global_key);
             } else {
-                &mut seen_names
-            };
-            if seen.contains(&normalized_name) {
-                continue;
+                if seen_names.contains(&normalized_name) {
+                    continue;
+                }
+                seen_names.insert(normalized_name);
             }
-            seen.insert(normalized_name);
             merged.push(skill);
         }
     }
@@ -365,9 +389,11 @@ pub(crate) async fn skills_list_local_for_workspace(
         project_claude_dir,
         project_codex_dir,
         project_agents_dir,
+        project_gemini_dir,
         claude_global_dir,
         codex_global_dir,
         agents_global_dir,
+        gemini_global_dir,
     ) = {
         let workspaces = state.workspaces.lock().await;
         let entry = workspaces
@@ -377,17 +403,21 @@ pub(crate) async fn skills_list_local_for_workspace(
         let project_claude_dir = project_claude_skills_dir(entry);
         let project_codex_dir = project_codex_skills_dir(entry);
         let project_agents_dir = project_agents_skills_dir(entry);
+        let project_gemini_dir = PathBuf::from(&entry.path).join(".gemini").join("skills");
         let codex_dir = default_skills_dir_for_workspace(&workspaces, entry);
         let claude_dir = default_claude_skills_dir();
         let agents_dir = default_agents_skills_dir();
+        let gemini_dir = default_gemini_skills_dir();
         (
             ws_dir,
             Some(project_claude_dir),
             Some(project_codex_dir),
             Some(project_agents_dir),
+            Some(project_gemini_dir),
             claude_dir,
             codex_dir,
             agents_dir,
+            gemini_dir,
         )
     };
 
@@ -423,6 +453,10 @@ pub(crate) async fn skills_list_local_for_workspace(
             Some(dir) => safe_discover(dir, SKILL_SOURCE_PROJECT_AGENTS),
             None => Vec::new(),
         };
+        let project_gemini_skills = match &project_gemini_dir {
+            Some(dir) => safe_discover(dir, SKILL_SOURCE_PROJECT_GEMINI),
+            None => Vec::new(),
+        };
 
         let claude_skills = match &claude_global_dir {
             Some(dir) => safe_discover(dir, SKILL_SOURCE_GLOBAL_CLAUDE),
@@ -438,14 +472,21 @@ pub(crate) async fn skills_list_local_for_workspace(
             None => Vec::new(),
         };
 
+        let gemini_skills = match &gemini_global_dir {
+            Some(dir) => safe_discover(dir, SKILL_SOURCE_GLOBAL_GEMINI),
+            None => Vec::new(),
+        };
+
         Ok(merge_skills_by_priority(vec![
             workspace_skills,
             project_claude_skills,
             project_codex_skills,
             project_agents_skills,
+            project_gemini_skills,
             claude_skills,
             codex_skills,
             agents_skills,
+            gemini_skills,
         ]))
     })
     .await
@@ -537,7 +578,7 @@ mod tests {
             vec![agents_skill],
         ]);
 
-        assert_eq!(merged.len(), 2);
+        assert_eq!(merged.len(), 4);
         assert!(merged.iter().any(|entry| {
             entry.name == "shared"
                 && entry.path == workspace_skill.path
@@ -547,6 +588,16 @@ mod tests {
             entry.name == "shared"
                 && entry.source == SKILL_SOURCE_GLOBAL_CLAUDE
                 && entry.path == "/home/.claude/skills/shared.md"
+        }));
+        assert!(merged.iter().any(|entry| {
+            entry.name == "shared"
+                && entry.source == SKILL_SOURCE_GLOBAL_CODEX
+                && entry.path == "/home/.codex/skills/shared.md"
+        }));
+        assert!(merged.iter().any(|entry| {
+            entry.name == "shared"
+                && entry.source == SKILL_SOURCE_GLOBAL_AGENTS
+                && entry.path == "/home/.agents/skills/shared.md"
         }));
     }
 

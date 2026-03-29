@@ -1333,6 +1333,16 @@ export async function getWorkspaceDirectoryChildren(
   });
 }
 
+export async function listExternalAbsoluteDirectoryChildren(
+  workspaceId: string,
+  path: string,
+) {
+  return invoke<WorkspaceFilesResponse>("list_external_absolute_directory_children", {
+    workspaceId,
+    path,
+  });
+}
+
 export async function searchWorkspaceText(
   workspaceId: string,
   options: {
@@ -1413,6 +1423,14 @@ export async function writeExternalSpecFile(
   content: string,
 ): Promise<void> {
   return invoke("write_external_spec_file", { workspaceId, specRoot, path, content });
+}
+
+export async function writeExternalAbsoluteFile(
+  workspaceId: string,
+  path: string,
+  content: string,
+): Promise<void> {
+  return invoke("write_external_absolute_file", { workspaceId, path, content });
 }
 
 export async function trashWorkspaceItem(

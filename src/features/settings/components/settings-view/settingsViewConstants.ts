@@ -21,5 +21,4 @@ export const TEMPORARILY_DISABLED_SIDEBAR_SECTIONS = new Set([
   "mcp",
   "permissions",
   "prompts",
-  "skills",
 ] as const);
