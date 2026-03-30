@@ -76,6 +76,9 @@ import {
   normalizeComparablePath,
   normalizeFsPath,
   resolveFileReadTarget,
+  resolveGitRootWorkspacePrefix,
+  resolveGitStatusPathCandidates,
+  resolveWorkspacePathCandidates,
 } from "../../../utils/workspacePaths";
 import {
   reduceExternalChangeSyncState,
@@ -85,6 +88,7 @@ import {
 type FileViewPanelProps = {
   workspaceId: string;
   workspacePath: string;
+  gitRoot?: string | null;
   customSpecRoot?: string | null;
   filePath: string;
   gitStatusFiles?: GitFileStatus[];
@@ -522,6 +526,7 @@ function hasGitLineMarkers(markers: GitLineMarkers | null | undefined) {
 export function FileViewPanel({
   workspaceId,
   workspacePath,
+  gitRoot = null,
   customSpecRoot = null,
   filePath,
   gitStatusFiles,
@@ -626,27 +631,71 @@ export function FileViewPanel({
 
   const isDirty = content !== savedContentRef.current;
   latestIsDirtyRef.current = isDirty;
+  const gitRootWorkspacePrefix = useMemo(
+    () => resolveGitRootWorkspacePrefix(workspacePath, gitRoot),
+    [gitRoot, workspacePath],
+  );
   const gitStatusMap = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, { status: string; path: string }>();
     if (!gitStatusFiles) {
       return map;
     }
     for (const entry of gitStatusFiles) {
-      map.set(entry.path, entry.status);
+      const entryPath = entry.path?.trim();
+      const entryStatus = entry.status?.trim();
+      if (!entryPath || !entryStatus) {
+        continue;
+      }
+      const candidates = resolveGitStatusPathCandidates(
+        workspacePath,
+        gitRootWorkspacePrefix,
+        entryPath,
+      );
+      for (const candidate of candidates) {
+        if (!map.has(candidate)) {
+          map.set(candidate, { status: entryStatus, path: entryPath });
+        }
+      }
     }
     return map;
-  }, [gitStatusFiles]);
+  }, [gitRootWorkspacePrefix, gitStatusFiles, workspacePath]);
   const fileReadTarget = useMemo(
     () => resolveFileReadTarget(workspacePath, filePath, customSpecRoot),
     [workspacePath, filePath, customSpecRoot],
   );
   const workspaceRelativeFilePath = fileReadTarget.workspaceRelativePath;
-  const fileGitStatus = useMemo(
-    () =>
-      gitStatusMap.get(workspaceRelativeFilePath) ??
-      gitStatusMap.get(filePath) ??
-      null,
-    [gitStatusMap, workspaceRelativeFilePath, filePath],
+  const matchedGitStatus = useMemo(() => {
+    const fileCandidates = new Set<string>([
+      ...resolveWorkspacePathCandidates(workspacePath, workspaceRelativeFilePath),
+      ...resolveWorkspacePathCandidates(workspacePath, filePath),
+    ]);
+    for (const candidate of fileCandidates) {
+      const matched = gitStatusMap.get(candidate);
+      if (matched) {
+        return matched;
+      }
+    }
+    return null;
+  }, [
+    filePath,
+    gitRootWorkspacePrefix,
+    gitStatusMap,
+    workspacePath,
+    workspaceRelativeFilePath,
+  ]);
+  const fileGitStatus = matchedGitStatus?.status ?? null;
+  const gitDiffTargetPath = matchedGitStatus?.path ?? workspaceRelativeFilePath;
+  const resolveMatchedGitStatusByPath = useCallback(
+    (path: string) => {
+      for (const candidate of resolveWorkspacePathCandidates(workspacePath, path)) {
+        const matched = gitStatusMap.get(candidate);
+        if (matched) {
+          return matched;
+        }
+      }
+      return null;
+    },
+    [gitStatusMap, workspacePath],
   );
   const fileGitStatusClass = fileGitStatus ? `git-${fileGitStatus.toLowerCase()}` : "";
   const absolutePath = useMemo(
@@ -839,7 +888,7 @@ export function FileViewPanel({
     }
 
     let cancelled = false;
-    getGitFileFullDiff(workspaceId, workspaceRelativeFilePath)
+    getGitFileFullDiff(workspaceId, gitDiffTargetPath)
       .then((diff) => {
         if (cancelled) {
           return;
@@ -857,7 +906,7 @@ export function FileViewPanel({
     };
   }, [
     workspaceId,
-    workspaceRelativeFilePath,
+    gitDiffTargetPath,
     fileGitStatus,
     fileReadTarget.domain,
     hasExplicitHighlightMarkers,
@@ -2141,7 +2190,7 @@ export function FileViewPanel({
         {visibleTabs.map((tabPath) => {
           const isActive = (activeTabPath ?? filePath) === tabPath;
           const tabName = tabPath.split("/").pop() || tabPath;
-          const tabGitStatus = gitStatusMap.get(tabPath) ?? null;
+          const tabGitStatus = resolveMatchedGitStatusByPath(tabPath)?.status ?? null;
           const tabGitStatusClass = tabGitStatus ? `git-${tabGitStatus.toLowerCase()}` : "";
           return (
             <div

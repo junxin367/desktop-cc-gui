@@ -287,6 +287,78 @@ describe("FileTreePanel run action isolation", () => {
     expect(fileLabel.className).toContain("git-m");
   });
 
+  it("applies git color class for repo-relative status when git root is a workspace subdirectory", () => {
+    render(
+      <FileTreePanel
+        workspaceId="workspace-1"
+        workspacePath="/tmp/JinSen"
+        gitRoot="kmllm-search-showcar-py"
+        files={["kmllm-search-showcar-py/README.md", "km-chat-new-web/README.md"]}
+        directories={["kmllm-search-showcar-py", "km-chat-new-web"]}
+        isLoading={false}
+        filePanelMode="files"
+        onFilePanelModeChange={() => undefined}
+        onOpenFile={() => undefined}
+        onInsertText={() => undefined}
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={() => undefined}
+        gitStatusFiles={[
+          {
+            path: "README.md",
+            status: "M",
+            additions: 1,
+            deletions: 0,
+          },
+        ]}
+        gitignoredFiles={new Set<string>()}
+      />,
+    );
+
+    fireEvent.doubleClick(screen.getByRole("button", { name: /kmllm-search-showcar-py/ }));
+    const fileLabel = screen.getByText("README.md");
+    expect(fileLabel.className).toContain("git-m");
+  });
+
+  it("does not apply subrepo repo-relative status to workspace root file with same name", () => {
+    render(
+      <FileTreePanel
+        workspaceId="workspace-1"
+        workspacePath="/tmp/JinSen"
+        gitRoot="kmllm-search-showcar-py"
+        files={["README.md", "kmllm-search-showcar-py/README.md"]}
+        directories={["kmllm-search-showcar-py"]}
+        isLoading={false}
+        filePanelMode="files"
+        onFilePanelModeChange={() => undefined}
+        onOpenFile={() => undefined}
+        onInsertText={() => undefined}
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={() => undefined}
+        gitStatusFiles={[
+          {
+            path: "README.md",
+            status: "M",
+            additions: 1,
+            deletions: 0,
+          },
+        ]}
+        gitignoredFiles={new Set<string>()}
+      />,
+    );
+
+    fireEvent.doubleClick(screen.getByRole("button", { name: /kmllm-search-showcar-py/ }));
+    const readmeLabels = screen.getAllByText("README.md");
+    expect(readmeLabels).toHaveLength(2);
+    const highlightedLabels = readmeLabels.filter((label) =>
+      label.className.includes("git-m"),
+    );
+    expect(highlightedLabels).toHaveLength(1);
+  });
+
   it("applies folder git status from deep git path even when file node is not listed", () => {
     render(
       <FileTreePanel
@@ -317,6 +389,40 @@ describe("FileTreePanel run action isolation", () => {
 
     const folderLabel = screen.getByText("src-tauri.src");
     expect(folderLabel.className).toContain("git-m");
+  });
+
+  it("does not render folder label as deleted when only nested files are deleted", () => {
+    render(
+      <FileTreePanel
+        workspaceId="workspace-1"
+        workspacePath="/tmp/JinSen"
+        gitRoot="kmllm-search-showcar-py"
+        files={[]}
+        directories={["kmllm-search-showcar-py"]}
+        isLoading={false}
+        filePanelMode="files"
+        onFilePanelModeChange={() => undefined}
+        onOpenFile={() => undefined}
+        onInsertText={() => undefined}
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={() => undefined}
+        gitStatusFiles={[
+          {
+            path: "obsolete.txt",
+            status: "D",
+            additions: 0,
+            deletions: 10,
+          },
+        ]}
+        gitignoredFiles={new Set<string>()}
+      />,
+    );
+
+    const folderLabel = screen.getByText("kmllm-search-showcar-py");
+    expect(folderLabel.className).toContain("git-m");
+    expect(folderLabel.className).not.toContain("git-d");
   });
 
   it("keeps sticky-top and scroll-list containers separated in DOM structure", () => {

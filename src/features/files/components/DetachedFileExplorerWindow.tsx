@@ -27,6 +27,7 @@ function buildDetachedWorkspaceInfo(session: {
   workspaceId: string;
   workspaceName: string;
   workspacePath: string;
+  gitRoot?: string | null;
 }): WorkspaceInfo {
   return {
     id: session.workspaceId,
@@ -35,6 +36,7 @@ function buildDetachedWorkspaceInfo(session: {
     connected: true,
     settings: {
       sidebarCollapsed: false,
+      gitRoot: session.gitRoot ?? null,
     },
   };
 }
@@ -208,6 +210,7 @@ export function DetachedFileExplorerWindow() {
         workspaceId={session.workspaceId}
         workspaceName={session.workspaceName}
         workspacePath={session.workspacePath}
+        gitRoot={session.gitRoot ?? null}
         files={files}
         directories={directories}
         isLoading={isLoading}

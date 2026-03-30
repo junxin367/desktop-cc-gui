@@ -1313,6 +1313,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         workspaceId={options.activeWorkspace.id}
         workspaceName={options.activeWorkspace.name}
         workspacePath={options.activeWorkspace.path}
+        gitRoot={options.gitRoot}
         files={options.files}
         directories={options.directories}
         isLoading={options.fileTreeLoading}
@@ -1505,6 +1506,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       <FileViewPanel
         workspaceId={options.activeWorkspace.id}
         workspacePath={options.activeWorkspace.path}
+        gitRoot={options.gitRoot}
         customSpecRoot={activeWorkspaceCustomSpecRoot}
         filePath={options.editorFilePath}
         navigationTarget={options.editorNavigationTarget}

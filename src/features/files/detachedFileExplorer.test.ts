@@ -158,6 +158,7 @@ describe("detachedFileExplorer", () => {
       workspaceId: "ws-3",
       workspacePath: "/tmp/project",
       workspaceName: "project",
+      gitRoot: null,
       initialFilePath: null,
       updatedAt: 123,
     });

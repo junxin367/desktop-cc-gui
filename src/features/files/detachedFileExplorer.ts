@@ -12,6 +12,7 @@ export type DetachedFileExplorerSession = {
   workspaceId: string;
   workspacePath: string;
   workspaceName: string;
+  gitRoot?: string | null;
   initialFilePath?: string | null;
   updatedAt: number;
 };
@@ -30,6 +31,7 @@ export function normalizeDetachedFileExplorerSession(
   const workspaceId = normalizeString(candidate.workspaceId);
   const workspacePath = normalizeString(candidate.workspacePath);
   const workspaceName = normalizeString(candidate.workspaceName);
+  const gitRoot = normalizeString(candidate.gitRoot);
   const initialFilePath = normalizeString(candidate.initialFilePath);
   const updatedAt =
     typeof candidate.updatedAt === "number" && Number.isFinite(candidate.updatedAt)
@@ -42,6 +44,7 @@ export function normalizeDetachedFileExplorerSession(
     workspaceId,
     workspacePath,
     workspaceName,
+    gitRoot: gitRoot || null,
     initialFilePath: initialFilePath || null,
     updatedAt,
   };
@@ -51,12 +54,14 @@ export function buildDetachedFileExplorerSession(input: {
   workspaceId: string;
   workspacePath: string;
   workspaceName: string;
+  gitRoot?: string | null;
   initialFilePath?: string | null;
 }): DetachedFileExplorerSession {
   return {
     workspaceId: input.workspaceId.trim(),
     workspacePath: input.workspacePath.trim(),
     workspaceName: input.workspaceName.trim(),
+    gitRoot: input.gitRoot?.trim() || null,
     initialFilePath: input.initialFilePath?.trim() || null,
     updatedAt: Date.now(),
   };

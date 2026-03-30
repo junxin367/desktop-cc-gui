@@ -24,6 +24,7 @@ type FileExplorerWorkspaceProps = {
   workspaceId: string;
   workspaceName: string;
   workspacePath: string;
+  gitRoot?: string | null;
   files: string[];
   directories: string[];
   isLoading: boolean;
@@ -51,6 +52,7 @@ export function FileExplorerWorkspace({
   workspaceId,
   workspaceName,
   workspacePath,
+  gitRoot = null,
   files,
   directories,
   isLoading,
@@ -169,6 +171,7 @@ export function FileExplorerWorkspace({
           workspaceId={workspaceId}
           workspaceName={workspaceName}
           workspacePath={workspacePath}
+          gitRoot={gitRoot}
           files={files}
           directories={directories}
           isLoading={isLoading}
@@ -224,6 +227,7 @@ export function FileExplorerWorkspace({
           <FileViewPanel
             workspaceId={workspaceId}
             workspacePath={workspacePath}
+            gitRoot={gitRoot}
             filePath={activeFilePath}
             gitStatusFiles={gitStatusFiles}
             navigationTarget={navigationTarget}

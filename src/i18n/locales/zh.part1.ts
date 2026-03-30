@@ -1984,6 +1984,7 @@ const zhPart1 = {
       unreadMark: "未读",
       readMark: "已读",
       deleteHistoryEntry: "删除“{{name}}”",
+      deleteDateGroupEntries: "删除 {{date}} 当天的全部 {{count}} 条记录",
     },
     status: {
       running: "运行中",

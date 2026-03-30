@@ -23,6 +23,15 @@ type WorkspaceSessionRadarPanelProps = {
   onSelectThread: (workspaceId: string, threadId: string) => void;
 };
 
+type RadarDeleteIconButtonProps = {
+  className: string;
+  ariaLabel: string;
+  title: string;
+  disabled: boolean;
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  iconSize: number;
+};
+
 const WORKSPACE_ACCENT_PALETTE = [
   "#c2410c",
   "#d97706",
@@ -105,6 +114,28 @@ function resolveWorkspaceAccent(workspaceSeed: string) {
   return WORKSPACE_ACCENT_PALETTE[paletteIndex];
 }
 
+function RadarDeleteIconButton({
+  className,
+  ariaLabel,
+  title,
+  disabled,
+  onClick,
+  iconSize,
+}: RadarDeleteIconButtonProps) {
+  return (
+    <button
+      type="button"
+      className={`session-activity-radar-delete-icon-button ${className}`}
+      onClick={onClick}
+      aria-label={ariaLabel}
+      title={title}
+      disabled={disabled}
+    >
+      <Trash2 size={iconSize} aria-hidden />
+    </button>
+  );
+}
+
 export function WorkspaceSessionRadarPanel({
   runningSessions,
   recentCompletedSessions,
@@ -165,6 +196,60 @@ export function WorkspaceSessionRadarPanel({
   const renderReadMarkerIcon = (isUnreadRecent: boolean) =>
     isUnreadRecent ? <BellDot size={11} aria-hidden /> : <CheckCheck size={11} aria-hidden />;
 
+  const deleteRecentEntries = (entries: SessionRadarEntry[]) => {
+    const dedupedTargets = new Map<
+      string,
+      {
+        id: string;
+        completedAt: number;
+      }
+    >();
+    for (const entry of entries) {
+      dedupedTargets.set(entry.id, {
+        id: entry.id,
+        completedAt: entry.completedAt ?? entry.updatedAt,
+      });
+    }
+    if (dedupedTargets.size === 0) {
+      return;
+    }
+    const targetIds = Array.from(dedupedTargets.keys());
+    if (targetIds.some((entryId) => deletingEntryIds[entryId])) {
+      return;
+    }
+    setDeletingEntryIds((current) => {
+      const next = { ...current };
+      targetIds.forEach((entryId) => {
+        next[entryId] = true;
+      });
+      return next;
+    });
+    try {
+      const result = deleteSessionRadarHistoryEntries(Array.from(dedupedTargets.values()));
+      if (result.succeededEntryIds.length > 0) {
+        const succeededIdSet = new Set(result.succeededEntryIds);
+        setPreviewExpandedById((current) =>
+          Object.fromEntries(
+            Object.entries(current).filter(([entryId]) => !succeededIdSet.has(entryId)),
+          ),
+        );
+        setReadStateById((current) =>
+          Object.fromEntries(
+            Object.entries(current).filter(([entryId]) => !succeededIdSet.has(entryId)),
+          ),
+        );
+      }
+    } finally {
+      setDeletingEntryIds((current) => {
+        const next = { ...current };
+        targetIds.forEach((entryId) => {
+          delete next[entryId];
+        });
+        return next;
+      });
+    }
+  };
+
   const togglePreviewAndSelectThread = (entry: SessionRadarEntry) => {
     markEntryAsRead(entry);
     setPreviewExpandedById((current) => {
@@ -177,47 +262,21 @@ export function WorkspaceSessionRadarPanel({
   const handleDeleteRecentEntry = (event: MouseEvent<HTMLButtonElement>, entry: SessionRadarEntry) => {
     event.preventDefault();
     event.stopPropagation();
-    if (deletingEntryIds[entry.id]) {
-      return;
-    }
-    setDeletingEntryIds((current) => ({ ...current, [entry.id]: true }));
-    try {
-      const result = deleteSessionRadarHistoryEntries([
-        {
-          id: entry.id,
-          completedAt: entry.completedAt ?? entry.updatedAt,
-        },
-      ]);
-      if (result.succeededEntryIds.includes(entry.id)) {
-        setPreviewExpandedById((current) => {
-          if (!(entry.id in current)) {
-            return current;
-          }
-          const { [entry.id]: _unused, ...rest } = current;
-          return rest;
-        });
-        setReadStateById((current) => {
-          if (!(entry.id in current)) {
-            return current;
-          }
-          const { [entry.id]: _unused, ...rest } = current;
-          return rest;
-        });
-      }
-    } finally {
-      setDeletingEntryIds((current) => {
-        if (!(entry.id in current)) {
-          return current;
-        }
-        const { [entry.id]: _unused, ...rest } = current;
-        return rest;
-      });
-    }
+    deleteRecentEntries([entry]);
+  };
+
+  const handleDeleteDateGroupEntries = (
+    event: MouseEvent<HTMLButtonElement>,
+    groupEntries: SessionRadarEntry[],
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    deleteRecentEntries(groupEntries);
   };
 
   const handleRecentRowActionsClick = (event: MouseEvent<HTMLSpanElement>, entry: SessionRadarEntry) => {
     const clickTarget = event.target as HTMLElement | null;
-    if (clickTarget?.closest(".session-activity-radar-delete-button")) {
+    if (clickTarget?.closest(".session-activity-radar-delete-icon-button")) {
       return;
     }
     event.preventDefault();
@@ -351,40 +410,55 @@ export function WorkspaceSessionRadarPanel({
           <div className="session-activity-radar-list">
             {groupEntries.map(([dateKey, group]) => {
               const isCollapsed = collapsedDateGroups[dateKey] ?? true;
+              const isDeletingDateGroup = group.some((entry) => Boolean(deletingEntryIds[entry.id]));
+              const deleteDateGroupLabel = t("activityPanel.radar.deleteDateGroupEntries", {
+                date: dateKey,
+                count: group.length,
+              });
               return (
                 <div key={dateKey} className="session-activity-radar-date-group">
-                  <button
-                    type="button"
-                    className="session-activity-radar-date-toggle"
-                    onClick={() => {
-                      setCollapsedDateGroups((current) => {
-                        const next = { ...current, [dateKey]: !isCollapsed };
-                        writeClientStoreValue(
-                          RADAR_STORE_NAME,
-                          SESSION_RADAR_COLLAPSED_DATE_GROUPS_KEY,
-                          next,
-                          { immediate: true },
-                        );
-                        if (!isCollapsed) {
-                          setPreviewExpandedById((expandedCurrent) => {
-                            const expandedNext = { ...expandedCurrent };
-                            for (const entry of group) {
-                              delete expandedNext[entry.id];
-                            }
-                            return expandedNext;
-                          });
-                        }
-                        return next;
-                      })
-                    }}
-                  >
-                    <span className="session-activity-radar-date-toggle-left">
-                      <CalendarDays size={14} aria-hidden />
-                      {isCollapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
-                      <span>{dateKey}</span>
-                    </span>
-                    <span className="session-activity-radar-date-toggle-count">{group.length}</span>
-                  </button>
+                  <div className="session-activity-radar-date-group-header">
+                    <button
+                      type="button"
+                      className="session-activity-radar-date-toggle"
+                      onClick={() => {
+                        setCollapsedDateGroups((current) => {
+                          const next = { ...current, [dateKey]: !isCollapsed };
+                          writeClientStoreValue(
+                            RADAR_STORE_NAME,
+                            SESSION_RADAR_COLLAPSED_DATE_GROUPS_KEY,
+                            next,
+                            { immediate: true },
+                          );
+                          if (!isCollapsed) {
+                            setPreviewExpandedById((expandedCurrent) => {
+                              const expandedNext = { ...expandedCurrent };
+                              for (const entry of group) {
+                                delete expandedNext[entry.id];
+                              }
+                              return expandedNext;
+                            });
+                          }
+                          return next;
+                        })
+                      }}
+                    >
+                      <span className="session-activity-radar-date-toggle-left">
+                        <CalendarDays size={14} aria-hidden />
+                        {isCollapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+                        <span>{dateKey}</span>
+                      </span>
+                      <span className="session-activity-radar-date-toggle-count">{group.length}</span>
+                    </button>
+                    <RadarDeleteIconButton
+                      className="session-activity-radar-date-group-delete-button is-date-group"
+                      onClick={(event) => handleDeleteDateGroupEntries(event, group)}
+                      ariaLabel={deleteDateGroupLabel}
+                      title={deleteDateGroupLabel}
+                      disabled={isDeletingDateGroup}
+                      iconSize={12}
+                    />
+                  </div>
                   {!isCollapsed ? (
                     <div className="session-activity-radar-date-group-list">
                       {group.map((entry) => {
@@ -467,16 +541,14 @@ export function WorkspaceSessionRadarPanel({
                                 {renderReadMarkerIcon(isUnreadRecent)}
                               </span>
                               {showDeleteAction ? (
-                                <button
-                                  type="button"
-                                  className="session-activity-radar-delete-button"
+                                <RadarDeleteIconButton
+                                  className="session-activity-radar-delete-button is-entry"
                                   onClick={(event) => handleDeleteRecentEntry(event, entry)}
-                                  aria-label={t("activityPanel.radar.deleteHistoryEntry", { name: entry.threadName })}
+                                  ariaLabel={t("activityPanel.radar.deleteHistoryEntry", { name: entry.threadName })}
                                   title={t("activityPanel.radar.deleteHistoryEntry", { name: entry.threadName })}
                                   disabled={isDeletingRecentEntry}
-                                >
-                                  <Trash2 size={12} aria-hidden />
-                                </button>
+                                  iconSize={11}
+                                />
                               ) : null}
                             </span>
                           </div>

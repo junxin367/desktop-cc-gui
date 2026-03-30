@@ -91,6 +91,7 @@ vi.mock("../hooks/useDetachedFileExplorerSession", () => ({
     workspaceId: "ws-1",
     workspacePath: "/tmp/workspace",
     workspaceName: "workspace",
+    gitRoot: "nested/repo",
     initialFilePath: null,
     updatedAt: 1,
   }),
@@ -125,6 +126,9 @@ describe("DetachedFileExplorerWindow", () => {
       activeWorkspace: expect.objectContaining({
         id: "ws-1",
         path: "/tmp/workspace",
+        settings: expect.objectContaining({
+          gitRoot: "nested/repo",
+        }),
       }),
       pollingEnabled: false,
     });
@@ -137,6 +141,7 @@ describe("DetachedFileExplorerWindow", () => {
     );
     expect(fileExplorerWorkspaceMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
+        gitRoot: "nested/repo",
         gitStatusFiles: [{ path: "src/index.ts", status: "M", additions: 2, deletions: 1 }],
         fileViewHeaderLayout: "single-row",
       }),

@@ -29,7 +29,10 @@ import {
 } from "../../../services/tauri";
 import type { GitFileStatus, OpenAppTarget } from "../../../types";
 import { languageFromPath } from "../../../utils/syntax";
-import { resolveWorkspaceRelativePath } from "../../../utils/workspacePaths";
+import {
+  resolveGitRootWorkspacePrefix,
+  resolveGitStatusPathCandidates,
+} from "../../../utils/workspacePaths";
 import {
   writeDetachedFileTreeDragSnapshot,
   DETACHED_FILE_TREE_DRAG_BRIDGE_EVENT,
@@ -55,6 +58,7 @@ type FileTreePanelProps = {
   workspaceId: string;
   workspaceName?: string;
   workspacePath: string;
+  gitRoot?: string | null;
   files: string[];
   directories?: string[];
   isLoading: boolean;
@@ -624,6 +628,7 @@ export function FileTreePanel({
   workspaceId,
   workspaceName,
   workspacePath,
+  gitRoot = null,
   files,
   directories,
   isLoading,
@@ -702,6 +707,10 @@ export function FileTreePanel({
     () => resolveWorkspaceRootLabel(workspacePath, workspaceName),
     [workspaceName, workspacePath],
   );
+  const gitRootWorkspacePrefix = useMemo(
+    () => resolveGitRootWorkspacePrefix(workspacePath, gitRoot),
+    [gitRoot, workspacePath],
+  );
   const previewKind = useMemo(
     () => (previewPath && isImagePath(previewPath) ? "image" : "text"),
     [previewPath],
@@ -746,15 +755,20 @@ export function FileTreePanel({
     const map = new Map<string, string>();
     if (gitStatusFiles) {
       for (const entry of gitStatusFiles) {
-        const normalizedPath = resolveWorkspaceRelativePath(workspacePath, entry.path);
-        map.set(entry.path, entry.status);
-        if (normalizedPath) {
-          map.set(normalizedPath, entry.status);
+        const entryPath = entry.path?.trim();
+        const entryStatus = entry.status?.trim();
+        if (!entryPath || !entryStatus) {
+          continue;
         }
+        resolveGitStatusPathCandidates(
+          workspacePath,
+          gitRootWorkspacePrefix,
+          entryPath,
+        ).forEach((path) => map.set(path, entryStatus));
       }
     }
     return map;
-  }, [gitStatusFiles, workspacePath]);
+  }, [gitRootWorkspacePrefix, gitStatusFiles, workspacePath]);
 
   const { nodes, folderPaths } = useMemo(
     () => buildTree(
@@ -768,7 +782,6 @@ export function FileTreePanel({
       mergedFiles,
     ],
   );
-
   const folderGitStatusMap = useMemo(() => {
     if (!gitStatusFiles || gitStatusFiles.length === 0) {
       return new Map<string, string>();
@@ -789,28 +802,33 @@ export function FileTreePanel({
     };
 
     for (const entry of gitStatusFiles) {
-      const normalizedPath = resolveWorkspaceRelativePath(workspacePath, entry.path)
-        .replace(/\\/g, "/")
-        .replace(/^\/+/, "")
-        .trim();
-      if (!normalizedPath) {
+      const entryPath = entry.path?.trim();
+      const entryStatus = entry.status?.trim();
+      if (!entryPath || !entryStatus) {
         continue;
       }
-      const segments = normalizedPath.split("/").filter(Boolean);
-      if (segments.length <= 1) {
-        continue;
-      }
-      let folderPath = "";
-      for (let index = 0; index < segments.length - 1; index += 1) {
-        folderPath = folderPath
-          ? `${folderPath}/${segments[index]}`
-          : segments[index];
-        assignIfHigherPriority(folderPath, entry.status);
-      }
+      const pathCandidates = resolveGitStatusPathCandidates(
+        workspacePath,
+        gitRootWorkspacePrefix,
+        entryPath,
+      );
+      pathCandidates.forEach((candidatePath) => {
+        const segments = candidatePath.split("/").filter(Boolean);
+        if (segments.length <= 1) {
+          return;
+        }
+        let folderPath = "";
+        for (let index = 0; index < segments.length - 1; index += 1) {
+          folderPath = folderPath
+            ? `${folderPath}/${segments[index]}`
+            : segments[index];
+          assignIfHigherPriority(folderPath, entryStatus);
+        }
+      });
     }
 
     return map;
-  }, [gitStatusFiles, workspacePath]);
+  }, [gitRootWorkspacePrefix, gitStatusFiles, workspacePath]);
 
   const isRootVisibleExpanded = rootExpanded;
   const visibleTreeNodeEntries = useMemo(() => {
@@ -1630,9 +1648,13 @@ export function FileTreePanel({
     const isExpanded = canExpand && expandedFolders.has(node.path);
     const isLazyLoading = isLazyFolder && loadingLazyDirectories.has(node.path);
     const lazyLoadError = isLazyFolder ? lazyDirectoryLoadErrors.get(node.path) ?? null : null;
-    const fileGitStatus = isFolder
+    const rawGitStatus = isFolder
       ? folderGitStatusMap.get(node.path) ?? null
       : gitStatusMap.get(node.path) ?? null;
+    const fileGitStatus =
+      isFolder && rawGitStatus?.toUpperCase() === "D"
+        ? "M"
+        : rawGitStatus;
     const gitStatusClass = fileGitStatus
       ? ` git-${fileGitStatus.toLowerCase()}`
       : "";

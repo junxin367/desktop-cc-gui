@@ -506,6 +506,66 @@ describe("FileViewPanel navigation", () => {
     );
   });
 
+  it("uses repo-relative git path for diff when git root is a workspace subdirectory", async () => {
+    vi.mocked(readWorkspaceFile).mockResolvedValue({
+      content: "APP_HOST=0.0.0.0\n",
+      truncated: false,
+    });
+    vi.mocked(getGitFileFullDiff).mockResolvedValue("@@ -1,1 +1,2 @@\n-APP_HOST=0.0.0.0\n+APP_HOST=127.0.0.1");
+
+    const { container } = render(
+      <FileViewPanel
+        workspaceId="ws-subrepo"
+        workspacePath="/tmp/JinSen"
+        gitRoot="kmllm-search-showcar-py"
+        filePath="kmllm-search-showcar-py/.env.example"
+        gitStatusFiles={[
+          { path: ".env.example", status: "M", additions: 1, deletions: 1 },
+        ]}
+        highlightMarkers={{ added: [], modified: [] }}
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await screen.findByTestId("mock-codemirror");
+    expect(getGitFileFullDiff).toHaveBeenCalledWith("ws-subrepo", ".env.example");
+    expect(container.querySelector(".fvp-filepath")?.className).toContain("git-m");
+  });
+
+  it("does not apply subrepo repo-relative git status to workspace root file with same relative path", async () => {
+    vi.mocked(readWorkspaceFile).mockResolvedValue({
+      content: "# workspace root readme\n",
+      truncated: false,
+    });
+    vi.mocked(getGitFileFullDiff).mockResolvedValue("");
+
+    const { container } = render(
+      <FileViewPanel
+        workspaceId="ws-subrepo-root"
+        workspacePath="/tmp/JinSen"
+        gitRoot="kmllm-search-showcar-py"
+        filePath="README.md"
+        gitStatusFiles={[
+          { path: "README.md", status: "M", additions: 1, deletions: 1 },
+        ]}
+        highlightMarkers={{ added: [], modified: [] }}
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await screen.findByTestId("file-markdown-preview");
+    expect(getGitFileFullDiff).not.toHaveBeenCalled();
+    expect(container.querySelector(".fvp-filepath")?.className).not.toContain("git-m");
+  });
+
   it("reads file content via external spec route when path is under custom spec root", async () => {
     vi.mocked(readExternalSpecFile).mockResolvedValue({
       exists: true,

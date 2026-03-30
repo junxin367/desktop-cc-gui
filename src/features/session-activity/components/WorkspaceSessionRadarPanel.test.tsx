@@ -213,4 +213,43 @@ describe("WorkspaceSessionRadarPanel", () => {
     }
     expect(onSelectThread).not.toHaveBeenCalled();
   });
+
+  it("does not expand date group or select thread when deleting all entries for a day", () => {
+    const onSelectThread = vi.fn();
+
+    const view = render(
+      <WorkspaceSessionRadarPanel
+        runningSessions={[]}
+        recentCompletedSessions={[
+          {
+            id: "w10:t10",
+            workspaceId: "w10",
+            workspaceName: "Workspace 10",
+            threadId: "t10",
+            threadName: "Date Group Thread",
+            engine: "CLAUDE",
+            preview: "recent preview",
+            updatedAt: 86400001,
+            isProcessing: false,
+            startedAt: 86400000,
+            completedAt: 86400001,
+            durationMs: 4000,
+          },
+        ]}
+        onSelectThread={onSelectThread}
+      />,
+    );
+
+    const dateGroupToggle = within(view.container).getByRole("button", { name: /1970-01-02/i });
+    expect(dateGroupToggle.getAttribute("aria-expanded")).toBeNull();
+    expect(within(view.container).queryByRole("button", { name: /^Date Group Thread$/i })).toBeNull();
+
+    const deleteDateGroupButton = within(view.container).getByRole("button", {
+      name: "activityPanel.radar.deleteDateGroupEntries",
+    });
+    fireEvent.click(deleteDateGroupButton);
+
+    expect(onSelectThread).not.toHaveBeenCalled();
+    expect(within(view.container).queryByRole("button", { name: /^Date Group Thread$/i })).toBeNull();
+  });
 });

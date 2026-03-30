@@ -1001,6 +1001,7 @@ export function AppShell() {
             workspaceId: activeWorkspace.id,
             workspacePath: activeWorkspace.path,
             workspaceName: activeWorkspace.name,
+            gitRoot: activeWorkspace.settings.gitRoot ?? null,
             initialFilePath,
           }),
         );

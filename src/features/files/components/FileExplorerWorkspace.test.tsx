@@ -60,6 +60,7 @@ function WorkspaceHarness() {
       workspaceId="workspace-1"
       workspaceName="workspace"
       workspacePath="/tmp/workspace"
+      gitRoot="nested/repo"
       files={["src/index.ts"]}
       directories={["src"]}
       isLoading={false}
@@ -104,11 +105,13 @@ describe("FileExplorerWorkspace", () => {
     expect(screen.getByTestId("file-view-panel-direction").textContent).toBe("left");
     expect(fileTreePanelSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
+        gitRoot: "nested/repo",
         gitStatusFiles: [{ path: "src/index.ts", status: "M", additions: 1, deletions: 0 }],
       }),
     );
     expect(fileViewPanelSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
+        gitRoot: "nested/repo",
         gitStatusFiles: [{ path: "src/index.ts", status: "M", additions: 1, deletions: 0 }],
       }),
     );

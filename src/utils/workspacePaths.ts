@@ -2,6 +2,16 @@ function stripRelativePrefix(path: string) {
   return path.replace(/^\.\/+/, "");
 }
 
+export function isAbsoluteFsPath(path: string) {
+  const trimmed = path.trim();
+  return (
+    trimmed.startsWith("/") ||
+    /^[a-zA-Z]:[\\/]/.test(trimmed) ||
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("\\\\")
+  );
+}
+
 export function normalizeFsPath(path: string) {
   try {
     return decodeURIComponent(path)
@@ -23,6 +33,14 @@ export function isLikelyWindowsFsPath(path: string) {
 export function normalizeComparablePath(path: string, caseInsensitive: boolean) {
   const normalized = normalizeFsPath(path);
   return caseInsensitive ? normalized.toLowerCase() : normalized;
+}
+
+export function normalizeRelativeWorkspacePath(path: string) {
+  return path
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "")
+    .trim();
 }
 
 export function resolveWorkspaceRelativePath(
@@ -51,6 +69,114 @@ export function resolveWorkspaceRelativePath(
     return normalizedPath.slice(normalizedWorkspace.length + 1);
   }
   return stripRelativePrefix(normalizedPath);
+}
+
+export function resolveGitRootWorkspacePrefix(
+  workspacePath: string,
+  gitRoot: string | null | undefined,
+) {
+  const trimmed = gitRoot?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = normalizeFsPath(trimmed).replace(/\/+$/, "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (isAbsoluteFsPath(normalized)) {
+    const normalizedWorkspace = normalizeFsPath(workspacePath).replace(/\/+$/, "");
+    if (!normalizedWorkspace) {
+      return null;
+    }
+    const caseInsensitive = isLikelyWindowsFsPath(normalizedWorkspace);
+    const comparablePath = normalizeComparablePath(normalized, caseInsensitive);
+    const comparableWorkspace = normalizeComparablePath(
+      normalizedWorkspace,
+      caseInsensitive,
+    );
+    if (comparablePath === comparableWorkspace) {
+      return null;
+    }
+    if (!comparablePath.startsWith(`${comparableWorkspace}/`)) {
+      return null;
+    }
+    return normalizeRelativeWorkspacePath(normalized.slice(normalizedWorkspace.length + 1));
+  }
+
+  const relative = normalizeRelativeWorkspacePath(normalized.replace(/^\.\/+/, ""));
+  if (!relative || relative === ".") {
+    return null;
+  }
+  const segments = relative.split("/").filter(Boolean);
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    return null;
+  }
+  return segments.join("/");
+}
+
+export function resolveGitStatusPathCandidates(
+  workspacePath: string,
+  gitRootWorkspacePrefix: string | null,
+  entryPath: string,
+) {
+  const candidates = new Set<string>();
+  const trimmedEntryPath = entryPath.trim();
+  if (!trimmedEntryPath) {
+    return [];
+  }
+  const isAbsoluteEntryPath = isAbsoluteFsPath(trimmedEntryPath);
+  const normalizedEntryPath = normalizeRelativeWorkspacePath(trimmedEntryPath);
+  const hasGitRootPrefix =
+    Boolean(gitRootWorkspacePrefix) &&
+    normalizedEntryPath.length > 0 &&
+    (normalizedEntryPath === gitRootWorkspacePrefix ||
+      normalizedEntryPath.startsWith(`${gitRootWorkspacePrefix}/`));
+  const shouldTreatAsRepoRelative =
+    Boolean(gitRootWorkspacePrefix) &&
+    normalizedEntryPath.length > 0 &&
+    !isAbsoluteEntryPath &&
+    !hasGitRootPrefix;
+  const normalizedWorkspacePath = normalizeRelativeWorkspacePath(
+    resolveWorkspaceRelativePath(workspacePath, entryPath),
+  );
+  if (normalizedWorkspacePath && !shouldTreatAsRepoRelative) {
+    candidates.add(normalizedWorkspacePath);
+  }
+
+  if (gitRootWorkspacePrefix && normalizedEntryPath && !isAbsoluteEntryPath) {
+    if (hasGitRootPrefix) {
+      candidates.add(normalizedEntryPath);
+    } else {
+      candidates.add(`${gitRootWorkspacePrefix}/${normalizedEntryPath}`);
+    }
+  }
+
+  if (normalizedEntryPath && !shouldTreatAsRepoRelative) {
+    candidates.add(normalizedEntryPath);
+  }
+
+  return Array.from(candidates);
+}
+
+export function resolveWorkspacePathCandidates(workspacePath: string, path: string) {
+  const candidates = new Set<string>();
+  const trimmedPath = path.trim();
+  if (!trimmedPath) {
+    return [];
+  }
+  const normalizedWorkspacePath = normalizeRelativeWorkspacePath(
+    resolveWorkspaceRelativePath(workspacePath, trimmedPath),
+  );
+  if (normalizedWorkspacePath) {
+    candidates.add(normalizedWorkspacePath);
+  }
+  const normalizedPath = normalizeRelativeWorkspacePath(trimmedPath);
+  if (normalizedPath) {
+    candidates.add(normalizedPath);
+  }
+  return Array.from(candidates);
 }
 
 export function resolveDiffPathFromWorkspacePath(
@@ -126,22 +252,6 @@ function normalizeRootPath(path: string | null | undefined) {
     return "";
   }
   return normalizeExtendedFsPath(path).replace(/\/+$/, "");
-}
-
-function isLikelyAbsoluteFsPath(path: string) {
-  if (!path) {
-    return false;
-  }
-  if (path.startsWith("/")) {
-    return true;
-  }
-  if (/^[a-zA-Z]:\//.test(path)) {
-    return true;
-  }
-  if (path.startsWith("//")) {
-    return true;
-  }
-  return false;
 }
 
 function isPathInsideRoot(path: string, root: string, caseInsensitive: boolean) {
@@ -244,7 +354,7 @@ export function resolveFileReadTarget(
     }
   }
 
-  if (isLikelyAbsoluteFsPath(normalizedInputPath)) {
+  if (isAbsoluteFsPath(normalizedInputPath)) {
     return {
       domain: "external-absolute",
       normalizedInputPath,

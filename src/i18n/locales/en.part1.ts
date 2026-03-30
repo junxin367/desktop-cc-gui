@@ -2026,6 +2026,7 @@ const enPart1 = {
       unreadMark: "Unread",
       readMark: "Read",
       deleteHistoryEntry: "Delete {{name}}",
+      deleteDateGroupEntries: "Delete all {{count}} entries on {{date}}",
     },
     status: {
       running: "running",
