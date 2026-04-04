@@ -179,6 +179,22 @@ fn with_image_references_supports_windows_drive_host_form() {
     assert_eq!(prompt, expected);
 }
 
+#[cfg(windows)]
+#[test]
+fn with_image_references_normalizes_windows_backslashes() {
+    let images = vec![r"C:\Users\demo\Desktop\bug image.png".to_string()];
+    let prompt = with_image_refs_for_test("Describe", images.as_slice());
+    assert_eq!(prompt, "Describe\n\n@C:/Users/demo/Desktop/bug\\ image.png");
+}
+
+#[cfg(windows)]
+#[test]
+fn with_image_references_normalizes_windows_unc_backslashes() {
+    let images = vec![r"\\server\share\folder\bug image.png".to_string()];
+    let prompt = with_image_refs_for_test("Describe", images.as_slice());
+    assert_eq!(prompt, "Describe\n\n@//server/share/folder/bug\\ image.png");
+}
+
 #[test]
 fn with_image_references_recovers_miswrapped_data_url_file_uri() {
     let images = vec!["data:image/png;base64,file:///Users/demo/c%20d.png".to_string()];

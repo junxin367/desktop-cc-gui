@@ -452,6 +452,8 @@ impl GeminiSession {
     }
 
     fn escape_path_for_at_reference(path: &str) -> String {
+        let normalized_path = Self::normalize_path_for_at_reference(path);
+        let path = normalized_path.as_str();
         let mut escaped = String::with_capacity(path.len());
         for ch in path.chars() {
             if ch.is_whitespace() {
@@ -460,6 +462,15 @@ impl GeminiSession {
             escaped.push(ch);
         }
         escaped
+    }
+
+    fn normalize_path_for_at_reference(path: &str) -> String {
+        if cfg!(windows) {
+            // Gemini CLI parses @path tokens inside prompt text. Normalizing Windows
+            // separators to POSIX style avoids backslash-escape ambiguity.
+            return path.replace('\\', "/");
+        }
+        path.to_string()
     }
 
     fn format_image_reference(path: &str) -> String {
