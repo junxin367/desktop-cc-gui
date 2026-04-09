@@ -316,6 +316,69 @@ describe("SettingsView prompts workspace routing", () => {
   });
 });
 
+describe("SettingsView projects display", () => {
+  it("hides default workspace entry in projects section", async () => {
+    const defaultWorkspace: WorkspaceInfo = {
+      id: "ws-default",
+      name: "Default Hidden Workspace",
+      path: "/Users/demo/.codemoss/workspace",
+      connected: true,
+      settings: { sidebarCollapsed: false },
+    };
+    const normalWorkspace: WorkspaceInfo = {
+      id: "ws-normal",
+      name: "Visible Workspace",
+      path: "/tmp/visible-workspace",
+      connected: true,
+      settings: { sidebarCollapsed: false },
+    };
+
+    render(
+      <SettingsView
+        reduceTransparency={false}
+        onToggleTransparency={vi.fn()}
+        appSettings={baseSettings}
+        openAppIconById={{}}
+        onUpdateAppSettings={vi.fn().mockResolvedValue(undefined)}
+        workspaceGroups={[]}
+        groupedWorkspaces={[
+          {
+            id: null,
+            name: "Ungrouped",
+            workspaces: [defaultWorkspace, normalWorkspace],
+          },
+        ]}
+        ungroupedLabel="Ungrouped"
+        onClose={vi.fn()}
+        onMoveWorkspace={vi.fn()}
+        onDeleteWorkspace={vi.fn()}
+        onCreateWorkspaceGroup={vi.fn().mockResolvedValue(null)}
+        onRenameWorkspaceGroup={vi.fn().mockResolvedValue(null)}
+        onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
+        onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
+        onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
+        onRunDoctor={vi.fn().mockResolvedValue(createDoctorResult())}
+        activeWorkspace={normalWorkspace}
+        activeEngine="codex"
+        onUpdateWorkspaceCodexBin={vi.fn().mockResolvedValue(undefined)}
+        onUpdateWorkspaceSettings={vi.fn().mockResolvedValue(undefined)}
+        scaleShortcutTitle="Scale shortcut"
+        scaleShortcutText="Use Command +/-"
+        onTestNotificationSound={vi.fn()}
+        dictationModelStatus={null}
+        onDownloadDictationModel={vi.fn()}
+        onCancelDictationDownload={vi.fn()}
+        onRemoveDictationModel={vi.fn()}
+        initialSection="projects"
+      />,
+    );
+
+    await flushSettingsViewEffects();
+    expect(screen.queryByText("Default Hidden Workspace")).toBeNull();
+    expect(screen.getByText("Visible Workspace")).toBeTruthy();
+  });
+});
+
 describe("SettingsView Display", () => {
   it("keeps codex, dictation, git, and experimental sidebar entries hidden", async () => {
     renderDisplaySection();

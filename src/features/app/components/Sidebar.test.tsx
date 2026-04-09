@@ -410,6 +410,55 @@ describe("Sidebar", () => {
     expect(screen.queryByText("codemoss")).toBeNull();
   });
 
+  it("renders ungrouped projects without showing an ungrouped section header", () => {
+    const ungroupedWorkspace = {
+      id: "ws-ungrouped",
+      name: "codeg",
+      path: "/tmp/codeg",
+      connected: true,
+      kind: "main" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+    };
+    const groupedWorkspace = {
+      id: "ws-grouped",
+      name: "springboot-demo",
+      path: "/tmp/springboot-demo",
+      connected: true,
+      kind: "main" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+    };
+
+    render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[ungroupedWorkspace, groupedWorkspace]}
+        groupedWorkspaces={[
+          {
+            id: "group-visible",
+            name: "RCD",
+            workspaces: [groupedWorkspace],
+          },
+          {
+            id: null,
+            name: "Ungrouped",
+            workspaces: [ungroupedWorkspace],
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("codeg")).toBeTruthy();
+    expect(screen.getByText("springboot-demo")).toBeTruthy();
+    expect(screen.getByText("RCD")).toBeTruthy();
+    expect(screen.queryByText("Ungrouped")).toBeNull();
+  });
+
   it("selects workspace on single click and toggles collapse on double click", () => {
     const workspace = {
       id: "ws-1",

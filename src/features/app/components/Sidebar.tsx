@@ -40,8 +40,6 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import Settings from "lucide-react/dist/esm/icons/settings";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
 
-const UNGROUPED_COLLAPSE_ID = "__ungrouped__";
-
 type WorkspaceGroupSection = {
   id: string | null;
   name: string;
@@ -456,20 +454,27 @@ export function Sidebar({
         .filter((group) => group.workspaces.length > 0),
     [filteredGroupedWorkspaces],
   );
-
-  const isSearchActive = Boolean(normalizedQuery);
-
-  const hasNamedGroupsInView = useMemo(
-    () => filteredGroupedWorkspacesWithoutDefault.some((g) => g.id !== null),
+  const ungroupedWorkspaceEntries = useMemo(
+    () =>
+      filteredGroupedWorkspacesWithoutDefault
+        .filter((group) => group.id === null)
+        .flatMap((group) => group.workspaces),
+    [filteredGroupedWorkspacesWithoutDefault],
+  );
+  const namedGroupedWorkspaces = useMemo(
+    () =>
+      filteredGroupedWorkspacesWithoutDefault.filter(
+        (group): group is WorkspaceGroupSection & { id: string } => group.id !== null,
+      ),
     [filteredGroupedWorkspacesWithoutDefault],
   );
 
+  const isSearchActive = Boolean(normalizedQuery);
+
   const threadRowsByWorkspace = useMemo(() => {
     const rowsByWorkspace = new Map<string, WorkspaceThreadRows>();
-    const hasNamedGroups = filteredGroupedWorkspaces.some((g) => g.id !== null);
     filteredGroupedWorkspaces.forEach((group) => {
-      const showGroupHeader = Boolean(group.id) || hasNamedGroups;
-      const toggleId = group.id ?? (showGroupHeader ? UNGROUPED_COLLAPSE_ID : null);
+      const toggleId = group.id;
       const isGroupCollapsed = Boolean(toggleId && collapsedGroups.has(toggleId));
       if (isGroupCollapsed) {
         return;
@@ -574,14 +579,12 @@ export function Sidebar({
   );
 
   const allGroupToggleIds = useMemo(() => {
-    const hasNamedGroups = groupedWorkspaces.some((g) => g.id !== null);
     const ids = new Set<string>();
     groupedWorkspaces.forEach((group) => {
-      const showGroupHeader = Boolean(group.id) || hasNamedGroups;
-      if (!showGroupHeader) {
+      if (!group.id) {
         return;
       }
-      ids.add(group.id ?? UNGROUPED_COLLAPSE_ID);
+      ids.add(group.id);
     });
     return Array.from(ids);
   }, [groupedWorkspaces]);
@@ -1045,10 +1048,9 @@ export function Sidebar({
             </div>
             <div className="workspace-list">
           {defaultWorkspaceEntries.map(renderWorkspaceEntry)}
-          {filteredGroupedWorkspacesWithoutDefault.map((group) => {
-            const groupId = group.id;
-            const showGroupHeader = Boolean(groupId) || hasNamedGroupsInView;
-            const toggleId = groupId ?? (showGroupHeader ? UNGROUPED_COLLAPSE_ID : null);
+          {ungroupedWorkspaceEntries.map(renderWorkspaceEntry)}
+          {namedGroupedWorkspaces.map((group) => {
+            const toggleId = group.id;
             const isGroupCollapsed = Boolean(
               toggleId && collapsedGroups.has(toggleId),
             );
@@ -1056,10 +1058,10 @@ export function Sidebar({
 
             return (
               <WorkspaceGroup
-                key={group.id ?? "ungrouped"}
+                key={group.id}
                 toggleId={toggleId}
                 name={group.name}
-                showHeader={showGroupHeader}
+                showHeader
                 isCollapsed={isGroupCollapsed}
                 onToggleCollapse={toggleGroupCollapse}
               >
@@ -1067,13 +1069,15 @@ export function Sidebar({
               </WorkspaceGroup>
             );
           })}
-          {!filteredGroupedWorkspacesWithoutDefault.length && defaultWorkspaceEntries.length === 0 && (
+          {!namedGroupedWorkspaces.length &&
+            ungroupedWorkspaceEntries.length === 0 &&
+            defaultWorkspaceEntries.length === 0 && (
             <div className="empty">
               {isSearchActive
                 ? t("sidebar.noProjectsMatch")
                 : t("sidebar.addWorkspaceToStart")}
             </div>
-          )}
+            )}
             </div>
           </ScrollArea>
           <div className="sidebar-bottom-nav">

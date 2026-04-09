@@ -18,6 +18,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { WorkspaceGroup, WorkspaceInfo } from "@/types";
+import { isDefaultWorkspacePath } from "@/features/workspaces/utils/defaultWorkspace";
 
 type GroupedWorkspace = {
   id: string | null;
@@ -53,7 +54,6 @@ type ProjectsSectionProps = {
   ungroupedLabel: string;
   onMoveWorkspace: (id: string, direction: "up" | "down") => void;
   onDeleteWorkspace: (id: string) => void;
-  projectsCount: number;
 };
 
 export function ProjectsSection({
@@ -81,11 +81,23 @@ export function ProjectsSection({
   ungroupedLabel,
   onMoveWorkspace,
   onDeleteWorkspace,
-  projectsCount,
 }: ProjectsSectionProps) {
   if (!active) {
     return null;
   }
+
+  const visibleGroupedWorkspaces = groupedWorkspaces
+    .map((group) => ({
+      ...group,
+      workspaces: group.workspaces.filter(
+        (workspace) => !isDefaultWorkspacePath(workspace.path),
+      ),
+    }))
+    .filter((group) => group.workspaces.length > 0);
+  const visibleProjectsCount = visibleGroupedWorkspaces.reduce(
+    (total, group) => total + group.workspaces.length,
+    0,
+  );
 
   return (
     <section className="settings-section">
@@ -311,7 +323,7 @@ export function ProjectsSection({
         {t("settings.projectsSubsectionDescription")}
       </div>
       <div className="settings-projects">
-        {groupedWorkspaces.map((group) => (
+        {visibleGroupedWorkspaces.map((group) => (
           <div key={group.id ?? "ungrouped"} className="settings-project-group">
             <div className="settings-project-group-label">{group.name}</div>
             {group.workspaces.map((workspace, index) => {
@@ -378,7 +390,7 @@ export function ProjectsSection({
             })}
           </div>
         ))}
-        {projectsCount === 0 && (
+        {visibleProjectsCount === 0 && (
           <div className="settings-empty">{t("settings.noProjectsYet")}</div>
         )}
       </div>

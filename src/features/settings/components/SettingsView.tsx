@@ -274,7 +274,10 @@ export function SettingsView({
     extractPrimaryFontFamily(DEFAULT_UI_FONT_FAMILY),
   );
   const [uiFontOptions, setUiFontOptions] = useState<string[]>([]);
-  const [codeFontDraft, setCodeFontDraft] = useState(appSettings.codeFontFamily);
+  const [codeFontDraft, setCodeFontDraft] = useState(() =>
+    extractPrimaryFontFamily(appSettings.codeFontFamily) ||
+    extractPrimaryFontFamily(DEFAULT_CODE_FONT_FAMILY),
+  );
   const [codeFontSizeDraft, setCodeFontSizeDraft] = useState(appSettings.codeFontSize);
   const [uiScaleDraft, setUiScaleDraft] = useState(clampUiScale(appSettings.uiScale));
   const [userMsgHexDraft, setUserMsgHexDraft] = useState(() =>
@@ -420,6 +423,26 @@ export function SettingsView({
       left.localeCompare(right, undefined, { sensitivity: "base" }),
     );
   }, [appSettings.uiFontFamily, defaultUiPrimaryFont, uiFontDraft, uiFontOptions]);
+  const defaultCodePrimaryFont = useMemo(
+    () => extractPrimaryFontFamily(DEFAULT_CODE_FONT_FAMILY),
+    [],
+  );
+  const codeFontSelectOptions = useMemo(() => {
+    const options = new Set<string>(uiFontOptions);
+    const currentPrimary = extractPrimaryFontFamily(appSettings.codeFontFamily);
+    if (defaultCodePrimaryFont) {
+      options.add(defaultCodePrimaryFont);
+    }
+    if (currentPrimary) {
+      options.add(currentPrimary);
+    }
+    if (codeFontDraft) {
+      options.add(codeFontDraft);
+    }
+    return Array.from(options).sort((left, right) =>
+      left.localeCompare(right, undefined, { sensitivity: "base" }),
+    );
+  }, [appSettings.codeFontFamily, codeFontDraft, defaultCodePrimaryFont, uiFontOptions]);
   const selectedNotificationSound = useMemo(() => {
     const raw = appSettings.notificationSoundId?.trim();
     if (!raw) {
@@ -785,7 +808,10 @@ export function SettingsView({
   }, [appSettings.uiFontFamily]);
 
   useEffect(() => {
-    setCodeFontDraft(appSettings.codeFontFamily);
+    const nextPrimaryFont =
+      extractPrimaryFontFamily(appSettings.codeFontFamily) ||
+      extractPrimaryFontFamily(DEFAULT_CODE_FONT_FAMILY);
+    setCodeFontDraft(nextPrimaryFont);
   }, [appSettings.codeFontFamily]);
 
   useEffect(() => {
@@ -1061,20 +1087,32 @@ export function SettingsView({
     [handleCommitUiFont],
   );
 
-  const handleCommitCodeFont = async () => {
-    const nextFont = normalizeFontFamily(
-      codeFontDraft,
-      DEFAULT_CODE_FONT_FAMILY,
-    );
-    setCodeFontDraft(nextFont);
-    if (nextFont === appSettings.codeFontFamily) {
-      return;
-    }
-    await onUpdateAppSettings({
-      ...appSettings,
-      codeFontFamily: nextFont,
-    });
-  };
+  const handleCommitCodeFont = useCallback(
+    async (selectedFontName: string) => {
+      const normalizedFontName = selectedFontName.trim();
+      const nextFont = normalizeFontFamily(
+        formatFontFamilySetting(normalizedFontName),
+        DEFAULT_CODE_FONT_FAMILY,
+      );
+      if (nextFont === appSettings.codeFontFamily) {
+        return;
+      }
+      await onUpdateAppSettings({
+        ...appSettings,
+        codeFontFamily: nextFont,
+      });
+    },
+    [appSettings, onUpdateAppSettings],
+  );
+
+  const handleCodeFontSelectChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const nextFontName = event.target.value;
+      setCodeFontDraft(nextFontName);
+      void handleCommitCodeFont(nextFontName);
+    },
+    [handleCommitCodeFont],
+  );
 
   const handleCommitCodeFontSize = async (nextSize: number) => {
     const clampedSize = clampCodeFontSize(nextSize);
@@ -1837,7 +1875,6 @@ export function SettingsView({
               ungroupedLabel={ungroupedLabel}
               onMoveWorkspace={onMoveWorkspace}
               onDeleteWorkspace={onDeleteWorkspace}
-              projectsCount={projects.length}
             />
             {activeSection === "basic" && (
               <section className="settings-section settings-section-basic" data-basic-tab={basicSubTab}>
@@ -2197,6 +2234,9 @@ export function SettingsView({
                     defaultUiPrimaryFont={defaultUiPrimaryFont}
                     setUiFontDraft={setUiFontDraft}
                     codeFontDraft={codeFontDraft}
+                    codeFontSelectOptions={codeFontSelectOptions}
+                    handleCodeFontSelectChange={handleCodeFontSelectChange}
+                    defaultCodePrimaryFont={defaultCodePrimaryFont}
                     setCodeFontDraft={setCodeFontDraft}
                     handleCommitCodeFont={handleCommitCodeFont}
                     codeFontSizeDraft={codeFontSizeDraft}
