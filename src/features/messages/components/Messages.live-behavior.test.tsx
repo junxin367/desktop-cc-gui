@@ -117,7 +117,7 @@ describe("Messages live behavior", () => {
     expect(container.textContent ?? "").toContain("keep.ts");
   });
 
-  it("keeps command cards visible for non-codex engines", () => {
+  it("hides command cards in claude canvas", () => {
     const items: ConversationItem[] = [
       {
         id: "tool-claude-command-1",
@@ -151,7 +151,9 @@ describe("Messages live behavior", () => {
       />,
     );
 
-    expect(container.querySelector(".bash-group-container")).toBeTruthy();
+    expect(container.querySelector(".bash-group-container")).toBeNull();
+    expect(container.textContent ?? "").not.toContain("pwd && ls -la");
+    expect(container.textContent ?? "").not.toContain("echo done");
   });
 
   it("switches codex working spinner between waiting and ingress phases", () => {
