@@ -185,8 +185,10 @@ mod tests {
         let mossx_dir = base.join(".mossx");
         std::fs::create_dir_all(&ccgui_dir).expect("create .ccgui");
         std::fs::create_dir_all(&mossx_dir).expect("create .mossx");
-        std::fs::write(ccgui_dir.join("config.json"), "{\"brand\":\"ccgui\"}").expect("write ccgui");
-        std::fs::write(mossx_dir.join("config.json"), "{\"brand\":\"mossx\"}").expect("write mossx");
+        std::fs::write(ccgui_dir.join("config.json"), "{\"brand\":\"ccgui\"}")
+            .expect("write ccgui");
+        std::fs::write(mossx_dir.join("config.json"), "{\"brand\":\"mossx\"}")
+            .expect("write mossx");
 
         let resolved = ensure_app_home_dir_from_home(&base).expect("resolve app home");
 
@@ -201,12 +203,17 @@ mod tests {
 
     #[test]
     fn migrates_mossx_home_into_ccgui_when_new_dir_missing() {
-        let base = std::env::temp_dir().join(format!("ccgui-home-migrate-mossx-{}", Uuid::new_v4()));
+        let base =
+            std::env::temp_dir().join(format!("ccgui-home-migrate-mossx-{}", Uuid::new_v4()));
         let mossx_dir = base.join(".mossx");
         std::fs::create_dir_all(mossx_dir.join("client")).expect("create mossx client dir");
-        std::fs::write(mossx_dir.join("config.json"), "{\"brand\":\"mossx\"}").expect("write mossx");
-        std::fs::write(mossx_dir.join("client").join("layout.json"), "{\"sidebarWidth\":320}")
-            .expect("write legacy layout");
+        std::fs::write(mossx_dir.join("config.json"), "{\"brand\":\"mossx\"}")
+            .expect("write mossx");
+        std::fs::write(
+            mossx_dir.join("client").join("layout.json"),
+            "{\"sidebarWidth\":320}",
+        )
+        .expect("write legacy layout");
 
         let resolved = ensure_app_home_dir_from_home(&base).expect("resolve migrated app home");
         let ccgui_dir = base.join(".ccgui");
@@ -260,7 +267,8 @@ mod tests {
         let legacy_dir = base.join("com.zhukunpenglinyutong.codemoss");
         let current_dir = base.join("com.zhukunpenglinyutong.ccgui");
 
-        std::fs::create_dir_all(legacy_dir.join("workspaces")).expect("create legacy workspaces dir");
+        std::fs::create_dir_all(legacy_dir.join("workspaces"))
+            .expect("create legacy workspaces dir");
         std::fs::create_dir_all(&current_dir).expect("create current dir");
         std::fs::write(current_dir.join(".window-state.json"), "{\"window\":true}")
             .expect("write current window state");
@@ -274,11 +282,13 @@ mod tests {
         prepare_app_data_dir_from_path(&current_dir).expect("prepare app data");
 
         assert_eq!(
-            std::fs::read_to_string(current_dir.join("workspaces.json")).expect("read migrated workspaces"),
+            std::fs::read_to_string(current_dir.join("workspaces.json"))
+                .expect("read migrated workspaces"),
             "{\"workspace\":1}",
         );
         assert_eq!(
-            std::fs::read_to_string(current_dir.join("settings.json")).expect("read migrated settings"),
+            std::fs::read_to_string(current_dir.join("settings.json"))
+                .expect("read migrated settings"),
             "{\"theme\":\"light\"}",
         );
         assert_eq!(
@@ -287,7 +297,8 @@ mod tests {
             "hello",
         );
         assert_eq!(
-            std::fs::read_to_string(current_dir.join(".window-state.json")).expect("read preserved window state"),
+            std::fs::read_to_string(current_dir.join(".window-state.json"))
+                .expect("read preserved window state"),
             "{\"window\":true}",
         );
 
@@ -310,7 +321,8 @@ mod tests {
         prepare_app_data_dir_from_path(&current_dir).expect("prepare app data");
 
         assert_eq!(
-            std::fs::read_to_string(current_dir.join("workspaces.json")).expect("read current workspaces"),
+            std::fs::read_to_string(current_dir.join("workspaces.json"))
+                .expect("read current workspaces"),
             "{\"workspace\":2}",
         );
 

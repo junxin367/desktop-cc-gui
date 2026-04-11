@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  LocalUsageDailyCodeChange,
   LocalUsageDailyUsage,
   LocalUsageSessionSummary,
   LocalUsageStatistics,
@@ -38,7 +39,7 @@ function formatCost(value: number): string {
 
 export function UsageSection({
   activeWorkspace,
-  activeEngine,
+  activeEngine: _activeEngine,
   workspaces,
   selectedWorkspaceId,
   onWorkspaceChange,
@@ -77,7 +78,7 @@ export function UsageSection({
     try {
       const next = await localUsageStatistics({
         scope,
-        provider: activeEngine ?? "claude",
+        provider: "all",
         dateRange,
         workspacePath: needWorkspace ? activeWorkspace?.path ?? null : null,
       });
@@ -88,7 +89,7 @@ export function UsageSection({
     } finally {
       setLoading(false);
     }
-  }, [activeEngine, activeWorkspace?.path, dateRange, scope, t]);
+  }, [activeWorkspace?.path, dateRange, scope, t]);
 
   useEffect(() => {
     void loadStatistics();
@@ -133,6 +134,22 @@ export function UsageSection({
     return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   }, []);
 
+  const parseDateKeyToLocalTimestamp = useCallback((dateStr: string): number => {
+    const normalized = dateStr.trim();
+    const matched = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+    if (matched) {
+      const year = Number.parseInt(matched[1], 10);
+      const month = Number.parseInt(matched[2], 10);
+      const day = Number.parseInt(matched[3], 10);
+      const localDate = new Date(year, month - 1, day);
+      if (!Number.isNaN(localDate.getTime())) {
+        return localDate.getTime();
+      }
+    }
+    const fallback = new Date(normalized).getTime();
+    return Number.isFinite(fallback) ? fallback : 0;
+  }, []);
+
   const renderTrend = useCallback((value: number) => {
     if (value === 0) {
       return (
@@ -157,11 +174,11 @@ export function UsageSection({
         ? now - 7 * 24 * 60 * 60 * 1000
         : now - 30 * 24 * 60 * 60 * 1000;
       return items.filter((item) => {
-        const time = item.timestamp ?? (item.date ? new Date(item.date).getTime() : 0);
+        const time = item.timestamp ?? (item.date ? parseDateKeyToLocalTimestamp(item.date) : 0);
         return time >= cutoff;
       });
     },
-    [dateRange],
+    [dateRange, parseDateKeyToLocalTimestamp],
   );
 
   const filteredSessions = useMemo(() => {
@@ -184,10 +201,48 @@ export function UsageSection({
     () => filterByDateRange<LocalUsageDailyUsage>(statistics?.dailyUsage ?? []),
     [filterByDateRange, statistics?.dailyUsage],
   );
+  const filteredDailyCodeChanges = useMemo(
+    () =>
+      filterByDateRange<LocalUsageDailyCodeChange>(statistics?.dailyCodeChanges ?? []).map((item) => ({
+        ...item,
+        modifiedLines: Math.max(0, item.modifiedLines),
+      })),
+    [filterByDateRange, statistics?.dailyCodeChanges],
+  );
+  const engineUsageItems = useMemo(
+    () =>
+      (statistics?.engineUsage ?? []).map((item) => ({
+        ...item,
+        count: Math.max(0, item.count),
+      })),
+    [statistics?.engineUsage],
+  );
+  const totalEngineUsageCount = useMemo(() => {
+    const total = statistics?.totalEngineUsageCount;
+    if (typeof total === "number" && Number.isFinite(total) && total >= 0) {
+      return total;
+    }
+    return engineUsageItems.reduce((sum, item) => sum + Math.max(0, item.count), 0);
+  }, [engineUsageItems, statistics?.totalEngineUsageCount]);
+  const aiCodeModifiedLines = useMemo(() => {
+    const total = statistics?.aiCodeModifiedLines;
+    if (typeof total === "number" && Number.isFinite(total) && total >= 0) {
+      return total;
+    }
+    return filteredDailyCodeChanges.reduce((sum, item) => sum + Math.max(0, item.modifiedLines), 0);
+  }, [filteredDailyCodeChanges, statistics?.aiCodeModifiedLines]);
 
   const maxDailyCost = useMemo(
     () => Math.max(1, ...filteredDailyUsage.map((day) => day.cost)),
     [filteredDailyUsage],
+  );
+  const maxEngineUsageCount = useMemo(
+    () => Math.max(1, ...engineUsageItems.map((item) => item.count)),
+    [engineUsageItems],
+  );
+  const maxDailyCodeLines = useMemo(
+    () => Math.max(1, ...filteredDailyCodeChanges.map((item) => item.modifiedLines)),
+    [filteredDailyCodeChanges],
   );
 
   const getTokenPercentage = useCallback((value: number): number => {
@@ -377,6 +432,26 @@ export function UsageSection({
                       </div>
                     </div>
 
+                    <div className="settings-usage-stat-card engine-card">
+                      <div className="stat-icon">
+                        <span className="codicon codicon-server" />
+                      </div>
+                      <div className="stat-content">
+                        <div className="stat-label">{t("settings.usagePanel.totalEngineUsageCount")}</div>
+                        <div className="stat-value">{formatNumber(totalEngineUsageCount)}</div>
+                      </div>
+                    </div>
+
+                    <div className="settings-usage-stat-card code-lines-card">
+                      <div className="stat-icon">
+                        <span className="codicon codicon-diff-added" />
+                      </div>
+                      <div className="stat-content">
+                        <div className="stat-label">{t("settings.usagePanel.aiCodeModifiedLines")}</div>
+                        <div className="stat-value">{formatNumber(aiCodeModifiedLines)}</div>
+                      </div>
+                    </div>
+
                     <div className="settings-usage-stat-card avg-card">
                       <div className="stat-icon">
                         <span className="codicon codicon-graph" />
@@ -447,6 +522,58 @@ export function UsageSection({
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="settings-usage-engine-distribution">
+                    <h4>{t("settings.usagePanel.engineDistribution")}</h4>
+                    {engineUsageItems.length > 0 ? (
+                      <div className="settings-usage-engine-list">
+                        {engineUsageItems.map((item) => (
+                          <div key={item.engine} className="settings-usage-engine-row">
+                            <div className="settings-usage-engine-header">
+                              <span>{item.engine}</span>
+                              <span>{item.count}</span>
+                            </div>
+                            <div className="settings-usage-engine-track">
+                              <div
+                                className="settings-usage-engine-fill"
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, (item.count / maxEngineUsageCount) * 100))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="settings-inline-muted">{t("settings.usagePanel.noDataInRange")}</div>
+                    )}
+                  </div>
+
+                  <div className="settings-usage-code-changes">
+                    <h4>{t("settings.usagePanel.dailyCodeChanges")}</h4>
+                    {filteredDailyCodeChanges.length > 0 ? (
+                      <div className="settings-usage-code-change-list">
+                        {filteredDailyCodeChanges.map((item) => (
+                          <div key={item.date} className="settings-usage-code-change-row">
+                            <div className="settings-usage-code-change-header">
+                              <span>{formatShortDate(item.date)}</span>
+                              <span>{formatNumber(item.modifiedLines)} {t("settings.usagePanel.lines")}</span>
+                            </div>
+                            <div className="settings-usage-code-change-track">
+                              <div
+                                className="settings-usage-code-change-fill"
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, (item.modifiedLines / maxDailyCodeLines) * 100))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="settings-inline-muted">{t("settings.usagePanel.noDataInRange")}</div>
+                    )}
                   </div>
 
                   {statistics.byModel.length > 0 ? (

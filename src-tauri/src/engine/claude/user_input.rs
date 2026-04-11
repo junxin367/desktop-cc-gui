@@ -242,7 +242,9 @@ impl ClaudeSession {
         resume_params.session_id = Some(sid);
         resume_params.images = None;
         if self.is_disposed() {
-            return Err("Claude session disposed; refusing AskUserQuestion resume spawn".to_string());
+            return Err(
+                "Claude session disposed; refusing AskUserQuestion resume spawn".to_string(),
+            );
         }
         let use_stream_json_input = Self::should_use_stream_json_input(&resume_params);
 

@@ -604,9 +604,7 @@ fn build_shell_run_script(
         lines.push("  set \"CCGUI_RUN_EXIT_CODE=!ERRORLEVEL!\"".to_string());
         lines.push(")".to_string());
     } else {
-        lines.push(format!(
-            "echo [ccgui Run] Using {source_label}: {command}"
-        ));
+        lines.push(format!("echo [ccgui Run] Using {source_label}: {command}"));
         lines.push(command.to_string());
         lines.push("set \"CCGUI_RUN_EXIT_CODE=!ERRORLEVEL!\"".to_string());
     }

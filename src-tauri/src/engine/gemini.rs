@@ -14,11 +14,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{broadcast, Mutex, RwLock};
 
-use crate::app_paths;
 use super::events::EngineEvent;
 use super::gemini_history::{load_gemini_session, GeminiSessionMessage};
 use super::gemini_proxy_guard::apply_dead_loopback_proxy_guard;
 use super::{EngineConfig, EngineType, SendMessageParams};
+use crate::app_paths;
 
 const GEMINI_REASONING_HISTORY_SYNC_INTERVAL_MS: u64 = 900;
 const GEMINI_INLINE_IMAGE_MAX_BYTES: usize = 12 * 1024 * 1024;

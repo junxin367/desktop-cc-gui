@@ -389,8 +389,7 @@ impl DaemonState {
             let entry = workspaces
                 .get(&id)
                 .ok_or_else(|| "workspace not found".to_string())?;
-            let should_connect_for_active_codex =
-                active_engine == engine::EngineType::Codex;
+            let should_connect_for_active_codex = active_engine == engine::EngineType::Codex;
             if !workspaces_core::workspace_requires_persistent_session(entry)
                 && !should_connect_for_active_codex
             {
@@ -1770,7 +1769,9 @@ impl DaemonState {
             sessions.get(&workspace_id).cloned()
         };
         if let Some(session) = session {
-            session.clear_thread_effective_mode(&normalized_session_id).await;
+            session
+                .clear_thread_effective_mode(&normalized_session_id)
+                .await;
         }
 
         Ok(json!({

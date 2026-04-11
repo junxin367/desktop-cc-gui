@@ -129,6 +129,19 @@ fn build_workspace_path_variants(workspace_path: &Path) -> Vec<String> {
     workspace_variants
 }
 
+fn path_is_same_or_child(candidate: &str, base: &str) -> bool {
+    if candidate.is_empty() || base.is_empty() {
+        return false;
+    }
+    if candidate == base {
+        return true;
+    }
+    if base == "/" {
+        return candidate.starts_with('/');
+    }
+    candidate.starts_with(base) && candidate.chars().nth(base.len()) == Some('/')
+}
+
 fn matches_workspace_path(project_root: &str, workspace_variants: &[String]) -> bool {
     if workspace_variants.is_empty() {
         return false;
@@ -136,11 +149,8 @@ fn matches_workspace_path(project_root: &str, workspace_variants: &[String]) -> 
     let project_variants = build_path_variants(project_root);
     for candidate in project_variants {
         for workspace in workspace_variants {
-            if candidate == *workspace {
-                return true;
-            }
-            if candidate.starts_with(workspace)
-                && candidate.chars().nth(workspace.len()) == Some('/')
+            if path_is_same_or_child(&candidate, workspace)
+                || path_is_same_or_child(workspace, &candidate)
             {
                 return true;
             }
@@ -149,15 +159,31 @@ fn matches_workspace_path(project_root: &str, workspace_variants: &[String]) -> 
     false
 }
 
+fn expand_home_prefixed_path(path: &str) -> Option<PathBuf> {
+    if path == "~" {
+        return dirs::home_dir();
+    }
+    let relative = path
+        .strip_prefix("~/")
+        .or_else(|| path.strip_prefix("~\\"))
+        .filter(|value| !value.is_empty())?;
+    dirs::home_dir().map(|home| home.join(relative))
+}
+
 fn resolve_gemini_base_dir(custom_home: Option<&str>) -> PathBuf {
     if let Some(home) = custom_home.map(str::trim).filter(|value| !value.is_empty()) {
+        if let Some(expanded) = expand_home_prefixed_path(home) {
+            return expanded;
+        }
         return PathBuf::from(home);
     }
-    if let Some(home) = std::env::var_os("GEMINI_CLI_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-    {
-        return home;
+    if let Some(home) = std::env::var_os("GEMINI_CLI_HOME").filter(|value| !value.is_empty()) {
+        let configured = PathBuf::from(home);
+        let configured_text = configured.to_string_lossy();
+        if let Some(expanded) = expand_home_prefixed_path(&configured_text) {
+            return expanded;
+        }
+        return configured;
     }
     dirs::home_dir().unwrap_or_default().join(".gemini")
 }
@@ -1230,7 +1256,7 @@ pub async fn delete_gemini_session(
 
 #[cfg(test)]
 mod tests {
-    use super::{matches_workspace_path, parse_messages_from_value};
+    use super::{matches_workspace_path, parse_messages_from_value, resolve_gemini_base_dir};
     use serde_json::json;
 
     #[test]
@@ -1543,5 +1569,39 @@ mod tests {
             "/Users/demo/code/AI/githubish/mossx",
             &workspace_variants
         ));
+    }
+
+    #[test]
+    fn matches_workspace_path_accepts_parent_project_root() {
+        let workspace_variants =
+            vec!["/Users/demo/code/AI/github/mossx/packages/desktop".to_string()];
+        assert!(matches_workspace_path(
+            "/Users/demo/code/AI/github/mossx",
+            &workspace_variants
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn matches_workspace_path_handles_root_workspace_variant() {
+        let workspace_variants = vec!["/".to_string()];
+        assert!(matches_workspace_path(
+            "/Users/demo/code/AI/github/mossx",
+            &workspace_variants
+        ));
+        assert!(!matches_workspace_path(
+            "relative/path",
+            &workspace_variants
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn resolve_gemini_base_dir_expands_custom_home_tilde() {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        let resolved = resolve_gemini_base_dir(Some("~/mossx-gemini-home"));
+        assert_eq!(resolved, home.join("mossx-gemini-home"));
     }
 }

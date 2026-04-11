@@ -282,7 +282,19 @@ fn get_opencode_home_dir() -> Option<PathBuf> {
 /// Get Gemini home directory
 fn get_gemini_home_dir() -> Option<PathBuf> {
     if let Some(home) = std::env::var_os("GEMINI_CLI_HOME").filter(|v| !v.is_empty()) {
-        return Some(PathBuf::from(home));
+        let configured = PathBuf::from(home);
+        let configured_text = configured.to_string_lossy();
+        if configured_text == "~" {
+            return dirs::home_dir();
+        }
+        if let Some(relative) = configured_text
+            .strip_prefix("~/")
+            .or_else(|| configured_text.strip_prefix("~\\"))
+            .filter(|value| !value.is_empty())
+        {
+            return dirs::home_dir().map(|home| home.join(relative));
+        }
+        return Some(configured);
     }
     dirs::home_dir().map(|home| home.join(".gemini"))
 }

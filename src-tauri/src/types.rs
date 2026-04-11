@@ -381,6 +381,8 @@ pub(crate) struct LocalUsageSessionSummary {
     pub(crate) provider: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) file_size_bytes: Option<u64>,
+    #[serde(default)]
+    pub(crate) modified_lines: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -405,6 +407,20 @@ pub(crate) struct LocalUsageModelUsage {
     pub(crate) cache_creation_tokens: i64,
     pub(crate) cache_read_tokens: i64,
     pub(crate) session_count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalUsageEngineUsage {
+    pub(crate) engine: String,
+    pub(crate) count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalUsageDailyCodeChange {
+    pub(crate) date: String,
+    pub(crate) modified_lines: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -443,6 +459,12 @@ pub(crate) struct LocalUsageStatistics {
     pub(crate) daily_usage: Vec<LocalUsageDailyUsage>,
     pub(crate) weekly_comparison: LocalUsageWeeklyComparison,
     pub(crate) by_model: Vec<LocalUsageModelUsage>,
+    pub(crate) total_engine_usage_count: i64,
+    #[serde(default)]
+    pub(crate) engine_usage: Vec<LocalUsageEngineUsage>,
+    pub(crate) ai_code_modified_lines: i64,
+    #[serde(default)]
+    pub(crate) daily_code_changes: Vec<LocalUsageDailyCodeChange>,
     pub(crate) last_updated: i64,
 }
 

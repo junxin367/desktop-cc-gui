@@ -849,7 +849,7 @@ export async function localUsageStatistics(input: {
 }): Promise<LocalUsageStatistics> {
   return invoke<LocalUsageStatistics>("local_usage_statistics", {
     scope: input.scope,
-    provider: input.provider ?? "claude",
+    provider: input.provider ?? "all",
     dateRange: input.dateRange,
     workspacePath: input.workspacePath ?? null,
   });

@@ -646,6 +646,7 @@ export type LocalUsageSessionSummary = {
   source?: string | null;
   provider?: string | null;
   fileSizeBytes?: number;
+  modifiedLines?: number;
 };
 
 export type LocalUsageDailyUsage = {
@@ -665,6 +666,16 @@ export type LocalUsageModelUsage = {
   cacheCreationTokens: number;
   cacheReadTokens: number;
   sessionCount: number;
+};
+
+export type LocalUsageEngineUsage = {
+  engine: string;
+  count: number;
+};
+
+export type LocalUsageDailyCodeChange = {
+  date: string;
+  modifiedLines: number;
 };
 
 export type LocalUsageWeekData = {
@@ -695,6 +706,10 @@ export type LocalUsageStatistics = {
   dailyUsage: LocalUsageDailyUsage[];
   weeklyComparison: LocalUsageWeeklyComparison;
   byModel: LocalUsageModelUsage[];
+  totalEngineUsageCount: number;
+  engineUsage: LocalUsageEngineUsage[];
+  aiCodeModifiedLines: number;
+  dailyCodeChanges: LocalUsageDailyCodeChange[];
   lastUpdated: number;
 };
 

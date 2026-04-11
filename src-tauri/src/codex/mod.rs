@@ -18,8 +18,8 @@ pub(crate) mod thread_mode_state;
 
 use self::args::resolve_workspace_codex_args;
 use self::home::resolve_workspace_codex_home;
-pub(crate) use crate::backend::app_server::WorkspaceSession;
 use crate::app_paths;
+pub(crate) use crate::backend::app_server::WorkspaceSession;
 use crate::backend::app_server::{
     build_codex_path_env, check_codex_installation, get_cli_debug_info, probe_codex_app_server,
     resolve_codex_launch_context, spawn_workspace_session as spawn_workspace_session_inner,
@@ -154,7 +154,8 @@ fn build_thread_source_label(source: Option<&str>, provider: Option<&str>) -> Op
 }
 
 fn thread_entry_has_non_empty_string(entry: &Map<String, Value>, key: &str) -> bool {
-    entry.get(key)
+    entry
+        .get(key)
         .and_then(Value::as_str)
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false)
@@ -235,7 +236,9 @@ fn codex_session_identifier_candidates(session: &LocalUsageSessionSummary) -> Ve
     ids
 }
 
-fn collect_codex_session_identifiers(local_sessions: &[LocalUsageSessionSummary]) -> HashSet<String> {
+fn collect_codex_session_identifiers(
+    local_sessions: &[LocalUsageSessionSummary],
+) -> HashSet<String> {
     local_sessions
         .iter()
         .flat_map(codex_session_identifier_candidates)
@@ -1172,7 +1175,9 @@ pub(crate) async fn delete_codex_session(
         sessions.get(&workspace_id).cloned()
     };
     if let Some(session) = session {
-        session.clear_thread_effective_mode(&normalized_session_id).await;
+        session
+            .clear_thread_effective_mode(&normalized_session_id)
+            .await;
     }
 
     Ok(json!({
@@ -2708,6 +2713,7 @@ mod tests {
                 source: Some("custom".to_string()),
                 provider: Some("openai".to_string()),
                 file_size_bytes: Some(4_096),
+                modified_lines: 0,
             },
             LocalUsageSessionSummary {
                 session_id: "thread-local".to_string(),
@@ -2720,6 +2726,7 @@ mod tests {
                 source: Some("project".to_string()),
                 provider: Some("openai".to_string()),
                 file_size_bytes: Some(8_192),
+                modified_lines: 0,
             },
         ];
 
@@ -2773,6 +2780,7 @@ mod tests {
             source: Some("mossx".to_string()),
             provider: Some("openai".to_string()),
             file_size_bytes: Some(1_024),
+            modified_lines: 0,
         }];
 
         let workspace_session_ids: HashSet<String> = local_sessions
@@ -2811,6 +2819,7 @@ mod tests {
             source: Some("cli".to_string()),
             provider: Some("openai".to_string()),
             file_size_bytes: Some(2_048),
+            modified_lines: 0,
         }];
 
         let workspace_session_ids: HashSet<String> = local_sessions
@@ -2897,6 +2906,7 @@ mod tests {
             source: Some("cli".to_string()),
             provider: Some("openai".to_string()),
             file_size_bytes: Some(2_048),
+            modified_lines: 0,
         }];
 
         let workspace_session_ids: HashSet<String> = local_sessions
@@ -2915,5 +2925,4 @@ mod tests {
         assert_eq!(merged[0]["id"], "rollout-2026-04-10T10-00-00-session-123");
         assert_eq!(merged[0]["cwd"], "/tmp/workspace");
     }
-
 }

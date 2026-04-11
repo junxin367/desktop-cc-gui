@@ -21,21 +21,21 @@ use tokio::time::sleep;
 use super::claude_message_content::{build_message_content, format_ask_user_answer};
 use super::events::EngineEvent;
 use super::{EngineConfig, EngineType, SendMessageParams};
-mod lifecycle;
 #[path = "claude/event_conversion.rs"]
 mod event_conversion;
+mod lifecycle;
 #[path = "claude_stream_helpers.rs"]
 mod stream_helpers;
 mod user_input;
 #[cfg(test)]
 use stream_helpers::extract_text_from_content;
-use stream_helpers::{
-    extract_claude_tool_input, extract_claude_tool_name, extract_result_text,
-    extract_string_field, is_claude_stream_control_line, looks_like_claude_runtime_error,
-    parse_claude_stream_json_line, tool_input_signature,
-};
 #[cfg(test)]
 use stream_helpers::extract_tool_result_text;
+use stream_helpers::{
+    extract_claude_tool_input, extract_claude_tool_name, extract_result_text, extract_string_field,
+    is_claude_stream_control_line, looks_like_claude_runtime_error, parse_claude_stream_json_line,
+    tool_input_signature,
+};
 
 #[derive(Debug, Clone)]
 pub struct ClaudeTurnEvent {
