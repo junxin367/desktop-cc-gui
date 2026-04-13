@@ -6,6 +6,7 @@ use tauri::menu::{Menu, MenuItem, MenuItemBuilder, PredefinedMenuItem, Submenu, 
 use tauri::{Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 
 const NEW_WINDOW_ACCELERATOR: &str = "CmdOrCtrl+Shift+N";
+const RELOAD_WINDOW_ACCELERATOR: &str = "CmdOrCtrl+R";
 
 pub struct MenuItemRegistry<R: Runtime> {
     items: Mutex<HashMap<String, MenuItem<R>>>,
@@ -104,6 +105,15 @@ pub fn menu_update_labels<R: Runtime>(
             .map_err(|error| error.to_string())?;
     }
     Ok(())
+}
+
+fn resolve_target_webview_window<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Option<tauri::WebviewWindow<R>> {
+    app.manager()
+        .get_focused_window()
+        .and_then(|window| app.get_webview_window(window.label()))
+        .or_else(|| app.get_webview_window("main"))
 }
 
 pub(crate) fn build_menu<R: tauri::Runtime>(
@@ -336,14 +346,19 @@ pub(crate) fn build_menu<R: tauri::Runtime>(
     let window_menu = {
         let minimize_item = MenuItemBuilder::with_id("window_minimize", "最小化").build(handle)?;
         let maximize_item = MenuItemBuilder::with_id("window_maximize", "最大化").build(handle)?;
+        let reload_item = MenuItemBuilder::with_id("window_reload", "重新加载窗口")
+            .accelerator(RELOAD_WINDOW_ACCELERATOR)
+            .build(handle)?;
         let close_item = MenuItemBuilder::with_id("window_close", "关闭窗口").build(handle)?;
         registry.register("window_minimize", &minimize_item);
         registry.register("window_maximize", &maximize_item);
+        registry.register("window_reload", &reload_item);
         registry.register("window_close", &close_item);
         let submenu = SubmenuBuilder::with_id(handle, "window_menu", "窗口")
             .items(&[
                 &minimize_item,
                 &maximize_item,
+                &reload_item,
                 &PredefinedMenuItem::separator(handle)?,
                 &close_item,
             ])
@@ -353,10 +368,15 @@ pub(crate) fn build_menu<R: tauri::Runtime>(
     };
     #[cfg(not(target_os = "linux"))]
     let window_menu = {
+        let reload_item = MenuItemBuilder::with_id("window_reload", "重新加载窗口")
+            .accelerator(RELOAD_WINDOW_ACCELERATOR)
+            .build(handle)?;
+        registry.register("window_reload", &reload_item);
         let submenu = SubmenuBuilder::with_id(handle, "window_menu", "窗口")
             .items(&[
                 &PredefinedMenuItem::minimize(handle, None)?,
                 &PredefinedMenuItem::maximize(handle, None)?,
+                &reload_item,
                 &PredefinedMenuItem::separator(handle)?,
                 &PredefinedMenuItem::close_window(handle, None)?,
             ])
@@ -419,7 +439,7 @@ pub(crate) fn handle_menu_event<R: tauri::Runtime>(
             let _ = app.emit("updater-check", ());
         }
         "file_close_window" | "window_close" => {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = resolve_target_webview_window(app) {
                 let _ = window.close();
             }
         }
@@ -427,18 +447,25 @@ pub(crate) fn handle_menu_event<R: tauri::Runtime>(
             app.exit(0);
         }
         "view_fullscreen" => {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = resolve_target_webview_window(app) {
                 let is_fullscreen = window.is_fullscreen().unwrap_or(false);
                 let _ = window.set_fullscreen(!is_fullscreen);
             }
         }
         "window_minimize" => {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = resolve_target_webview_window(app) {
                 let _ = window.minimize();
             }
         }
+        "window_reload" => {
+            if let Some(window) = resolve_target_webview_window(app) {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.reload();
+            }
+        }
         "window_maximize" => {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = resolve_target_webview_window(app) {
                 let _ = window.maximize();
             }
         }
@@ -487,11 +514,16 @@ fn emit_menu_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, event: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{menu_event_name_for_id, NEW_WINDOW_ACCELERATOR};
+    use super::{menu_event_name_for_id, NEW_WINDOW_ACCELERATOR, RELOAD_WINDOW_ACCELERATOR};
 
     #[test]
     fn new_window_menu_shortcut_matches_expected() {
         assert_eq!(NEW_WINDOW_ACCELERATOR, "CmdOrCtrl+Shift+N");
+    }
+
+    #[test]
+    fn reload_window_menu_shortcut_matches_expected() {
+        assert_eq!(RELOAD_WINDOW_ACCELERATOR, "CmdOrCtrl+R");
     }
 
     #[test]

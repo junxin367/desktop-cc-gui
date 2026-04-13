@@ -1,4 +1,6 @@
 use std::sync::Mutex;
+#[cfg(target_os = "macos")]
+use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::webview::WebviewWindowBuilder;
 #[cfg(not(target_os = "macos"))]
 use tauri::RunEvent;
@@ -109,6 +111,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 win_builder = win_builder
+                    .background_throttling(BackgroundThrottlingPolicy::Disabled)
                     .title_bar_style(tauri::TitleBarStyle::Overlay)
                     .hidden_title(true)
                     .transparent(false);

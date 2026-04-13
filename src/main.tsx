@@ -4,6 +4,13 @@ import { preloadClientStores } from "./services/clientStorage";
 import { migrateLocalStorageToFileStore } from "./services/migrateLocalStorage";
 import { initInputHistoryStore } from "./features/composer/hooks/useInputHistoryStore";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import {
+  appendRendererDiagnostic,
+  flushRendererDiagnosticsBuffer,
+  installRendererLifecycleDiagnostics,
+} from "./services/rendererDiagnostics";
+
+installRendererLifecycleDiagnostics();
 
 function renderBootstrapFallback(error: unknown) {
   const root = document.getElementById("root");
@@ -68,27 +75,49 @@ function renderBootstrapFallback(error: unknown) {
   );
 }
 
+function resolveRootElement() {
+  const root = document.getElementById("root");
+  if (!(root instanceof HTMLElement)) {
+    throw new Error("Bootstrap root element #root is missing");
+  }
+  return root;
+}
+
 async function bootstrap() {
+  appendRendererDiagnostic("bootstrap/start");
   await preloadClientStores();
+  flushRendererDiagnosticsBuffer();
+  appendRendererDiagnostic("bootstrap/preload-complete");
   try {
     migrateLocalStorageToFileStore();
   } catch (error) {
+    appendRendererDiagnostic("bootstrap/local-storage-migration-failed", {
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    });
     console.error("[bootstrap] localStorage migration failed, continue startup:", error);
   }
   await initInputHistoryStore();
+  appendRendererDiagnostic("bootstrap/input-history-ready");
   // i18n must be imported after preload so language can be read from cache
   await import("./i18n");
+  appendRendererDiagnostic("bootstrap/i18n-ready");
   const { default: App } = await import("./App");
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  const root = resolveRootElement();
+  ReactDOM.createRoot(root).render(
     <React.StrictMode>
       <ErrorBoundary>
         <App />
       </ErrorBoundary>
     </React.StrictMode>,
   );
+  appendRendererDiagnostic("bootstrap/render-committed");
 }
 
 bootstrap().catch((error) => {
+  appendRendererDiagnostic("bootstrap/failed", {
+    error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+  });
+  flushRendererDiagnosticsBuffer();
   console.error("[bootstrap] Startup failed:", error);
   renderBootstrapFallback(error);
 });

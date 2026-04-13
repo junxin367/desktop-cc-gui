@@ -2273,6 +2273,7 @@ const zhPart1 = {
     window: "窗口",
     minimize: "最小化",
     maximize: "最大化",
+    reloadWindow: "重新加载窗口",
     // 帮助菜单
     help: "帮助",
   },

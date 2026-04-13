@@ -2317,6 +2317,7 @@ const enPart1 = {
     window: "Window",
     minimize: "Minimize",
     maximize: "Maximize",
+    reloadWindow: "Reload Window",
     // Help menu
     help: "Help",
   },
