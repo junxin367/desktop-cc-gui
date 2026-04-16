@@ -41,8 +41,15 @@ export const ModeSelect = ({ value, onChange, provider }: ModeSelectProps) => {
     if (provider === 'gemini') {
       return AVAILABLE_MODES.map((mode) => ({ ...mode, disabled: false }));
     }
-    // Only allow bypassPermissions (Auto Mode) to be selectable
-    // Disable all other modes (default, plan, acceptEdits)
+    if (provider === 'claude') {
+      return AVAILABLE_MODES.map((mode) => {
+        if (mode.id === 'plan' || mode.id === 'bypassPermissions') {
+          return { ...mode, disabled: false };
+        }
+        return { ...mode, disabled: true };
+      });
+    }
+    // Keep non-Claude providers on the existing restricted path.
     return AVAILABLE_MODES.map((mode) => {
       if (mode.id !== 'bypassPermissions') {
         return { ...mode, disabled: true };
@@ -59,6 +66,11 @@ export const ModeSelect = ({ value, onChange, provider }: ModeSelectProps) => {
       const codexKey = `codexModes.${modeId}.${field}`;
       const fallbackKey = `modes.${modeId}.${field}`;
       return t(codexKey, { defaultValue: t(fallbackKey) });
+    }
+    if (provider === 'claude') {
+      const claudeKey = `claudeModes.${modeId}.${field}`;
+      const fallbackKey = `modes.${modeId}.${field}`;
+      return t(claudeKey, { defaultValue: t(fallbackKey) });
     }
 
     return t(`modes.${modeId}.${field}`);

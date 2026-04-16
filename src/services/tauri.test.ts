@@ -744,6 +744,26 @@ describe("tauri invoke wrappers", () => {
     });
   });
 
+  it("forwards read-only access mode for claude plan flows", async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockResolvedValueOnce({});
+
+    await sendUserMessage("ws-4", "thread-1", "plan first", {
+      accessMode: "read-only",
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("send_user_message", {
+      workspaceId: "ws-4",
+      threadId: "thread-1",
+      text: "plan first",
+      model: null,
+      effort: null,
+      accessMode: "read-only",
+      images: null,
+      preferredLanguage: null,
+    });
+  });
+
   it("forwards customSpecRoot in sendUserMessage payload", async () => {
     const invokeMock = vi.mocked(invoke);
     invokeMock.mockResolvedValueOnce({});

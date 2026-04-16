@@ -1696,6 +1696,29 @@ const enPart2 = {
     },
   },
 
+  claudeModes: {
+    default: {
+      label: "Suggest Mode",
+      tooltip: "Claude Code manual approval mode. Not enabled in the current rollout phase.",
+      description: "This mode stays unavailable until the Claude approval bridge is fully wired.",
+    },
+    plan: {
+      label: "Plan Mode",
+      tooltip: "Claude Code read-only analysis mode.",
+      description: "Uses read-only tools for analysis and planning before taking action.",
+    },
+    acceptEdits: {
+      label: "Auto Edit",
+      tooltip: "Claude Code auto-edit mode. Not enabled in the current rollout phase.",
+      description: "This mode stays unavailable until Claude approval semantics are verified.",
+    },
+    bypassPermissions: {
+      label: "Full Auto",
+      tooltip: "Claude Code mode that skips permission checks.",
+      description: "Hands-off execution for file writes and commands without approvals. Use with care.",
+    },
+  },
+
   // Codex-specific modes
   codexModes: {
     default: {

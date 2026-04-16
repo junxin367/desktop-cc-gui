@@ -426,12 +426,6 @@ export function AppShell() {
   const { errorToasts, dismissErrorToast } = useErrorToasts();
   const normalizePath = useCallback((path: string) => normalizeFsPath(path).trim(), []);
 
-  // Force accessMode to "full-access" (Auto Mode)
-  // Other modes are temporarily disabled in ModeSelect component
-  useEffect(() => {
-    setAccessMode("full-access");
-  }, []);
-
   const {
     gitIssues,
     gitIssuesTotal,

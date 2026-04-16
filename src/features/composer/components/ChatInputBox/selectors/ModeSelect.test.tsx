@@ -31,6 +31,35 @@ describe("ModeSelect", () => {
     expect(onChange).toHaveBeenCalledWith("plan");
   });
 
+  it("allows plan mode for claude provider but keeps default disabled", () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <ModeSelect value="bypassPermissions" onChange={onChange} provider="claude" />,
+    );
+
+    const trigger = container.querySelector(".selector-button");
+    expect(trigger).toBeTruthy();
+    fireEvent.click(trigger as HTMLElement);
+
+    const planOption = container.querySelector(
+      '.selector-option[data-mode-id="plan"]',
+    ) as HTMLElement | null;
+    const defaultOption = container.querySelector(
+      '.selector-option[data-mode-id="default"]',
+    ) as HTMLElement | null;
+
+    expect(planOption).toBeTruthy();
+    expect(defaultOption).toBeTruthy();
+    expect(planOption?.classList.contains("disabled")).toBe(false);
+    expect(defaultOption?.classList.contains("disabled")).toBe(true);
+
+    fireEvent.click(planOption as HTMLElement);
+    expect(onChange).toHaveBeenCalledWith("plan");
+
+    fireEvent.click(defaultOption as HTMLElement);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps plan mode disabled for non-gemini providers", () => {
     const onChange = vi.fn();
     const { container } = render(
@@ -51,4 +80,3 @@ describe("ModeSelect", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
-
