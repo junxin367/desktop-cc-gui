@@ -1753,22 +1753,28 @@
 .claude-rewind-modal-header {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 22px 24px 18px;
+  gap: 10px;
+  padding: 20px 24px 16px;
   border-bottom: 1px solid
     color-mix(in srgb, var(--border-subtle) 80%, transparent);
 }
 
+.claude-rewind-modal-heading-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .claude-rewind-modal-kicker {
   display: inline-flex;
-  align-self: flex-start;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  padding: 5px 11px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #dbeafe;
   background: color-mix(in srgb, #2563eb 28%, transparent);
@@ -1778,20 +1784,21 @@
 .claude-rewind-modal-heading {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .claude-rewind-modal-heading h3 {
   margin: 0;
-  font-size: 22px;
+  font-size: 30px;
   font-weight: 700;
+  line-height: 1.08;
   color: var(--text-strong);
 }
 
 .claude-rewind-modal-heading p {
   margin: 0;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.45;
   color: var(--text-muted);
 }
 
@@ -1891,12 +1898,13 @@
   margin: 0;
   font-size: 13px;
   line-height: 1.65;
-  color: var(--text-muted);
+  color: color-mix(in srgb, #fb923c 72%, var(--text-muted));
 }
 
 .claude-rewind-modal-toggle {
+  position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--border-subtle) 82%, transparent);
@@ -1910,13 +1918,71 @@
     )
   );
   padding: 14px 16px;
+  cursor: pointer;
 }
 
-.claude-rewind-modal-toggle input {
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  accent-color: color-mix(in srgb, var(--accent-solid, #2f6bff) 92%, white);
+.claude-rewind-modal-toggle-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.claude-rewind-modal-toggle-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle), transparent 6%);
+  background: color-mix(in srgb, var(--surface-card-muted), #0f172a 28%);
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+
+.claude-rewind-modal-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(3, 12, 24, 0.4);
+  transition:
+    transform 180ms ease,
+    background-color 180ms ease;
+}
+
+.claude-rewind-modal-toggle-input:checked
+  + .claude-rewind-modal-toggle-switch {
+  background: rgba(37, 99, 235, 0.35);
+  border-color: rgba(37, 99, 235, 0.56);
+}
+
+.claude-rewind-modal-toggle-input:checked
+  + .claude-rewind-modal-toggle-switch
+  .claude-rewind-modal-toggle-thumb {
+  transform: translateX(20px);
+  background: #dbeafe;
+}
+
+.claude-rewind-modal-toggle-input:disabled
+  + .claude-rewind-modal-toggle-switch {
+  opacity: 0.72;
+}
+
+.claude-rewind-modal-toggle-input:disabled
+  ~ .claude-rewind-modal-toggle-copy {
+  opacity: 0.72;
+}
+
+.claude-rewind-modal-toggle-input:focus-visible
+  + .claude-rewind-modal-toggle-switch {
+  outline: 2px solid color-mix(in srgb, #60a5fa 82%, transparent);
+  outline-offset: 2px;
 }
 
 .claude-rewind-modal-toggle-copy {
@@ -2802,6 +2868,10 @@
 }
 
 @media (max-width: 560px) {
+  .claude-rewind-modal-heading h3 {
+    font-size: 24px;
+  }
+
   .claude-rewind-modal {
     padding: 16px;
   }

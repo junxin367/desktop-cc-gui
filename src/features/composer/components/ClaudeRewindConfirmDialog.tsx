@@ -271,15 +271,17 @@ export function ClaudeRewindConfirmDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="claude-rewind-modal-header">
-          <div className="claude-rewind-modal-kicker">
-            {resolveRewindEngineLabel(preview.engine)}
-          </div>
           <div className="claude-rewind-modal-heading">
-            <h3 id="claude-rewind-dialog-title">
-              {t("rewind.dialogTitle", {
-                engine: resolveRewindEngineLabel(preview.engine),
-              })}
-            </h3>
+            <div className="claude-rewind-modal-heading-main">
+              <div className="claude-rewind-modal-kicker">
+                {resolveRewindEngineLabel(preview.engine)}
+              </div>
+              <h3 id="claude-rewind-dialog-title">
+                {t("rewind.dialogTitle", {
+                  engine: resolveRewindEngineLabel(preview.engine),
+                })}
+              </h3>
+            </div>
             <p id="claude-rewind-dialog-description">
               {t("rewind.dialogDescription")}
             </p>
@@ -357,8 +359,12 @@ export function ClaudeRewindConfirmDialog({
                   onRestoreWorkspaceFilesChange?.(event.target.checked);
                 }}
                 disabled={isBusy || isExporting}
+                className="claude-rewind-modal-toggle-input"
                 data-testid="claude-rewind-restore-toggle"
               />
+              <span className="claude-rewind-modal-toggle-switch" aria-hidden>
+                <span className="claude-rewind-modal-toggle-thumb" />
+              </span>
               <span className="claude-rewind-modal-toggle-copy">
                 <span className="claude-rewind-modal-toggle-title">
                   {t("rewind.restoreWorkspaceFilesLabel")}
