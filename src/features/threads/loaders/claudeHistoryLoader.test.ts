@@ -328,4 +328,126 @@ describe("parseClaudeHistoryMessages", () => {
     expect(assistant?.finalCompletedAt).toBe(Date.parse(completedAt));
     expect(assistant?.finalDurationMs).toBe(7_000);
   });
+
+  it("reconstructs synthetic approval resume assistant text into file change history items", () => {
+    const items = parseClaudeHistoryMessages([
+      {
+        kind: "message",
+        role: "assistant",
+        id: "assistant-approval-resume-1",
+        text: [
+          "Completed approved operations:",
+          "- Approved and wrote ccc.txt",
+          "- Approved and wrote bbb.txt",
+          "- Approved and wrote aaa1.txt",
+          "Please continue from the current workspace state and finish the original task.",
+        ].join("\n"),
+      },
+    ]);
+
+    expect(items).toHaveLength(3);
+    expect(items).toEqual([
+      expect.objectContaining({
+        id: "assistant-approval-resume-1-approval-1",
+        kind: "tool",
+        toolType: "fileChange",
+        status: "completed",
+        output: "Approved and wrote ccc.txt",
+        changes: [expect.objectContaining({ path: "ccc.txt", kind: "add" })],
+      }),
+      expect.objectContaining({
+        id: "assistant-approval-resume-1-approval-2",
+        kind: "tool",
+        toolType: "fileChange",
+        status: "completed",
+        output: "Approved and wrote bbb.txt",
+        changes: [expect.objectContaining({ path: "bbb.txt", kind: "add" })],
+      }),
+      expect.objectContaining({
+        id: "assistant-approval-resume-1-approval-3",
+        kind: "tool",
+        toolType: "fileChange",
+        status: "completed",
+        output: "Approved and wrote aaa1.txt",
+        changes: [expect.objectContaining({ path: "aaa1.txt", kind: "add" })],
+      }),
+    ]);
+  });
+
+  it("prefers structured approval resume marker over english summary parsing", () => {
+    const items = parseClaudeHistoryMessages([
+      {
+        kind: "message",
+        role: "assistant",
+        id: "assistant-approval-marker-1",
+        text: [
+          '<ccgui-approval-resume>[{"summary":"Approved and updated ccc.txt","path":"ccc.txt","kind":"modified","status":"completed"},{"summary":"Approved and wrote aaa1.txt","path":"aaa1.txt","kind":"add","status":"completed"}]</ccgui-approval-resume>',
+          "Completed approved operations:",
+          "- Approved and wrote wrong.txt",
+          "Please continue from the current workspace state and finish the original task.",
+        ].join("\n"),
+      },
+    ]);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toEqual(
+      expect.objectContaining({
+        id: "assistant-approval-marker-1-approval-1",
+        kind: "tool",
+        toolType: "fileChange",
+        output: "Approved and updated ccc.txt",
+        changes: [expect.objectContaining({ path: "ccc.txt", kind: "modified" })],
+      }),
+    );
+    expect(items[1]).toEqual(
+      expect.objectContaining({
+        id: "assistant-approval-marker-1-approval-2",
+        kind: "tool",
+        toolType: "fileChange",
+        output: "Approved and wrote aaa1.txt",
+        changes: [expect.objectContaining({ path: "aaa1.txt", kind: "add" })],
+      }),
+    );
+  });
+
+  it("skips synthetic approval resume prompts that were injected as user messages", () => {
+    const items = parseClaudeHistoryMessages([
+      {
+        kind: "message",
+        role: "user",
+        id: "user-real-1",
+        text: "创建三个文件",
+      },
+      {
+        kind: "message",
+        role: "user",
+        id: "user-internal-approval-resume",
+        text: [
+          '<ccgui-approval-resume>[{"summary":"Approved and wrote bbb.txt","path":"bbb.txt","kind":"add","status":"completed"}]</ccgui-approval-resume>',
+          "Approved and wrote bbb.txt",
+          "Please continue from the current workspace state and finish the original task.",
+        ].join("\n"),
+      },
+      {
+        kind: "message",
+        role: "assistant",
+        id: "assistant-final-1",
+        text: "三个文件都创建好了。",
+      },
+    ]);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      id: "user-real-1",
+      kind: "message",
+      role: "user",
+      text: "创建三个文件",
+    });
+    expect(items[1]).toMatchObject({
+      id: "assistant-final-1",
+      kind: "message",
+      role: "assistant",
+      text: "三个文件都创建好了。",
+    });
+  });
 });

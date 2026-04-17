@@ -30,8 +30,23 @@ impl ClaudeSession {
         Arc::new(Notify::new())
     }
 
+    fn get_or_create_approval_notify(&self, turn_id: &str) -> Arc<Notify> {
+        if let Ok(mut map) = self.approval_notify_by_turn.lock() {
+            if let Some(existing) = map.get(turn_id) {
+                return existing.clone();
+            }
+            let notify = Arc::new(Notify::new());
+            map.insert(turn_id.to_string(), notify.clone());
+            return notify;
+        }
+        Arc::new(Notify::new())
+    }
+
     fn clear_pending_user_inputs_for_turn(&self, turn_id: &str) {
         if let Ok(mut pending) = self.pending_user_inputs.lock() {
+            pending.retain(|_, value| value != turn_id);
+        }
+        if let Ok(mut pending) = self.pending_approval_requests.lock() {
             pending.retain(|_, value| value != turn_id);
         }
         if let Ok(mut notifies) = self.user_input_notify_by_turn.lock() {
@@ -40,13 +55,205 @@ impl ClaudeSession {
         if let Ok(mut answers) = self.user_input_answer_by_turn.lock() {
             answers.remove(turn_id);
         }
+        if let Ok(mut notifies) = self.approval_notify_by_turn.lock() {
+            notifies.remove(turn_id);
+        }
+        if let Ok(mut messages) = self.approval_resume_message_by_turn.lock() {
+            messages.remove(turn_id);
+        }
     }
 
     pub(super) fn clear_turn_ephemeral_state(&self, turn_id: &str) {
         if let Ok(mut map) = self.last_emitted_text_by_turn.lock() {
             map.remove(turn_id);
         }
+        if let Ok(mut summaries) = self.synthetic_approval_summaries_by_turn.lock() {
+            summaries.remove(turn_id);
+        }
         self.clear_pending_user_inputs_for_turn(turn_id);
+    }
+
+    pub(super) async fn handle_file_approval_resume(
+        &self,
+        turn_id: &str,
+        params: &SendMessageParams,
+        new_session_id: &Option<String>,
+    ) -> Result<Option<tokio::io::Lines<BufReader<tokio::process::ChildStdout>>>, String> {
+        let notify = self.get_or_create_approval_notify(turn_id);
+        log::info!("File approval detected, waiting for approval resolution (up to 5 min)...");
+
+        let mut existing_child = {
+            let mut active = self.active_processes.lock().await;
+            active.remove(turn_id)
+        };
+        if let Some(mut child) = existing_child.take() {
+            if let Err(error) = self.terminate_child_process(turn_id, &mut child).await {
+                log::debug!(
+                    "[claude] Failed to terminate approval-blocked process (turn={}): {}",
+                    turn_id,
+                    error
+                );
+            }
+        }
+
+        let approvals_resolved = tokio::select! {
+            _ = notify.notified() => true,
+            _ = tokio::time::sleep(
+                std::time::Duration::from_secs(300)
+            ) => false,
+        };
+
+        if !approvals_resolved {
+            self.clear_pending_user_inputs_for_turn(turn_id);
+            return Err("Approval timed out before Claude could resume.".to_string());
+        }
+
+        let resume_text = self
+            .approval_resume_message_by_turn
+            .lock()
+            .ok()
+            .and_then(|mut map| map.remove(turn_id));
+
+        let answer = match resume_text {
+            Some(text) if !text.trim().is_empty() => text,
+            _ => {
+                return Err("Approval resolved but missing Claude resume context.".to_string());
+            }
+        };
+
+        let sid = match new_session_id.clone() {
+            Some(value) => value,
+            None => {
+                return Err("No session_id available for Claude approval resume.".to_string());
+            }
+        };
+
+        let mut resume_params = params.clone();
+        resume_params.text = answer;
+        resume_params.continue_session = true;
+        resume_params.session_id = Some(sid);
+        resume_params.images = None;
+        if self.is_disposed() {
+            return Err("Claude session disposed; refusing approval resume spawn".to_string());
+        }
+        let use_stream_json_input = Self::should_use_stream_json_input(&resume_params);
+
+        let mut cmd = self.build_command(&resume_params, use_stream_json_input);
+        Self::configure_spawn_command(&mut cmd);
+        match cmd.spawn() {
+            Ok(mut new_child) => {
+                if use_stream_json_input {
+                    if let Some(mut stdin) = new_child.stdin.take() {
+                        let message = match build_message_content(&resume_params) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                let failure = self
+                                    .stop_child_after_resume_failure(
+                                        turn_id,
+                                        new_child,
+                                        format!(
+                                            "Failed to build approval resume message: {}",
+                                            error
+                                        ),
+                                    )
+                                    .await;
+                                return Err(failure);
+                            }
+                        };
+                        let message_str = match serde_json::to_string(&message) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                let failure = self
+                                    .stop_child_after_resume_failure(
+                                        turn_id,
+                                        new_child,
+                                        format!(
+                                            "Failed to serialize approval resume message: {}",
+                                            error
+                                        ),
+                                    )
+                                    .await;
+                                return Err(failure);
+                            }
+                        };
+                        if let Err(error) = stdin.write_all(message_str.as_bytes()).await {
+                            let failure = self
+                                .stop_child_after_resume_failure(
+                                    turn_id,
+                                    new_child,
+                                    format!(
+                                        "Failed to write approval resume message to stdin: {}",
+                                        error
+                                    ),
+                                )
+                                .await;
+                            return Err(failure);
+                        }
+                        if let Err(error) = stdin.write_all(b"\n").await {
+                            let failure = self
+                                .stop_child_after_resume_failure(
+                                    turn_id,
+                                    new_child,
+                                    format!(
+                                        "Failed to write approval resume newline to stdin: {}",
+                                        error
+                                    ),
+                                )
+                                .await;
+                            return Err(failure);
+                        }
+                        drop(stdin);
+                    } else {
+                        let failure = self
+                            .stop_child_after_resume_failure(
+                                turn_id,
+                                new_child,
+                                "Resume process missing stdin in stream-json mode".to_string(),
+                            )
+                            .await;
+                        return Err(failure);
+                    }
+                } else {
+                    drop(new_child.stdin.take());
+                }
+
+                let new_lines = new_child
+                    .stdout
+                    .take()
+                    .map(|stdout| BufReader::new(stdout).lines());
+
+                if let Some(new_stderr) = new_child.stderr.take() {
+                    tokio::spawn(async move {
+                        let mut r = BufReader::new(new_stderr).lines();
+                        while let Ok(Some(_)) = r.next_line().await {}
+                    });
+                }
+
+                let mut spawned_child = Some(new_child);
+                {
+                    let mut active = self.active_processes.lock().await;
+                    if !self.is_disposed() {
+                        if let Some(child) = spawned_child.take() {
+                            active.insert(turn_id.to_string(), child);
+                        }
+                    }
+                }
+                if let Some(mut child) = spawned_child.take() {
+                    let _ = self.terminate_child_process(turn_id, &mut child).await;
+                    return Err(
+                        "Claude session disposed during approval resume; terminated pending child process"
+                            .to_string(),
+                    );
+                }
+
+                log::info!("Resumed Claude after approval resolution");
+                Ok(new_lines)
+            }
+            Err(error) => Err(format!(
+                "Failed to spawn Claude approval resume process: {}",
+                error
+            )),
+        }
     }
 
     /// Convert an AskUserQuestion tool_use input into a RequestUserInput engine event.

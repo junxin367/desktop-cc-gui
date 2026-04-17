@@ -267,10 +267,7 @@ mod tests {
 
     #[test]
     fn resolve_target_message_id_does_not_tail_align_when_runtime_has_fewer_messages() {
-        let runtime_user_messages = vec![
-            user_message("u1", "first"),
-            user_message("u2", "second"),
-        ];
+        let runtime_user_messages = vec![user_message("u1", "first"), user_message("u2", "second")];
 
         let resolved = resolve_target_message_id(
             &runtime_user_messages,

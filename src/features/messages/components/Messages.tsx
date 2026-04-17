@@ -117,6 +117,7 @@ type WorkingIndicatorProps = {
   waitingForFirstChunk?: boolean;
   presentationProfile?: PresentationProfile | null;
   streamActivityPhase?: StreamActivityPhase;
+  primaryLabel?: string | null;
 };
 
 type MessageRowProps = {
@@ -799,6 +800,7 @@ const WorkingIndicator = memo(function WorkingIndicator({
   waitingForFirstChunk = false,
   presentationProfile = null,
   streamActivityPhase = "idle",
+  primaryLabel = null,
 }: WorkingIndicatorProps) {
   const { t } = useTranslation();
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -900,7 +902,9 @@ const WorkingIndicator = memo(function WorkingIndicator({
           <div className="working-timer">
             <span className="working-timer-clock">{formatDurationMs(elapsedMs)}</span>
           </div>
-          <span className="working-text">{reasoningLabel || t("messages.generatingResponse")}</span>
+          <span className="working-text">
+            {primaryLabel || reasoningLabel || t("messages.generatingResponse")}
+          </span>
           {showActivityLabel && <span className="working-activity">{activityLabel}</span>}
           {showNonStreamingHint && (
             <span className="working-hint">
@@ -1949,6 +1953,29 @@ export const Messages = memo(function Messages({
     }
     return null;
   }, [activeEngine, effectiveItems, presentationProfile]);
+  const approvalResumeWorkingLabel = useMemo(() => {
+    if (!isThinking || lastUserMessageIndex < 0) {
+      return null;
+    }
+    const resumeText = t("approval.resumingAfterApproval");
+    for (let index = effectiveItems.length - 1; index > lastUserMessageIndex; index -= 1) {
+      const item = effectiveItems[index];
+      if (!item) {
+        continue;
+      }
+      if (isAssistantMessageConversationItem(item)) {
+        break;
+      }
+      if (
+        item.kind === "tool" &&
+        item.toolType === "fileChange" &&
+        item.status === "running"
+      ) {
+        return item.output?.trim() || resumeText;
+      }
+    }
+    return null;
+  }, [effectiveItems, isThinking, lastUserMessageIndex, t]);
 
   const latestAssistantMessageId = useMemo(() => {
     for (let index = effectiveItems.length - 1; index > lastUserMessageIndex; index -= 1) {
@@ -2783,6 +2810,7 @@ export const Messages = memo(function Messages({
             hasItems={effectiveItems.length > 0}
             reasoningLabel={latestReasoningLabel}
             activityLabel={latestWorkingActivityLabel}
+            primaryLabel={approvalResumeWorkingLabel}
             activeEngine={activeEngine}
             waitingForFirstChunk={waitingForFirstChunk}
             presentationProfile={presentationProfile}

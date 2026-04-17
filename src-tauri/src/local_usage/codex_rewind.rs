@@ -94,7 +94,8 @@ pub(crate) async fn commit_codex_rewind_for_workspace(
             .get(&workspace_id)
             .ok_or_else(|| "workspace not found".to_string())?;
         let workspace_path = PathBuf::from(&entry.path);
-        let sessions_roots = super::resolve_sessions_roots(&workspaces, Some(workspace_path.as_path()));
+        let sessions_roots =
+            super::resolve_sessions_roots(&workspaces, Some(workspace_path.as_path()));
         (workspace_path, sessions_roots)
     };
 
@@ -122,13 +123,21 @@ fn commit_codex_rewind(
     target_user_message_id: Option<&str>,
     local_user_message_count: Option<usize>,
 ) -> Result<CodexRewindCommitResult, String> {
-    let source_files =
-        super::collect_matching_codex_session_files(source_session_id, workspace_path, sessions_roots)?;
+    let source_files = super::collect_matching_codex_session_files(
+        source_session_id,
+        workspace_path,
+        sessions_roots,
+    )?;
     let source_file = source_files
         .iter()
         .max_by_key(|path| source_file_sort_key(path))
         .cloned()
-        .ok_or_else(|| format!("codex session file not found for session {}", source_session_id))?;
+        .ok_or_else(|| {
+            format!(
+                "codex session file not found for session {}",
+                source_session_id
+            )
+        })?;
 
     let existing_target_files =
         collect_optional_codex_session_files(target_session_id, workspace_path, sessions_roots)?;
@@ -630,7 +639,10 @@ fn rewrite_matching_string_field(
     if normalized.is_empty() || !source_aliases.contains(normalized) {
         return;
     }
-    map.insert(key.to_string(), Value::String(target_session_id.to_string()));
+    map.insert(
+        key.to_string(),
+        Value::String(target_session_id.to_string()),
+    );
 }
 
 fn should_rewrite_session_identifier(

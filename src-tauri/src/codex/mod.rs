@@ -29,8 +29,8 @@ use crate::backend::events::AppServerEvent;
 use crate::event_sink::TauriEventSink;
 use crate::local_usage;
 use crate::remote_backend;
-use crate::shared::{codex_core, thread_titles_core};
 use crate::shared::workspaces_core::disconnect_workspace_session_core;
+use crate::shared::{codex_core, thread_titles_core};
 use crate::state::AppState;
 use crate::types::{LocalUsageSessionSummary, WorkspaceEntry};
 
@@ -1797,6 +1797,11 @@ pub(crate) async fn respond_to_server_request(
     {
         if session.has_pending_user_input(&request_id) {
             return session.respond_to_user_input(request_id, result).await;
+        }
+        if session.has_pending_approval_request(&request_id) {
+            return session
+                .respond_to_approval_request(request_id, result)
+                .await;
         }
     }
 

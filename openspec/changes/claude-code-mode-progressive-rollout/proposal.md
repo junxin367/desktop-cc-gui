@@ -1,94 +1,108 @@
 ## Why
 
-当前 `Claude Code` 模式在产品层面实际上被收敛成“仅全自动可选”，这与 UI 中已经存在的四种模式语义、Claude CLI 本身支持的 permission modes、以及用户对风险可控执行的预期不一致。现在继续把所有用户都压在单一 `full-access` 路径上，既掩盖了 `Claude` 权限审批链路的真实缺口，也阻碍后续按风险逐步开放能力。
+`Claude Code` 模式最初按“渐进式 rollout”设计，但代码已经明显走到了下一阶段：`plan` 与 `full-access` 已稳定可用，`default` 也不再只是文案 preview，而是已经进入真实 `File changes` 审批链路，并通过 synthetic approval bridge 复用了现有 GUI approval 交互。
 
-这个问题现在必须处理，因为现有代码已经同时具备了模式枚举、前后端 access mode 映射、Claude CLI mode flag 映射三套基础设施，但产品 wiring 仍将模式强制钉死在 `full-access`。如果不尽快补齐渐进式开放方案，后续每次暴露 Claude 模式能力都会重复踩中“UI 有语义、运行时无保证、审批链不完整”的系统性问题。
+如果继续保留旧提案里“approval bridge 尚未接入”“default 仍停留 preview 占位”的表述，会导致 OpenSpec 与代码事实脱节，后续验证、回归和继续开放 `acceptEdits` 都会失去可靠基线。因此本次需要基于现有实现回写 proposal，把“已完成能力”“剩余边界”“下一阶段待办”明确下来。
 
 ## 目标与边界
 
 ### 目标
 
-- 建立 `Claude Code` 模式的渐进式开放策略，明确哪些模式可先启用，哪些模式必须等审批桥补齐后再开放。
-- 取消当前“前端强制 `full-access`”这一产品层短路行为，让用户选择能够真正传递到 Claude runtime。
-- 首期优先保证 `plan` 与 `full-access` 两档行为可解释、可验证、可回退。
-- 为后续开放 `default` 与 `acceptEdits` 预留清晰的运行时合同、审批事件合同与验证门禁。
+- 回写 Claude mode rollout 的当前真实阶段，而不是继续停留在最初规划态。
+- 明确当前已落地的能力：
+  - `plan` / `full-access` 的稳定模式透传
+  - `default` 的真实 synthetic approval bridge
+  - 多文件审批后的继续执行与 resume continuity
+  - 历史恢复中的 synthetic approval marker stripping / card replay
+  - Windows / nested path 下的本地文件 apply 边界修复
+  - large-file governance 触发后的 `claude.rs` 模块拆分
+- 明确当前仍未完成的边界：
+  - `acceptEdits` 尚未开放
+  - Claude 原生命令审批与更完整 CLI approval shape 仍待继续收敛
 
 ### 边界
 
-- 本提案只覆盖 `Claude Code` 模式，不改变 `Codex`、`Gemini`、`OpenCode` 的模式行为。
-- 首期不要求一次性开放全部四种模式；允许分阶段交付。
-- 首期不重做整套 Mode Selector 视觉，仅允许做必要的启用态、禁用态与文案校准。
-- 首期不引入新的全局设置入口；模式状态沿用现有 composer / thread 启动链路。
-- 涉及审批事件的实现必须复用现有 approval/request UI 流程，不新增第二套审批交互。
+- 本提案仅覆盖 `Claude Code` 模式及其相关 conversation lifecycle，不改变 `Codex`、`Gemini`、`OpenCode` 的 provider 行为。
+- 本提案是“按代码回写”，不是重新设计一套新模式系统。
+- 本轮不引入新的 mode ids，继续沿用 `default / plan / acceptEdits / bypassPermissions` 与 `AccessMode` 既有映射。
+- 本轮不重做整套审批 UI，只要求 Claude 复用现有 approval/request 主链路。
 
 ## 非目标
 
-- 不在本轮重构整个聊天输入框架构。
-- 不在本轮修改 Claude provider、auth token、base URL 等 vendor 配置逻辑。
-- 不在本轮引入新的权限模型命名体系；继续沿用现有 `default / read-only / current / full-access` 与 UI `default / plan / acceptEdits / bypassPermissions` 对照关系。
-- 不在本轮承诺修复所有 Claude CLI 差异，只聚焦模式开放与审批桥接缺口。
+- 不在本轮承诺一次性开放 `acceptEdits`。
+- 不在本轮重构 Claude provider / auth / vendor 配置。
+- 不在本轮引入第二套 Claude 专属审批浮层。
+- 不在本轮消化所有 Claude CLI event 差异，只收敛已经被代码和手测验证的主路径。
 
 ## What Changes
 
-- 移除当前产品层面对 `Claude Code` 模式的强制 `full-access` 锁定，恢复模式选择向 runtime 的真实透传。
-- 将 `Claude Code` 模式开放定义为三阶段：
-  - Phase 1：开放 `plan` 和 `full-access`，保持 `default` / `acceptEdits` 禁用。
-- Phase 2：先以 preview 形态开放 `default`，复用已落地的 degraded-path diagnostics；待 Claude 审批请求真正桥接到现有前端 approval 流程后，再转为稳定开放。
-  - Phase 3：在 `default` 稳定后开放 `acceptEdits`，并验证“自动文件编辑 + 命令审批”的语义与 Claude CLI 一致。
-- 新增对 Claude 模式可用性的显式产品规则：
-  - `plan` 必须映射到只读执行。
-  - `full-access` 必须映射到跳过权限检查。
-- `default` 可以在文案明确标注 preview 的前提下先行开放，但不得宣称审批桥已经完整；`acceptEdits` 在审批桥未完成前仍不得开放。
-- 调整模式选择器的 provider-specific 可选策略，不再把 Claude 非 `bypassPermissions` 模式一律置灰。
-- 为 Claude 模式开放增加跨层验证门禁：
-  - UI mode -> frontend access mode
-  - frontend access mode -> Rust send params
-  - Rust send params -> Claude CLI flags
-  - Claude CLI approval request -> app approval toast / response flow
+- 把 Claude rollout 当前阶段更新为“`default` 已进入可用阶段，但仍保留 preview / bounded support 语义”，而不是“仅 Phase 1 开放 `plan/full-access`”。
+- 明确 `default` 当前通过 synthetic approval bridge 复用现有 approval 流程：
+  - runtime 将 Claude file permission denial 识别并转成 GUI approval request
+  - 前端审批弹窗可以逐条审批，也支持本次批量审批
+  - 审批完成后线程不会停在 summary，而会继续 resume Claude 会话
+- 明确 conversation continuity 约束已经扩展到 Claude synthetic approval：
+  - 用 `<ccgui-approval-resume>...</ccgui-approval-resume>` marker 在 resume 时回灌批准结果
+  - history loader 会把 marker 剥离成结构化 `File changes` 卡片，避免历史噪音
+  - reducer 用更完整的 approval identity 去重/删除，避免只按 `request_id` 造成竞态
+- 明确当前 synthetic local apply 的边界：
+  - 支持 `Write` / `CreateFile` / `CreateDirectory`
+  - 支持缺失父目录创建
+  - 支持 Windows / macOS 路径归一化与 workspace 越界防护
+- 把 large-file governance 的实际治理结果写入 proposal：
+  - `src-tauri/src/engine/claude.rs` 已拆分出 `claude/approval.rs`、`claude/manager.rs`、`claude/tests_stream.rs`
+  - `claude.rs` 已降到 3000 行门禁内
 
 ## 技术方案对比与取舍
 
 | 方案 | 描述 | 优点 | 风险/成本 | 结论 |
 |---|---|---|---|---|
-| A | 直接一次性开放四种模式 | UI 一步到位，看起来最完整 | `default/acceptEdits` 依赖审批桥，当前能力不完整，容易把问题直接暴露给用户 | 不采用 |
-| B | 仅继续保留 `full-access` | 风险最低，不需要补新逻辑 | 持续隐藏真实缺口，模式 UI 与实际行为长期不一致，无法支持谨慎用户 | 不采用 |
-| C | 渐进式开放：先 `plan/full-access`，再 `default`，最后 `acceptEdits` | 风险可控，符合当前能力边界，便于逐阶段验证和回退 | 需要补阶段性门禁与文档，交付节奏更细 | **采用** |
-
-取舍结论：采用方案 C。原因是现有代码已经具备 mode mapping 基础能力，但 `Claude` 审批桥未完整接入。渐进式开放能最大化复用现有代码，同时避免把“看起来能选、实际上不能跑”的模式提前暴露给用户。
+| A | 继续沿用旧 proposal，只把代码当实现细节 | 变更最少 | OpenSpec 与代码事实失真，后续验收标准不可用 | 不采用 |
+| B | 重新起一个新 change 专门描述 synthetic approval bridge | 文档更纯粹 | 会把同一 rollout 的上下文切碎，追踪成本更高 | 不采用 |
+| C | 在现有 change 上按代码回写当前阶段，保留“已完成 + 剩余阶段”结构 | 行为、设计、任务、验收能重新对齐 | 需要同步更新 proposal/design/tasks/spec | **采用** |
 
 ## Capabilities
 
-### New Capabilities
-
-- `claude-code-access-modes`: 定义 Claude Code 在 UI、runtime、CLI flag、approval flow 四层的一致模式合同，以及分阶段开放规则。
-
 ### Modified Capabilities
 
-- `conversation-lifecycle-contract`: 线程启动与消息发送流程需要承认 Claude mode selection 是运行时输入的一部分，不能再被产品层强制覆盖。
+- `claude-code-access-modes`
+- `conversation-lifecycle-contract`
+
+### Capability Focus
+
+- Claude mode selection 必须继续保持 runtime-effective，不得被产品层静默改写。
+- Claude approval-dependent mode 已从“future bridge”升级为“已有 synthetic approval bridge，但能力有边界”。
+- Conversation lifecycle 必须承认 synthetic approval resume marker、历史恢复和多次审批后的继续执行。
 
 ## 验收标准
 
-- `Claude` provider 下，Mode Selector 不再被产品层强制锁死为 `bypassPermissions/full-access`。
-- Phase 1 中，用户选择 `plan` 后，发送链路必须稳定映射到 Claude 的只读模式；选择 `full-access` 后必须稳定映射到跳过权限检查模式。
-- 在审批桥未补齐前，`default` 与 `acceptEdits` 不得以“已可用”状态对普通用户暴露。
-- Phase 2 中，Claude 进入需要审批的操作时，前端必须出现复用现有 approval 流程的审批请求，而不是静默失败。
-- Phase 3 中，`acceptEdits` 必须满足“文件编辑可自动通过、命令仍可进入审批”的产品语义；若 Claude CLI 实际语义不同，必须在文案与规则中显式校正。
-- 任意阶段都不得破坏 Codex、Gemini、OpenCode 的现有 mode 行为。
+- `Claude` provider 下：
+  - `plan` 继续映射只读执行
+  - `full-access` 继续映射跳过权限检查
+  - `default` 已可进入真实文件审批路径，不再只是文案占位
+  - `acceptEdits` 仍保持未开放，直到 CLI 语义完成验证
+- Claude `default` 命中受支持的文件变更时：
+  - GUI 必须收到 approval request
+  - 用户批准后本地文件变更被实际应用
+  - 多个文件审批完成后会话必须继续 resume，而不是直接结束
+- Claude history replay 时：
+  - synthetic approval marker 不得原样泄漏到用户文本
+  - 仍需恢复为结构化 `File changes` 卡片
+- approval reducer 不得只按单一 `request_id` 删除，必须避免多审批并发误删
+- `npm run check:large-files:gate` 必须继续通过，`claude.rs` 不得重新越过 3000 行门槛
 
 ## Impact
 
 - Affected frontend:
-  - `src/app-shell.tsx`
-  - `src/features/composer/components/ChatInputBox/selectors/ModeSelect.tsx`
-  - `src/features/composer/components/ChatInputBox/types.ts`
-  - `src/i18n/locales/zh.part2.ts`
-  - `src/i18n/locales/en.part2.ts`
+  - `src/features/threads/hooks/useThreadApprovals.ts`
+  - `src/features/threads/hooks/useThreadsReducer.ts`
+  - `src/features/threads/loaders/claudeHistoryLoader.ts`
+  - `src/utils/threadItems.ts`
 - Affected backend/runtime:
   - `src-tauri/src/engine/claude.rs`
-  - `src-tauri/src/engine/claude/event_conversion.rs`
-  - `src-tauri/src/engine/events.rs`
-  - `src-tauri/src/codex/mod.rs`
-- Affected tests/contracts:
-  - `src/services/tauri.test.ts`
-  - Claude mode mapping / approval event tests
-  - runtime contract verification for approval request propagation
+  - `src-tauri/src/engine/claude/approval.rs`
+  - `src-tauri/src/engine/claude/manager.rs`
+  - `src-tauri/src/engine/claude/tests_stream.rs`
+- Affected validation:
+  - Claude approval / resume / history continuity tests
+  - `npm run check:large-files:gate`

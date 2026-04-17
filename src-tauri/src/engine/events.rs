@@ -257,6 +257,7 @@ enum ClaudeCompactionSignal {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ClaudePermissionSignal {
     RequestUserInputBlocked,
+    FileChangeBlocked,
 }
 
 fn normalize_claude_signal_token(value: &str) -> String {
@@ -311,6 +312,9 @@ fn detect_claude_permission_signal(data: &Value) -> Option<ClaudePermissionSigna
         .unwrap_or_default();
     if blocked_method == "item/tool/requestUserInput" {
         return Some(ClaudePermissionSignal::RequestUserInputBlocked);
+    }
+    if blocked_method == "item/fileChange/requestApproval" {
+        return Some(ClaudePermissionSignal::FileChangeBlocked);
     }
 
     None
@@ -638,7 +642,8 @@ pub fn engine_event_to_app_server_event(
             if matches!(engine, EngineType::Claude) {
                 if let Some(signal) = detect_claude_permission_signal(data) {
                     match signal {
-                        ClaudePermissionSignal::RequestUserInputBlocked => {
+                        ClaudePermissionSignal::RequestUserInputBlocked
+                        | ClaudePermissionSignal::FileChangeBlocked => {
                             let blocked_method =
                                 get_value_by_aliases(data, &["blockedMethod", "blocked_method"])
                                     .and_then(Value::as_str)
@@ -888,6 +893,43 @@ mod tests {
         assert_eq!(
             mapped.message["params"]["requestId"],
             Value::String("tool-ask-1".to_string())
+        );
+    }
+
+    #[test]
+    fn claude_file_change_permission_denied_raw_event_maps_to_mode_blocked() {
+        let event = EngineEvent::Raw {
+            workspace_id: "ws-approval".to_string(),
+            engine: EngineType::Claude,
+            data: json!({
+                "type": "permission_denied",
+                "source": "claude_permission_denied",
+                "blockedMethod": "item/fileChange/requestApproval",
+                "effectiveMode": "code",
+                "reasonCode": "claude_file_change_permission_denied",
+                "reason": "Claude denied a file-change tool before any GUI approval request could start.",
+                "suggestion": "Use full-access or manually allow the workspace directory in Claude Code settings.",
+                "requestId": "tool-edit-1",
+            }),
+        };
+
+        let mapped =
+            engine_event_to_app_server_event(&event, "thread-1", "item-1").expect("mapped event");
+        assert_eq!(
+            mapped.message["method"],
+            Value::String("collaboration/modeBlocked".to_string())
+        );
+        assert_eq!(
+            mapped.message["params"]["blockedMethod"],
+            Value::String("item/fileChange/requestApproval".to_string())
+        );
+        assert_eq!(
+            mapped.message["params"]["reasonCode"],
+            Value::String("claude_file_change_permission_denied".to_string())
+        );
+        assert_eq!(
+            mapped.message["params"]["requestId"],
+            Value::String("tool-edit-1".to_string())
         );
     }
 

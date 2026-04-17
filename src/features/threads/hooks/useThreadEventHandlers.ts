@@ -173,6 +173,8 @@ export function useThreadEventHandlers({
   const onApprovalRequest = useThreadApprovalEvents({
     dispatch,
     approvalAllowlistRef,
+    markProcessing,
+    setActiveTurnId,
   });
   const enqueueUserInputRequest = useThreadUserInputEvents({ dispatch });
   const onRequestUserInput = useCallback(

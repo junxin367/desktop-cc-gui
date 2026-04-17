@@ -524,8 +524,16 @@ export function useThreads({
     Record<string, ReturnType<typeof setTimeout> | null>
   >({});
   const sharedSessionLastSignatureByThreadRef = useRef<Record<string, string>>({});
-  const { approvalAllowlistRef, handleApprovalDecision, handleApprovalRemember } =
-    useThreadApprovals({ dispatch, onDebug });
+  const {
+    approvalAllowlistRef,
+    handleApprovalDecision,
+    handleApprovalBatchAccept,
+    handleApprovalRemember,
+  } = useThreadApprovals({
+    approvals: state.approvals,
+    dispatch,
+    onDebug,
+  });
   const { handleUserInputSubmit } = useThreadUserInput({ dispatch });
   const {
     customNamesRef,
@@ -2049,6 +2057,7 @@ export function useThreads({
     updateCustomInstructions,
     confirmCustom,
     handleApprovalDecision,
+    handleApprovalBatchAccept,
     handleApprovalRemember,
     handleUserInputSubmit,
   };

@@ -786,14 +786,12 @@ async fn commit_codex_rewind_for_workspace_keeps_source_when_target_turn_is_miss
 
     assert!(error.contains("target user turn"));
     assert!(source_path.exists());
-    assert!(
-        !sessions_root
-            .join("2026")
-            .join("01")
-            .join("19")
-            .join("rewind-session-beta.jsonl")
-            .exists()
-    );
+    assert!(!sessions_root
+        .join("2026")
+        .join("01")
+        .join("19")
+        .join("rewind-session-beta.jsonl")
+        .exists());
 }
 
 #[tokio::test]
@@ -937,7 +935,8 @@ async fn commit_codex_rewind_for_workspace_supports_response_item_user_without_e
 }
 
 #[tokio::test]
-async fn commit_codex_rewind_for_workspace_aligns_target_index_when_source_has_hidden_injected_user() {
+async fn commit_codex_rewind_for_workspace_aligns_target_index_when_source_has_hidden_injected_user(
+) {
     let codex_home = std::env::temp_dir().join(format!("codex-home-{}", Uuid::new_v4()));
     let sessions_root = codex_home.join("sessions");
     let day_key = "2026-01-19";
@@ -1008,7 +1007,8 @@ async fn commit_codex_rewind_for_workspace_aligns_target_index_when_source_has_h
 }
 
 #[tokio::test]
-async fn commit_codex_rewind_for_workspace_does_not_shift_index_when_source_has_fewer_user_turns_than_local() {
+async fn commit_codex_rewind_for_workspace_does_not_shift_index_when_source_has_fewer_user_turns_than_local(
+) {
     let codex_home = std::env::temp_dir().join(format!("codex-home-{}", Uuid::new_v4()));
     let sessions_root = codex_home.join("sessions");
     let day_key = "2026-01-19";

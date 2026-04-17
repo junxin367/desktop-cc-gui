@@ -228,6 +228,51 @@ describe("Messages live behavior", () => {
     },
   );
 
+  it("shows approval resume status as the primary working label for Claude file approvals", () => {
+    const { container } = render(
+      <Messages
+        items={[
+          {
+            id: "user-approval-resume",
+            kind: "message",
+            role: "user",
+            text: "创建 3 个文件",
+          },
+          {
+            id: "assistant-before-approval",
+            kind: "message",
+            role: "assistant",
+            text: "我会先创建文件。",
+            isFinal: true,
+          },
+          {
+            id: "file-approval-running",
+            kind: "tool",
+            toolType: "fileChange",
+            title: "Applying approved file change",
+            detail: "{\"file_path\":\"aaa.txt\"}",
+            status: "running",
+            output: "Approved. Applying the change locally and resuming Claude...",
+          },
+        ]}
+        threadId="claude:thread-1"
+        workspaceId="ws-1"
+        isThinking
+        processingStartedAt={Date.now() - 800}
+        activeEngine="claude"
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(container.querySelector(".working-text")?.textContent ?? "").toContain(
+      "resuming Claude",
+    );
+    expect(container.querySelector(".working-activity")?.textContent ?? "").toContain(
+      "Applying approved file change",
+    );
+  });
+
   it.each(["codex", "claude", "gemini"] as const)(
     "detects ingress for %s even when chunk length is unchanged",
     (activeEngine) => {

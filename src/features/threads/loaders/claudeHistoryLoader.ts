@@ -1,4 +1,8 @@
 import type { ConversationItem, RequestUserInputRequest } from "../../../types";
+import {
+  extractClaudeApprovalResumeEntries,
+  stripClaudeApprovalResumeArtifacts,
+} from "../../../utils/threadItems";
 import type { HistoryLoader } from "../contracts/conversationCurtainContracts";
 import { normalizeHistorySnapshot } from "../contracts/conversationCurtainContracts";
 import { computeDiff } from "../../messages/utils/diffUtils";
@@ -747,6 +751,113 @@ function hydrateClaudeAssistantFinalTiming(
   });
 }
 
+function inferSyntheticApprovalChangeKind(summary: string) {
+  const normalized = summary.trim().toLowerCase();
+  if (normalized.includes("deleted ") || normalized.includes("removed ")) {
+    return "delete" as const;
+  }
+  if (
+    normalized.includes("created ") ||
+    normalized.includes("added ") ||
+    normalized.includes("wrote ")
+  ) {
+    return "add" as const;
+  }
+  return "modified" as const;
+}
+
+function parseSyntheticApprovalResumeItems(
+  text: string,
+  itemIdPrefix: string,
+): ConversationItem[] {
+  const structuredEntries = extractClaudeApprovalResumeEntries(text);
+  if (structuredEntries.length > 0) {
+    return structuredEntries.map((entry, index) => ({
+      id: `${itemIdPrefix}-approval-${index + 1}`,
+      kind: "tool",
+      toolType: "fileChange",
+      title: "Approved file change",
+      detail: entry.summary,
+      status:
+        entry.status === "failed"
+          ? "failed"
+          : entry.status === "pending"
+            ? "pending"
+            : "completed",
+      output: entry.summary,
+      changes: entry.path
+        ? [
+            {
+              path: entry.path,
+              kind:
+                entry.kind === "add" ||
+                entry.kind === "modified" ||
+                entry.kind === "delete"
+                  ? entry.kind
+                  : "modified",
+            },
+          ]
+        : undefined,
+    }));
+  }
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("Completed approved operations:")) {
+    return [];
+  }
+  const summaryLines = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("- "));
+  if (summaryLines.length === 0) {
+    return [];
+  }
+  return summaryLines.map((line, index) => {
+    const summary = line.slice(2).trim();
+    const pathMatch = summary.match(
+      /(?:wrote|created|updated|modified|deleted|removed|renamed)\s+(.+)$/i,
+    );
+    const filePath = (pathMatch?.[1] ?? "").trim();
+    return {
+      id: `${itemIdPrefix}-approval-${index + 1}`,
+      kind: "tool",
+      toolType: "fileChange",
+      title: "Approved file change",
+      detail: summary,
+      status: "completed",
+      output: summary,
+      changes: filePath
+        ? [{ path: filePath, kind: inferSyntheticApprovalChangeKind(summary) }]
+        : undefined,
+    } satisfies Extract<ConversationItem, { kind: "tool" }>;
+  });
+}
+
+function shouldSkipSyntheticApprovalResumePrompt(
+  role: "user" | "assistant",
+  text: string,
+) {
+  if (role !== "user") {
+    return false;
+  }
+  if (extractClaudeApprovalResumeEntries(text).length > 0) {
+    return true;
+  }
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (
+    /Please continue from the current workspace state and finish the original task\.\s*$/i.test(
+      trimmed,
+    ) &&
+    (trimmed.startsWith("Completed approved operations:") ||
+      /^Approved and (?:wrote|updated|created|deleted|removed)\b/i.test(trimmed))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function parseClaudeHistoryMessages(messagesData: unknown): ConversationItem[] {
   const items: ConversationItem[] = [];
   const messageTimestampById = new Map<string, number>();
@@ -826,6 +937,9 @@ export function parseClaudeHistoryMessages(messagesData: unknown): ConversationI
     if (kind === "message") {
       const role = asString(message.role) === "user" ? "user" : "assistant";
       const text = asString(message.text ?? "");
+      if (shouldSkipSyntheticApprovalResumePrompt(role, text)) {
+        continue;
+      }
       const images = extractImageList(message.images);
       const itemId = asString(message.id ?? `claude-message-${items.length + 1}`);
       const timestampMs = parseHistoryTimestampMs(message.timestamp);
@@ -846,6 +960,18 @@ export function parseClaudeHistoryMessages(messagesData: unknown): ConversationI
         role === "assistant"
           ? extractClaudeAssistantFinalFlag(message)
           : undefined;
+      if (role === "assistant") {
+        const syntheticApprovalItems = parseSyntheticApprovalResumeItems(text, itemId);
+        if (syntheticApprovalItems.length > 0) {
+          items.push(...syntheticApprovalItems);
+          continue;
+        }
+      }
+      const normalizedMessageText =
+        role === "assistant" ? stripClaudeApprovalResumeArtifacts(text) : text;
+      if (role === "assistant" && !normalizedMessageText && images.length === 0) {
+        continue;
+      }
       if (typeof timestampMs === "number") {
         messageTimestampById.set(itemId, timestampMs);
       }
@@ -853,7 +979,7 @@ export function parseClaudeHistoryMessages(messagesData: unknown): ConversationI
         id: itemId,
         kind: "message",
         role,
-        text,
+        text: normalizedMessageText,
         images: images.length > 0 ? images : undefined,
         ...(typeof assistantFinalFlag === "boolean"
           ? { isFinal: assistantFinalFlag }

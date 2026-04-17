@@ -285,6 +285,13 @@ fn extract_turn_result_text(result: Option<&Value>) -> Option<String> {
     result.and_then(|value| extract_turn_result_text_internal(value, 0))
 }
 
+fn should_prefer_turn_result_text(result: Option<&Value>) -> bool {
+    result
+        .and_then(|value| value.get("syntheticApprovalResolved"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 fn is_likely_foreign_model_for_gemini(model: &str) -> bool {
     let normalized = model.trim().to_ascii_lowercase();
     if normalized.is_empty() {
@@ -2119,7 +2126,9 @@ pub async fn engine_send_message(
                     if let EngineEvent::TurnCompleted { result, .. } = &event {
                         let fallback_text =
                             extract_turn_result_text(result.as_ref()).unwrap_or_default();
-                        let completed_text = if accumulated_agent_text.trim().is_empty() {
+                        let completed_text = if should_prefer_turn_result_text(result.as_ref()) {
+                            fallback_text
+                        } else if accumulated_agent_text.trim().is_empty() {
                             fallback_text
                         } else {
                             accumulated_agent_text.clone()
@@ -2470,7 +2479,9 @@ pub async fn engine_send_message(
                     if let EngineEvent::TurnCompleted { result, .. } = &event {
                         let fallback_text =
                             extract_turn_result_text(result.as_ref()).unwrap_or_default();
-                        let completed_text = if accumulated_agent_text.trim().is_empty() {
+                        let completed_text = if should_prefer_turn_result_text(result.as_ref()) {
+                            fallback_text
+                        } else if accumulated_agent_text.trim().is_empty() {
                             fallback_text
                         } else {
                             accumulated_agent_text.clone()

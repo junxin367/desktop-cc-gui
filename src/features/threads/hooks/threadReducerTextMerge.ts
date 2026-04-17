@@ -11,7 +11,10 @@ function isReasoningItem(
 ): item is Extract<ConversationItem, { kind: "reasoning" }> {
   return item?.kind === "reasoning";
 }
-import { normalizeItem } from "../../../utils/threadItems";
+import {
+  normalizeItem,
+  stripClaudeApprovalResumeArtifacts,
+} from "../../../utils/threadItems";
 import {
   isClaudeReasoningThread,
   isGeminiReasoningThread,
@@ -856,21 +859,22 @@ export function mergeCompletedAgentText(existing: string, completed: string) {
 }
 
 function normalizeCompletedAssistantText(value: string) {
+  const cleanedValue = stripClaudeApprovalResumeArtifacts(value);
   const normalizedMessage = normalizeItem({
     id: "__completed-assistant-normalization__",
     kind: "message",
     role: "assistant",
-    text: value,
+    text: cleanedValue,
   });
   const normalizedByItem =
-    normalizedMessage.kind === "message" ? normalizedMessage.text : value;
+    normalizedMessage.kind === "message" ? normalizedMessage.text : cleanedValue;
   if (normalizedByItem && normalizedByItem !== value) {
     return normalizedByItem;
   }
 
-  const trimmed = value.trim();
+  const trimmed = cleanedValue.trim();
   if (!trimmed) {
-    return value;
+    return cleanedValue;
   }
 
   // 非 markdown 普通文本里，偶发会收到 "A + 空白 + A" 的重复 completed payload。
@@ -882,7 +886,7 @@ function normalizeCompletedAssistantText(value: string) {
     }
   }
 
-  return value;
+  return cleanedValue;
 }
 
 export function addSummaryBoundary(existing: string) {

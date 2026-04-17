@@ -21,12 +21,28 @@ use tokio::time::sleep;
 use super::claude_message_content::{build_message_content, format_ask_user_answer};
 use super::events::EngineEvent;
 use super::{EngineConfig, EngineType, SendMessageParams};
+#[path = "claude/approval.rs"]
+mod approval;
 #[path = "claude/event_conversion.rs"]
 mod event_conversion;
 mod lifecycle;
+#[path = "claude/manager.rs"]
+mod manager;
 #[path = "claude_stream_helpers.rs"]
 mod stream_helpers;
 mod user_input;
+use approval::{
+    classify_claude_mode_blocked_tool, ClaudeModeBlockedKind, SyntheticApprovalSummaryEntry,
+};
+#[cfg(test)]
+use approval::{
+    format_synthetic_approval_completion_text, format_synthetic_approval_resume_message,
+    SYNTHETIC_APPROVAL_RESUME_MARKER_PREFIX,
+};
+#[cfg(test)]
+#[path = "claude/tests_stream.rs"]
+mod tests_stream;
+pub use manager::ClaudeSessionManager;
 #[cfg(test)]
 use stream_helpers::extract_text_from_content;
 #[cfg(test)]
@@ -98,6 +114,15 @@ pub struct ClaudeSession {
     stdin_by_turn: Mutex<HashMap<String, ChildStdin>>,
     /// Pending AskUserQuestion requests: request_id -> turn_id
     pending_user_inputs: StdMutex<HashMap<String, String>>,
+    /// Pending synthetic Claude approval requests: request_id -> turn_id
+    pending_approval_requests: StdMutex<HashMap<String, String>>,
+    /// Synthetic approval summaries accumulated per turn for final completion reporting
+    synthetic_approval_summaries_by_turn:
+        StdMutex<HashMap<String, Vec<SyntheticApprovalSummaryEntry>>>,
+    /// Per-turn signal to resume stdout processing after approval responses arrive
+    approval_notify_by_turn: StdMutex<HashMap<String, Arc<Notify>>>,
+    /// Per-turn formatted approval resolution text for kill+resume mechanism
+    approval_resume_message_by_turn: StdMutex<HashMap<String, String>>,
     /// Per-turn signal to resume stdout processing after AskUserQuestion response
     user_input_notify_by_turn: StdMutex<HashMap<String, Arc<Notify>>>,
     /// Per-turn formatted AskUserQuestion answer for kill+resume mechanism
@@ -157,6 +182,10 @@ impl ClaudeSession {
             last_emitted_text_by_turn: StdMutex::new(HashMap::new()),
             stdin_by_turn: Mutex::new(HashMap::new()),
             pending_user_inputs: StdMutex::new(HashMap::new()),
+            pending_approval_requests: StdMutex::new(HashMap::new()),
+            synthetic_approval_summaries_by_turn: StdMutex::new(HashMap::new()),
+            approval_notify_by_turn: StdMutex::new(HashMap::new()),
+            approval_resume_message_by_turn: StdMutex::new(HashMap::new()),
             user_input_notify_by_turn: StdMutex::new(HashMap::new()),
             user_input_answer_by_turn: StdMutex::new(HashMap::new()),
         }
@@ -597,6 +626,7 @@ impl ClaudeSession {
                     if let Some(sid) = sid {
                         if !sid.is_empty() && sid != "pending" && !session_id_emitted {
                             new_session_id = Some(sid.to_string());
+                            self.set_session_id(Some(sid.to_string())).await;
                             session_id_emitted = true;
                             // Emit SessionStarted with real session_id so frontend can update thread ID
                             self.emit_turn_event(
@@ -632,6 +662,31 @@ impl ClaudeSession {
                             matches!(&unified_event, EngineEvent::RequestUserInput { .. });
 
                         self.emit_turn_event(turn_id, unified_event);
+
+                        if self.has_pending_approval_request_for_turn(turn_id) {
+                            match self
+                                .handle_file_approval_resume(turn_id, &params, &new_session_id)
+                                .await
+                            {
+                                Ok(Some(new_lines)) => {
+                                    lines = new_lines;
+                                    continue;
+                                }
+                                Ok(None) => {}
+                                Err(error) => {
+                                    self.emit_turn_event(
+                                        turn_id,
+                                        EngineEvent::TurnError {
+                                            workspace_id: self.workspace_id.clone(),
+                                            error: error.clone(),
+                                            code: None,
+                                        },
+                                    );
+                                    self.clear_turn_ephemeral_state(turn_id);
+                                    return Err(error);
+                                }
+                            }
+                        }
 
                         // When AskUserQuestion is detected, delegate to the
                         // dedicated handler which waits for user input, kills the
@@ -1171,12 +1226,21 @@ impl ClaudeSession {
         }
 
         let pending_tool = self.latest_pending_tool_summary(turn_id)?;
-        if !pending_tool
-            .tool_name
-            .eq_ignore_ascii_case("AskUserQuestion")
-        {
-            return None;
-        }
+        let blocked_kind = classify_claude_mode_blocked_tool(&pending_tool.tool_name)?;
+        let (blocked_method, reason_code, reason, suggestion) = match blocked_kind {
+            ClaudeModeBlockedKind::RequestUserInput => (
+                "item/tool/requestUserInput",
+                "claude_ask_user_question_permission_denied",
+                "Claude denied AskUserQuestion before any approval request reached the GUI.",
+                "Claude default mode remains gated. Use Plan mode when the workflow needs AskUserQuestion or other interactive clarification.",
+            ),
+            ClaudeModeBlockedKind::FileChange => (
+                "item/fileChange/requestApproval",
+                "claude_file_change_permission_denied",
+                "Claude denied a file-change tool before any GUI approval request could start.",
+                "Claude preview can bridge Write/CreateFile/CreateDirectory after approval. Other file tools still need full-access or a retry after changing Claude Code settings.",
+            ),
+        };
 
         Some(EngineEvent::Raw {
             workspace_id: self.workspace_id.clone(),
@@ -1184,14 +1248,14 @@ impl ClaudeSession {
             data: json!({
                 "type": "permission_denied",
                 "source": "claude_permission_denied",
-                "blockedMethod": "item/tool/requestUserInput",
-                "blocked_method": "item/tool/requestUserInput",
+                "blockedMethod": blocked_method,
+                "blocked_method": blocked_method,
                 "effectiveMode": "code",
                 "effective_mode": "code",
-                "reasonCode": "claude_ask_user_question_permission_denied",
-                "reason_code": "claude_ask_user_question_permission_denied",
-                "reason": "Claude denied AskUserQuestion before any approval request reached the GUI.",
-                "suggestion": "Claude default mode remains gated. Use Plan mode when the workflow needs AskUserQuestion or other interactive clarification.",
+                "reasonCode": reason_code,
+                "reason_code": reason_code,
+                "reason": reason,
+                "suggestion": suggestion,
                 "requestId": pending_tool.tool_id,
                 "request_id": pending_tool.tool_id,
                 "toolName": pending_tool.tool_name,
@@ -1253,6 +1317,16 @@ impl ClaudeSession {
             .and_then(|mut map| map.remove(tool_id))
     }
 
+    fn peek_tool_input_value(&self, tool_id: &str) -> Option<Value> {
+        if tool_id.is_empty() {
+            return None;
+        }
+        self.tool_input_value_by_id
+            .lock()
+            .ok()
+            .and_then(|map| map.get(tool_id).cloned())
+    }
+
     fn clear_tool_input(&self, tool_id: &str) {
         if tool_id.is_empty() {
             return;
@@ -1265,38 +1339,34 @@ impl ClaudeSession {
         }
     }
 
-    fn build_tool_completed(
-        &self,
-        tool_id: &str,
-        output: Option<String>,
-        is_error: bool,
-    ) -> Option<EngineEvent> {
-        if tool_id.is_empty() {
-            return None;
-        }
+    fn take_tool_completion_state(&self, tool_id: &str) -> (Option<String>, Option<Value>) {
         let tool_name = self.take_tool_name(tool_id);
         let cached_input = self.take_tool_input_value(tool_id);
         self.clear_pending_tool(tool_id);
         self.clear_tool_input(tool_id);
-        let error = if is_error {
-            output.clone().filter(|text| !text.trim().is_empty())
-        } else {
-            None
-        };
-        let output = if is_error {
-            None
-        } else {
-            output.map(|text| {
-                if let Some(input) = cached_input.clone() {
-                    json!({
-                        "_input": input,
-                        "_output": text,
-                    })
-                } else {
-                    Value::String(text)
-                }
-            })
-        };
+        (tool_name, cached_input)
+    }
+
+    fn build_tool_completed_with_parts(
+        &self,
+        tool_id: &str,
+        output: Option<String>,
+        error: Option<String>,
+    ) -> Option<EngineEvent> {
+        if tool_id.is_empty() {
+            return None;
+        }
+        let (tool_name, cached_input) = self.take_tool_completion_state(tool_id);
+        let output = output.map(|text| {
+            if let Some(input) = cached_input.clone() {
+                json!({
+                    "_input": input,
+                    "_output": text,
+                })
+            } else {
+                Value::String(text)
+            }
+        });
         Some(EngineEvent::ToolCompleted {
             workspace_id: self.workspace_id.clone(),
             tool_id: tool_id.to_string(),
@@ -1304,6 +1374,33 @@ impl ClaudeSession {
             output,
             error,
         })
+    }
+
+    fn emit_tool_completion(
+        &self,
+        turn_id: &str,
+        tool_id: &str,
+        output: Option<String>,
+        error: Option<String>,
+    ) {
+        if let Some(event) = self.build_tool_completed_with_parts(tool_id, output, error) {
+            self.emit_turn_event(turn_id, event);
+        }
+    }
+
+    fn build_tool_completed(
+        &self,
+        tool_id: &str,
+        output: Option<String>,
+        is_error: bool,
+    ) -> Option<EngineEvent> {
+        let error = if is_error {
+            output.clone().filter(|text| !text.trim().is_empty())
+        } else {
+            None
+        };
+        let output = if is_error { None } else { output };
+        self.build_tool_completed_with_parts(tool_id, output, error)
     }
 
     fn build_tool_output_delta(&self, tool_id: &str, delta: &str) -> Option<EngineEvent> {
@@ -1320,317 +1417,11 @@ impl ClaudeSession {
     }
 }
 
-/// Claude session manager for all workspaces
-pub struct ClaudeSessionManager {
-    sessions: Mutex<HashMap<String, Arc<ClaudeSession>>>,
-    default_config: RwLock<EngineConfig>,
-}
-
-impl ClaudeSessionManager {
-    pub fn new() -> Self {
-        Self {
-            sessions: Mutex::new(HashMap::new()),
-            default_config: RwLock::new(EngineConfig::default()),
-        }
-    }
-
-    /// Set default configuration
-    pub async fn set_config(&self, config: EngineConfig) {
-        *self.default_config.write().await = config;
-    }
-
-    /// Get or create a session for a workspace
-    pub async fn get_or_create_session(
-        &self,
-        workspace_id: &str,
-        workspace_path: &Path,
-    ) -> Arc<ClaudeSession> {
-        let mut sessions = self.sessions.lock().await;
-
-        if let Some(session) = sessions.get(workspace_id) {
-            return session.clone();
-        }
-
-        let config = self.default_config.read().await.clone();
-        let session = Arc::new(ClaudeSession::new(
-            workspace_id.to_string(),
-            workspace_path.to_path_buf(),
-            Some(config),
-        ));
-
-        sessions.insert(workspace_id.to_string(), session.clone());
-        session
-    }
-
-    /// Remove a session
-    pub async fn remove_session(&self, workspace_id: &str) -> Option<Arc<ClaudeSession>> {
-        let mut sessions = self.sessions.lock().await;
-        sessions.remove(workspace_id)
-    }
-
-    /// Get a session if it exists
-    pub async fn get_session(&self, workspace_id: &str) -> Option<Arc<ClaudeSession>> {
-        let sessions = self.sessions.lock().await;
-        sessions.get(workspace_id).cloned()
-    }
-
-    /// Interrupt all active sessions (used during app shutdown)
-    pub async fn interrupt_all(&self) {
-        let sessions = self.sessions.lock().await;
-        for session in sessions.values() {
-            let _ = session.interrupt().await;
-        }
-    }
-}
-
-impl Default for ClaudeSessionManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
     use tokio::sync::broadcast::error::TryRecvError;
-
-    #[test]
-    fn session_creation() {
-        let session = ClaudeSession::new(
-            "test-workspace".to_string(),
-            PathBuf::from("/tmp/test"),
-            None,
-        );
-
-        assert_eq!(session.workspace_id, "test-workspace");
-    }
-
-    #[tokio::test]
-    async fn ask_user_question_registers_and_clears_pending_request() {
-        let session = ClaudeSession::new(
-            "test-workspace".to_string(),
-            PathBuf::from("/tmp/test"),
-            None,
-        );
-        let input = json!({
-            "questions": [
-                {
-                    "header": "确认",
-                    "question": "继续吗？",
-                    "options": [{ "label": "继续", "description": "继续执行" }]
-                }
-            ]
-        });
-
-        let event = session
-            .convert_ask_user_question_to_request("tool-ask-1", &input, "turn-1")
-            .expect("request user input event");
-
-        let request_id = match event {
-            EngineEvent::RequestUserInput { request_id, .. } => request_id,
-            other => panic!("unexpected event: {:?}", other),
-        };
-
-        assert!(session.has_pending_user_input(&request_id));
-
-        let result = json!({
-            "answers": {
-                "q-0": {
-                    "answers": ["继续"]
-                }
-            }
-        });
-        session
-            .respond_to_user_input(request_id.clone(), result)
-            .await
-            .expect("respond success");
-
-        assert!(!session.has_pending_user_input(&request_id));
-    }
-
-    #[test]
-    fn ask_user_question_preserves_multi_select_flag() {
-        let session = ClaudeSession::new(
-            "test-workspace".to_string(),
-            PathBuf::from("/tmp/test"),
-            None,
-        );
-        let input = json!({
-            "questions": [
-                {
-                    "header": "关注点",
-                    "question": "可多选",
-                    "multiSelect": true,
-                    "options": [{ "label": "性能", "description": "" }]
-                }
-            ]
-        });
-
-        let event = session
-            .convert_ask_user_question_to_request("tool-ask-multi", &input, "turn-1")
-            .expect("request user input event");
-
-        let questions = match event {
-            EngineEvent::RequestUserInput { questions, .. } => questions,
-            other => panic!("unexpected event: {:?}", other),
-        };
-        let question = questions
-            .as_array()
-            .and_then(|arr| arr.first())
-            .expect("first question");
-        assert_eq!(question["multiSelect"], json!(true));
-    }
-
-    #[test]
-    fn has_pending_user_input_accepts_numeric_id_for_backward_compat() {
-        let session = ClaudeSession::new(
-            "test-workspace".to_string(),
-            PathBuf::from("/tmp/test"),
-            None,
-        );
-        if let Ok(mut pending) = session.pending_user_inputs.lock() {
-            pending.insert("42".to_string(), "turn-42".to_string());
-        }
-        assert!(session.has_pending_user_input(&json!(42)));
-        assert!(session.has_pending_user_input(&json!("42")));
-    }
-
-    #[test]
-    fn has_any_pending_user_input_reports_presence() {
-        let session = ClaudeSession::new(
-            "test-workspace".to_string(),
-            PathBuf::from("/tmp/test"),
-            None,
-        );
-        assert!(!session.has_any_pending_user_input());
-        if let Ok(mut pending) = session.pending_user_inputs.lock() {
-            pending.insert("ask-1".to_string(), "turn-1".to_string());
-        }
-        assert!(session.has_any_pending_user_input());
-    }
-
-    #[tokio::test]
-    async fn respond_to_user_input_rejects_mismatched_request_id() {
-        let session = ClaudeSession::new(
-            "test-workspace".to_string(),
-            PathBuf::from("/tmp/test"),
-            None,
-        );
-        if let Ok(mut pending) = session.pending_user_inputs.lock() {
-            pending.insert("ask-fallback".to_string(), "turn-1".to_string());
-        }
-
-        let result = json!({
-            "answers": {
-                "q-0": {
-                    "answers": ["继续"]
-                }
-            }
-        });
-        let err = session
-            .respond_to_user_input(json!(999), result)
-            .await
-            .expect_err("mismatched request_id should fail");
-
-        assert!(err.contains("unknown request_id"));
-        assert!(session.has_any_pending_user_input());
-    }
-
-    #[test]
-    fn build_command_adds_external_spec_root_when_configured() {
-        let session = ClaudeSession::new(
-            "test-workspace".to_string(),
-            PathBuf::from("/tmp/test"),
-            None,
-        );
-        let mut params = SendMessageParams::default();
-        params.text = "hello".to_string();
-        params.custom_spec_root = Some(if cfg!(windows) {
-            "C:\\tmp\\external-openspec".to_string()
-        } else {
-            "/tmp/external-openspec".to_string()
-        });
-
-        let command = session.build_command(&params, false);
-        let args: Vec<String> = command
-            .as_std()
-            .get_args()
-            .map(|arg| arg.to_string_lossy().to_string())
-            .collect();
-
-        assert!(args.windows(2).any(|window| {
-            window[0] == "--add-dir" && window[1] == params.custom_spec_root.clone().unwrap()
-        }));
-    }
-
-    #[test]
-    fn should_use_stream_json_input_for_multiline_text_without_images() {
-        let mut params = SendMessageParams::default();
-        params.text = "line1\nline2".to_string();
-        assert!(ClaudeSession::should_use_stream_json_input(&params));
-    }
-
-    #[test]
-    fn should_not_use_stream_json_input_for_single_line_text_without_images() {
-        let mut params = SendMessageParams::default();
-        params.text = "single line".to_string();
-        assert!(!ClaudeSession::should_use_stream_json_input(&params));
-    }
-
-    #[test]
-    fn build_command_uses_stream_json_for_multiline_text() {
-        let session = ClaudeSession::new(
-            "test-workspace".to_string(),
-            PathBuf::from("/tmp/test"),
-            None,
-        );
-        let mut params = SendMessageParams::default();
-        params.text = "line1\nline2".to_string();
-
-        let use_stream_json_input = ClaudeSession::should_use_stream_json_input(&params);
-        let command = session.build_command(&params, use_stream_json_input);
-        let args: Vec<String> = command
-            .as_std()
-            .get_args()
-            .map(|arg| arg.to_string_lossy().to_string())
-            .collect();
-
-        assert!(args
-            .windows(2)
-            .any(|window| { window[0] == "--input-format" && window[1] == "stream-json" }));
-        assert!(args.iter().all(|arg| arg != "line1\nline2"));
-    }
-
-    #[test]
-    fn build_resume_command_uses_stream_json_for_multiline_answer() {
-        let session = ClaudeSession::new(
-            "test-workspace".to_string(),
-            PathBuf::from("/tmp/test"),
-            None,
-        );
-        let mut params = SendMessageParams::default();
-        params.text = "line1\r\nline2".to_string();
-        params.continue_session = true;
-        params.session_id = Some("33333333-3333-4333-8333-333333333333".to_string());
-        params.images = None;
-
-        let use_stream_json_input = ClaudeSession::should_use_stream_json_input(&params);
-        let command = session.build_command(&params, use_stream_json_input);
-        let args: Vec<String> = command
-            .as_std()
-            .get_args()
-            .map(|arg| arg.to_string_lossy().to_string())
-            .collect();
-
-        assert!(args.windows(2).any(|window| {
-            window[0] == "--resume" && window[1] == "33333333-3333-4333-8333-333333333333"
-        }));
-        assert!(args
-            .windows(2)
-            .any(|window| { window[0] == "--input-format" && window[1] == "stream-json" }));
-        assert!(args.iter().all(|arg| arg != "line1\r\nline2"));
-    }
 
     #[test]
     fn build_command_uses_session_id_for_new_conversation_without_continue() {
@@ -2433,6 +2224,509 @@ mod tests {
     }
 
     #[test]
+    fn convert_event_emits_synthetic_file_change_approval_request_for_claude_permission_error() {
+        let session = ClaudeSession::new(
+            "test-workspace".to_string(),
+            PathBuf::from("/tmp/test"),
+            None,
+        );
+        let mut receiver = session.subscribe();
+
+        session.cache_tool_name("tool-write-1", "Write");
+        session.cache_tool_input_value(
+            "tool-write-1",
+            &json!({
+                "file_path": "/tmp/demo.txt",
+                "content": "hello"
+            }),
+        );
+        session.register_pending_tool("turn-a", "tool-write-1", "Write", None);
+
+        let event = json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "tool-write-1",
+                    "content": "Claude requested permissions to write to /tmp/demo.txt, but you haven't granted it yet.",
+                    "is_error": true
+                }]
+            }
+        });
+
+        let converted = session.convert_event("turn-a", &event);
+        let approval = receiver
+            .try_recv()
+            .expect("expected approval request event");
+        match approval.event {
+            EngineEvent::ApprovalRequest {
+                request_id,
+                tool_name,
+                input,
+                ..
+            } => {
+                assert_eq!(request_id, Value::String("tool-write-1".to_string()));
+                assert_eq!(tool_name, "Write");
+                assert_eq!(
+                    input.as_ref().and_then(|value| value.get("file_path")),
+                    Some(&Value::String("/tmp/demo.txt".to_string()))
+                );
+            }
+            other => panic!("expected approval request, got {:?}", other),
+        }
+
+        assert!(converted.is_none());
+    }
+
+    #[test]
+    fn convert_event_emits_synthetic_file_change_approval_request_for_generic_permission_denial() {
+        let session = ClaudeSession::new(
+            "test-workspace".to_string(),
+            PathBuf::from("/tmp/test"),
+            None,
+        );
+        let mut receiver = session.subscribe();
+
+        session.cache_tool_name("tool-mkdir-1", "CreateDirectory");
+        session.cache_tool_input_value(
+            "tool-mkdir-1",
+            &json!({
+                "path": "/tmp/demo-dir"
+            }),
+        );
+        session.register_pending_tool("turn-a", "tool-mkdir-1", "CreateDirectory", None);
+
+        let event = json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "tool-mkdir-1",
+                    "content": "Permission denied while waiting for approval.",
+                    "is_error": true
+                }]
+            }
+        });
+
+        let converted = session.convert_event("turn-a", &event);
+        let approval = receiver
+            .try_recv()
+            .expect("expected approval request event");
+        match approval.event {
+            EngineEvent::ApprovalRequest {
+                request_id,
+                tool_name,
+                input,
+                ..
+            } => {
+                assert_eq!(request_id, Value::String("tool-mkdir-1".to_string()));
+                assert_eq!(tool_name, "CreateDirectory");
+                assert_eq!(
+                    input.as_ref().and_then(|value| value.get("path")),
+                    Some(&Value::String("/tmp/demo-dir".to_string()))
+                );
+            }
+            other => panic!("expected approval request, got {:?}", other),
+        }
+
+        assert!(converted.is_none());
+    }
+
+    #[tokio::test]
+    async fn synthetic_claude_approval_request_can_be_acknowledged() {
+        let session = ClaudeSession::new(
+            "test-workspace".to_string(),
+            PathBuf::from("/tmp/test"),
+            None,
+        );
+
+        session.cache_tool_name("tool-bash-1", "Bash");
+        session.cache_tool_input_value(
+            "tool-bash-1",
+            &json!({
+                "command": "tee demo.txt <<< hello",
+                "description": "Create file using tee"
+            }),
+        );
+        session.register_pending_tool("turn-a", "tool-bash-1", "Bash", None);
+
+        let event = json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "tool-bash-1",
+                    "content": "This command requires approval",
+                    "is_error": true
+                }]
+            }
+        });
+
+        let _ = session.convert_event("turn-a", &event);
+        assert!(session.has_pending_approval_request(&Value::String("tool-bash-1".to_string())));
+
+        session
+            .respond_to_approval_request(
+                Value::String("tool-bash-1".to_string()),
+                Value::String("accept".to_string()),
+            )
+            .await
+            .expect("approval should be acknowledged");
+
+        assert!(!session.has_pending_approval_request(&Value::String("tool-bash-1".to_string())));
+    }
+
+    #[tokio::test]
+    async fn synthetic_claude_file_approval_accept_writes_file_and_emits_completion() {
+        let workspace_root =
+            std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+        let file_path = workspace_root.join("approved.txt");
+
+        let session =
+            ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+        let mut receiver = session.subscribe();
+
+        session.cache_tool_name("tool-write-accept", "Write");
+        session.cache_tool_input_value(
+            "tool-write-accept",
+            &json!({
+                "file_path": file_path.to_string_lossy(),
+                "content": "hello approval"
+            }),
+        );
+        session.register_pending_tool("turn-accept", "tool-write-accept", "Write", None);
+        session
+            .pending_approval_requests
+            .lock()
+            .expect("pending approvals lock")
+            .insert("tool-write-accept".to_string(), "turn-accept".to_string());
+
+        session
+            .respond_to_approval_request(
+                Value::String("tool-write-accept".to_string()),
+                Value::String("accept".to_string()),
+            )
+            .await
+            .expect("approval should succeed");
+
+        let completion = receiver.try_recv().expect("expected tool completion event");
+        match completion.event {
+            EngineEvent::ToolCompleted {
+                tool_id,
+                tool_name,
+                output,
+                error,
+                ..
+            } => {
+                assert_eq!(tool_id, "tool-write-accept");
+                assert_eq!(tool_name.as_deref(), Some("Write"));
+                assert_eq!(error, None);
+                assert_eq!(
+                    output
+                        .as_ref()
+                        .and_then(|value| value.get("_output"))
+                        .and_then(Value::as_str),
+                    Some("Approved and wrote approved.txt")
+                );
+            }
+            other => panic!("expected tool completed event, got {:?}", other),
+        }
+
+        assert_eq!(
+            std::fs::read_to_string(&file_path).expect("file should exist"),
+            "hello approval"
+        );
+        let _ = std::fs::remove_dir_all(&workspace_root);
+    }
+
+    #[tokio::test]
+    async fn synthetic_claude_file_approval_decline_does_not_write_file() {
+        let workspace_root =
+            std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+        let file_path = workspace_root.join("declined.txt");
+
+        let session =
+            ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+        let mut receiver = session.subscribe();
+
+        session.cache_tool_name("tool-write-decline", "Write");
+        session.cache_tool_input_value(
+            "tool-write-decline",
+            &json!({
+                "file_path": file_path.to_string_lossy(),
+                "content": "should not exist"
+            }),
+        );
+        session.register_pending_tool("turn-decline", "tool-write-decline", "Write", None);
+        session
+            .pending_approval_requests
+            .lock()
+            .expect("pending approvals lock")
+            .insert("tool-write-decline".to_string(), "turn-decline".to_string());
+
+        session
+            .respond_to_approval_request(
+                Value::String("tool-write-decline".to_string()),
+                Value::String("decline".to_string()),
+            )
+            .await
+            .expect("decline should succeed");
+
+        let completion = receiver.try_recv().expect("expected tool completion event");
+        match completion.event {
+            EngineEvent::ToolCompleted {
+                tool_id,
+                output,
+                error,
+                ..
+            } => {
+                assert_eq!(tool_id, "tool-write-decline");
+                assert_eq!(
+                    output
+                        .as_ref()
+                        .and_then(|value| value.get("_output"))
+                        .and_then(Value::as_str),
+                    Some("File change was declined in the approval dialog.")
+                );
+                assert_eq!(
+                    error.as_deref(),
+                    Some("File change was declined in the approval dialog.")
+                );
+            }
+            other => panic!("expected tool completed event, got {:?}", other),
+        }
+
+        assert!(!file_path.exists());
+        let _ = std::fs::remove_dir_all(&workspace_root);
+    }
+
+    #[tokio::test]
+    async fn synthetic_claude_file_approval_accept_supports_object_decision_payload() {
+        let workspace_root =
+            std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+        let file_path = workspace_root.join("object-decision.txt");
+
+        let session =
+            ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+
+        session.cache_tool_name("tool-write-object", "Write");
+        session.cache_tool_input_value(
+            "tool-write-object",
+            &json!({
+                "file_path": file_path.to_string_lossy(),
+                "content": "object payload"
+            }),
+        );
+        session.register_pending_tool("turn-object", "tool-write-object", "Write", None);
+        session
+            .pending_approval_requests
+            .lock()
+            .expect("pending approvals lock")
+            .insert("tool-write-object".to_string(), "turn-object".to_string());
+
+        session
+            .respond_to_approval_request(
+                Value::String("tool-write-object".to_string()),
+                json!({ "decision": "accept" }),
+            )
+            .await
+            .expect("approval should accept object decision payload");
+
+        assert_eq!(
+            std::fs::read_to_string(&file_path).expect("file should exist"),
+            "object payload"
+        );
+        let _ = std::fs::remove_dir_all(&workspace_root);
+    }
+
+    #[tokio::test]
+    async fn synthetic_claude_file_approval_accept_emits_turn_completed_after_tool_completion() {
+        let workspace_root =
+            std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+        let file_path = workspace_root.join("turn-finished.txt");
+
+        let session =
+            ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+        let mut receiver = session.subscribe();
+
+        session.cache_tool_name("tool-write-finish", "Write");
+        session.cache_tool_input_value(
+            "tool-write-finish",
+            &json!({
+                "file_path": file_path.to_string_lossy(),
+                "content": "done"
+            }),
+        );
+        session.register_pending_tool("turn-finish", "tool-write-finish", "Write", None);
+        session
+            .pending_approval_requests
+            .lock()
+            .expect("pending approvals lock")
+            .insert("tool-write-finish".to_string(), "turn-finish".to_string());
+
+        session
+            .respond_to_approval_request(
+                Value::String("tool-write-finish".to_string()),
+                Value::String("accept".to_string()),
+            )
+            .await
+            .expect("approval should succeed");
+
+        let first = receiver.try_recv().expect("expected tool completion event");
+        match first.event {
+            EngineEvent::ToolCompleted { tool_id, .. } => {
+                assert_eq!(tool_id, "tool-write-finish");
+            }
+            other => panic!("expected tool completed event, got {:?}", other),
+        }
+
+        let second = receiver.try_recv().expect("expected turn completed event");
+        match second.event {
+            EngineEvent::TurnCompleted { result, .. } => {
+                assert_eq!(
+                    result
+                        .as_ref()
+                        .and_then(|value| value.get("syntheticApprovalResolved"))
+                        .and_then(Value::as_bool),
+                    Some(true)
+                );
+                assert_eq!(
+                    result
+                        .as_ref()
+                        .and_then(|value| value.get("approved"))
+                        .and_then(Value::as_bool),
+                    Some(true)
+                );
+            }
+            other => panic!("expected turn completed event, got {:?}", other),
+        }
+
+        assert!(
+            !session.has_pending_approval_request(&Value::String("tool-write-finish".to_string()))
+        );
+        let _ = std::fs::remove_dir_all(&workspace_root);
+    }
+
+    #[tokio::test]
+    async fn synthetic_claude_multiple_file_approvals_only_finalize_after_last_one() {
+        let workspace_root =
+            std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+        let first_file = workspace_root.join("first.txt");
+        let second_file = workspace_root.join("second.txt");
+
+        let session =
+            ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+        let mut receiver = session.subscribe();
+
+        session.cache_tool_name("tool-write-first", "Write");
+        session.cache_tool_input_value(
+            "tool-write-first",
+            &json!({
+                "file_path": first_file.to_string_lossy(),
+                "content": "one"
+            }),
+        );
+        session.register_pending_tool("turn-multi", "tool-write-first", "Write", None);
+        session
+            .pending_approval_requests
+            .lock()
+            .expect("pending approvals lock")
+            .insert("tool-write-first".to_string(), "turn-multi".to_string());
+
+        session.cache_tool_name("tool-write-second", "Write");
+        session.cache_tool_input_value(
+            "tool-write-second",
+            &json!({
+                "file_path": second_file.to_string_lossy(),
+                "content": "two"
+            }),
+        );
+        session.register_pending_tool("turn-multi", "tool-write-second", "Write", None);
+        session
+            .pending_approval_requests
+            .lock()
+            .expect("pending approvals lock")
+            .insert("tool-write-second".to_string(), "turn-multi".to_string());
+
+        session
+            .respond_to_approval_request(
+                Value::String("tool-write-first".to_string()),
+                Value::String("accept".to_string()),
+            )
+            .await
+            .expect("first approval should succeed");
+
+        let first_event = receiver.try_recv().expect("expected first tool completion");
+        match first_event.event {
+            EngineEvent::ToolCompleted { tool_id, .. } => {
+                assert_eq!(tool_id, "tool-write-first");
+            }
+            other => panic!("expected first tool completed event, got {:?}", other),
+        }
+        assert!(receiver.try_recv().is_err());
+        assert!(
+            session.has_pending_approval_request(&Value::String("tool-write-second".to_string()))
+        );
+
+        session
+            .respond_to_approval_request(
+                Value::String("tool-write-second".to_string()),
+                Value::String("accept".to_string()),
+            )
+            .await
+            .expect("second approval should succeed");
+
+        let second_event = receiver
+            .try_recv()
+            .expect("expected second tool completion");
+        match second_event.event {
+            EngineEvent::ToolCompleted { tool_id, .. } => {
+                assert_eq!(tool_id, "tool-write-second");
+            }
+            other => panic!("expected second tool completed event, got {:?}", other),
+        }
+
+        let final_event = receiver.try_recv().expect("expected final turn completion");
+        match final_event.event {
+            EngineEvent::TurnCompleted { result, .. } => {
+                assert_eq!(
+                    result
+                        .as_ref()
+                        .and_then(|value| value.get("syntheticApprovalResolved"))
+                        .and_then(Value::as_bool),
+                    Some(true)
+                );
+                let summary = result
+                    .as_ref()
+                    .and_then(|value| value.get("text"))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                assert!(summary.contains("Approved and wrote first.txt"));
+                assert!(summary.contains("Approved and wrote second.txt"));
+            }
+            other => panic!("expected turn completed event, got {:?}", other),
+        }
+
+        assert_eq!(
+            std::fs::read_to_string(&first_file).expect("first file should exist"),
+            "one"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&second_file).expect("second file should exist"),
+            "two"
+        );
+        let _ = std::fs::remove_dir_all(&workspace_root);
+    }
+
+    #[test]
     fn convert_event_matches_tool_result_without_id_or_name_to_latest_pending_tool() {
         let session = ClaudeSession::new(
             "test-workspace".to_string(),
@@ -2547,6 +2841,38 @@ mod tests {
     }
 
     #[test]
+    fn build_mode_blocked_signal_from_error_maps_claude_file_change_denial() {
+        let session = ClaudeSession::new(
+            "test-workspace".to_string(),
+            PathBuf::from("/tmp/test"),
+            None,
+        );
+        session.register_pending_tool("turn-a", "tool-edit-1", "Edit", None);
+
+        let event = session
+            .build_mode_blocked_signal_from_error("turn-a", "Edit tool permission denied")
+            .expect("expected mode blocked signal");
+
+        match event {
+            EngineEvent::Raw { data, .. } => {
+                assert_eq!(
+                    data.get("blockedMethod").and_then(|value| value.as_str()),
+                    Some("item/fileChange/requestApproval")
+                );
+                assert_eq!(
+                    data.get("requestId").and_then(|value| value.as_str()),
+                    Some("tool-edit-1")
+                );
+                assert_eq!(
+                    data.get("reasonCode").and_then(|value| value.as_str()),
+                    Some("claude_file_change_permission_denied")
+                );
+            }
+            other => panic!("expected raw mode-blocked signal, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn build_mode_blocked_signal_from_error_ignores_non_permission_errors() {
         let session = ClaudeSession::new(
             "test-workspace".to_string(),
@@ -2597,6 +2923,57 @@ mod tests {
             Some(EngineEvent::TextDelta { text, .. }) => assert_eq!(text, "？"),
             other => panic!("expected punctuation-only delta, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn normalize_claude_workspace_relative_path_accepts_segmented_path() {
+        let normalized =
+            approval::normalize_claude_workspace_relative_path(Path::new("nested/path/demo.txt"))
+                .expect("path should normalize");
+        assert_eq!(normalized, "nested/path/demo.txt");
+    }
+
+    #[tokio::test]
+    async fn synthetic_claude_file_approval_accept_creates_missing_parent_directories() {
+        let workspace_root =
+            std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+        let file_path = workspace_root
+            .join("nested")
+            .join("deep")
+            .join("approved.txt");
+
+        let session =
+            ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+
+        session.cache_tool_name("tool-write-nested", "Write");
+        session.cache_tool_input_value(
+            "tool-write-nested",
+            &json!({
+                "file_path": "nested\\deep\\approved.txt",
+                "content": "nested approval"
+            }),
+        );
+        session.register_pending_tool("turn-nested", "tool-write-nested", "Write", None);
+        session
+            .pending_approval_requests
+            .lock()
+            .expect("pending approvals lock")
+            .insert("tool-write-nested".to_string(), "turn-nested".to_string());
+
+        session
+            .respond_to_approval_request(
+                Value::String("tool-write-nested".to_string()),
+                Value::String("accept".to_string()),
+            )
+            .await
+            .expect("approval should create missing parent directories");
+
+        assert_eq!(
+            std::fs::read_to_string(&file_path).expect("file should exist"),
+            "nested approval"
+        );
+        let _ = std::fs::remove_dir_all(&workspace_root);
     }
 
     #[test]

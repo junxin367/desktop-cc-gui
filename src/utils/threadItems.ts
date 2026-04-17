@@ -62,6 +62,14 @@ const ASSISTANT_LINE_FRAGMENT_MAX_LENGTH = 10;
 const ASSISTANT_LINE_FRAGMENT_MIN_TOTAL_CHARS = 12;
 const ASSISTANT_TEXT_CACHE_MAX = 320;
 const ASSISTANT_NO_CONTENT_PLACEHOLDER_SET = new Set(["(no content)", "no content"]);
+const CLAUDE_APPROVAL_RESUME_MARKER_REGEX =
+  /<ccgui-approval-resume>([\s\S]*?)<\/ccgui-approval-resume>\s*/i;
+const CLAUDE_APPROVAL_RESUME_TRAILER_REGEX =
+  /\bPlease continue from the current workspace state and finish the original task\.\s*$/i;
+const CLAUDE_APPROVAL_RESUME_BLOCK_REGEX =
+  /(?:^|\n)Completed approved operations:\n(?:- .*\n?)+Please continue from the current workspace state and finish the original task\.\s*/i;
+const CLAUDE_NO_RESPONSE_REQUESTED_REGEX =
+  /(?:^|\n)No response requested\.\s*(?:\n|$)/gi;
 const assistantNormalizedTextCache = new Map<string, string>();
 const assistantReadabilityScoreCache = new Map<
   string,
@@ -70,6 +78,54 @@ const assistantReadabilityScoreCache = new Map<
 
 function asString(value: unknown) {
   return typeof value === "string" ? value : value ? String(value) : "";
+}
+
+export type ClaudeApprovalResumeEntry = {
+  summary: string;
+  path: string | null;
+  kind: string | null;
+  status: string | null;
+};
+
+export function extractClaudeApprovalResumeEntries(
+  text: string,
+): ClaudeApprovalResumeEntry[] {
+  if (!text) {
+    return [];
+  }
+  const match = text.match(CLAUDE_APPROVAL_RESUME_MARKER_REGEX);
+  if (!match?.[1]) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(match[1]) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return null;
+        }
+        const record = entry as Record<string, unknown>;
+        const summary = asString(record.summary).trim();
+        if (!summary) {
+          return null;
+        }
+        const path = asString(record.path).trim();
+        const kind = asString(record.kind).trim();
+        const status = asString(record.status).trim();
+        return {
+          summary,
+          path: path || null,
+          kind: kind || null,
+          status: status || null,
+        } satisfies ClaudeApprovalResumeEntry;
+      })
+      .filter((entry): entry is ClaudeApprovalResumeEntry => Boolean(entry));
+  } catch {
+    return [];
+  }
 }
 
 function normalizeCollaborationMode(value: unknown): "plan" | "code" | null {
@@ -1166,11 +1222,23 @@ function dedupeRepeatedAssistantSentences(value: string) {
     .join("\n\n");
 }
 
-function normalizeAssistantMessageText(text: string) {
+export function stripClaudeApprovalResumeArtifacts(text: string) {
   if (!text) {
     return text;
   }
   let normalized = text;
+  normalized = normalized.replace(CLAUDE_APPROVAL_RESUME_MARKER_REGEX, "");
+  normalized = normalized.replace(CLAUDE_APPROVAL_RESUME_BLOCK_REGEX, "\n");
+  normalized = normalized.replace(CLAUDE_APPROVAL_RESUME_TRAILER_REGEX, "");
+  normalized = normalized.replace(CLAUDE_NO_RESPONSE_REQUESTED_REGEX, "\n");
+  return normalized.trim();
+}
+
+function normalizeAssistantMessageText(text: string) {
+  if (!text) {
+    return text;
+  }
+  let normalized = stripClaudeApprovalResumeArtifacts(text);
   normalized = collapseRepeatedAssistantParagraphBlocks(normalized);
   normalized = collapseRepeatedAssistantFullText(normalized);
   if (isLikelyFragmentedAssistantText(normalized)) {
@@ -1301,6 +1369,9 @@ function isLikelyFragmentedAssistantText(text: string) {
 function shouldNormalizeAssistantText(text: string) {
   if (!text) {
     return false;
+  }
+  if (stripClaudeApprovalResumeArtifacts(text) !== text.trim()) {
+    return true;
   }
   const hasRepeatedPattern = hasRepeatedAssistantTextPattern(text);
   if (hasRepeatedPattern) {

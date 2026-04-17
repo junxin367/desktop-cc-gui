@@ -1,40 +1,56 @@
 ## 0. 实施批次
 
-### Batch A [P0] Phase 1 安全开放
+### Batch A [P0] 基础模式开放
 
-- [x] A.1 [文件:`src/app-shell.tsx`][目标: 去掉 Claude 模式初始化时的强制 `full-access` 覆盖][完成定义: 用户在 Claude 下选择的模式不会在产品层被静默改回全自动]
-- [x] A.2 [文件:`src/features/composer/components/ChatInputBox/selectors/ModeSelect.tsx`][目标: 在 Claude 下开放 `plan + bypassPermissions`，继续禁用 `default + acceptEdits`][完成定义: Phase 1 模式可选态与 proposal 一致]
-- [x] A.3 [文件:`src/i18n/locales/zh.part2.ts`,`src/i18n/locales/en.part2.ts`][目标: 校准 Claude 模式文案，明确渐进式开放阶段语义][完成定义: 文案不再暗示未开放模式已稳定可用]
-- [x] A.4 [文件:`src/features/composer/components/ChatInputBox/ModeSelect.test.tsx`,`src/services/tauri.test.ts`][目标: 补 UI mode -> payload mapping 回归测试][完成定义: Claude `plan` 与 `full-access` 两条链路断言通过]
+- [x] A.1 去掉 Claude 模式初始化时的强制 `full-access` 覆盖，保证 mode selection 是真实 runtime input
+- [x] A.2 调整 Claude mode gating：开放 `plan` / `bypassPermissions`，后续再逐步开放其余模式
+- [x] A.3 校准 Claude 模式中英文文案，避免把未完成能力描述成稳定能力
+- [x] A.4 补 UI mode -> payload mapping -> CLI flag 回归测试
 
-### Batch B [P0] Claude Approval Bridge
+### Batch B [P0] Claude synthetic approval bridge
 
-- [x] B.0 [文件:`src-tauri/src/engine/claude.rs`,`src-tauri/src/engine/events.rs`][目标: 在 approval bridge 缺失期间，把已识别的 Claude `AskUserQuestion permission denied` 显式映射到 `collaboration/modeBlocked`][完成定义: 用户不会只看到静默失败，GUI 能给出“先切 Plan mode”的可解释提示]
-- [ ] B.1 [文件:`src-tauri/src/engine/claude/event_conversion.rs`,`src-tauri/src/engine/claude.rs`][目标: 识别 Claude 运行时中的 approval-required 事件][完成定义: Claude 需要审批的操作可被 runtime 识别并标准化]
-- [ ] B.2 [文件:`src-tauri/src/engine/events.rs`,`src/features/app/hooks/useAppServerEvents.ts`][目标: 将 Claude approval request 映射到现有 approval/request 主链路][完成定义: UI 可收到 Claude 审批请求而不是静默失败]
-- [ ] B.3 [文件:`src-tauri/src/codex/mod.rs` 或对应共享响应入口][目标: 复用现有 `respond_to_server_request` 响应 Claude 审批结果][完成定义: accept/decline 能正确回到 Claude 运行时]
-- [ ] B.4 [文件:`src/features/threads/hooks/useThreadApprovalEvents.test.tsx`,`src/features/app/hooks/useAppServerEvents.test.tsx`][目标: 补 Claude 审批桥接测试][完成定义: Claude approval request -> toast -> response 路径可回归验证]
+- [x] B.1 为 Claude `default` 文件权限阻塞生成 synthetic approval request，并接入现有 approval 主链
+- [x] B.2 前端 approval 弹窗支持逐条审批和“本次全部操作”批量审批
+- [x] B.3 审批后用 `--resume` 继续原会话，而不是停在审批摘要
+- [x] B.4 多文件审批只在最后一个请求完成时 finalize turn，避免执行中断
+- [x] B.5 reducer 使用完整 approval identity 处理去重/移除，修复只按 `request_id` 的竞态
+- [x] B.6 审批历史去噪：resume marker 不直接暴露给用户，历史恢复为结构化 `File changes` 卡片
 
-### Batch C [P1] Phase 2/3 逐步开放
+### Batch C [P0] synthetic local apply 边界修复
 
-- [x] C.1 [依赖:B.0][文件:`src/features/composer/components/ChatInputBox/selectors/ModeSelect.tsx`,`src/i18n/locales/zh.part2.ts`,`src/i18n/locales/en.part2.ts`][目标: 以 preview 形态开放 Claude `default`][完成定义: `default` 在 Claude 下可选，文案明确 preview 语义，命中已识别退化路径时 GUI 可解释]
-- [ ] C.2 [依赖:Batch B][文件:`src-tauri/src/engine/claude.rs`,`src/i18n/locales/zh.part2.ts`,`src/i18n/locales/en.part2.ts`][目标: 校验并对齐 `acceptEdits` 的真实 CLI 语义][完成定义: 文案与 CLI 实际行为一致]
-- [ ] C.3 [依赖:C.2][文件:`src/features/composer/components/ChatInputBox/selectors/ModeSelect.tsx`,`src/services/tauri.test.ts`][目标: 在语义确认后开放 Claude `acceptEdits`][完成定义: `acceptEdits` 开放不会破坏现有审批/执行语义]
+- [x] C.1 支持 `Write` / `CreateFile` / `CreateDirectory` 的本地 apply
+- [x] C.2 处理缺失父目录创建，避免批准后因目录不存在导致落盘失败
+- [x] C.3 修复 Windows / nested path 路径归一化与 workspace 越界校验
+- [x] C.4 为 unknown request id、空路径、缺 tool metadata 等异常输入增加拒绝路径
+
+### Batch D [P1] 大文件治理
+
+- [x] D.1 将 `src-tauri/src/engine/claude.rs` 中 approval / manager / stream tests 按职责拆分
+- [x] D.2 新增 `src-tauri/src/engine/claude/approval.rs`
+- [x] D.3 新增 `src-tauri/src/engine/claude/manager.rs`
+- [x] D.4 新增 `src-tauri/src/engine/claude/tests_stream.rs`
+- [x] D.5 通过 `check:large-files:gate`，确保 `claude.rs` 回到 3000 行门禁内
+
+### Batch E [P1] 后续阶段
+
+- [ ] E.1 继续收敛 Claude 原生命令审批 shape，避免非文件工具仍退化
+- [ ] E.2 校验并对齐 `acceptEdits` 的真实 CLI 语义
+- [ ] E.3 在语义确认后开放 Claude `acceptEdits`
 
 ## 1. 验证门禁
 
-- [x] V.1 `npm run typecheck`
-- [x] V.2 `npm run test`
-- [x] V.3 `npm run check:runtime-contracts`
-- [ ] V.4 `npm run doctor:strict`
-- [ ] V.5 Claude 手测矩阵：
-  - `plan` 模式发送消息时进入只读执行
-  - `full-access` 模式发送消息时不进入审批链
-  - `default` 模式在开放后能弹出现有审批 toast
-  - `acceptEdits` 模式在开放后满足最终定义的行为语义
+- [x] V.1 `npm run check:large-files:gate`
+- [ ] V.2 `npm run typecheck`
+- [ ] V.3 `npm run test`
+- [ ] V.4 Claude 手测矩阵补齐：
+  - `plan` 模式只读执行
+  - `full-access` 不进入审批链
+  - `default` 触发单文件审批、批量审批、审批后继续执行
+  - 历史重开后仍能恢复 `File changes` 卡片
+  - `acceptEdits` 在开放前保持禁用
 
 ## 2. 回滚策略
 
-- [ ] R.1 若 Phase 1 回归异常，回滚到仅 `full-access` 可选
-- [ ] R.2 若 Claude approval bridge 不稳定，保持 `default/acceptEdits` 继续禁用
-- [ ] R.3 若 `acceptEdits` 语义与 CLI 不一致，延后 Phase 3，不强行开放
+- [ ] R.1 如果 Claude synthetic approval bridge 回归异常，先回退 `default` 对外开放，但保留 `plan/full-access`
+- [ ] R.2 如果 resume continuity 不稳定，优先保守回退到“审批后结束 turn”，避免写入成功但线程挂死
+- [ ] R.3 如果 large-file 门禁再次失败，继续按职责拆分 `claude.rs`，禁止重新堆回单文件

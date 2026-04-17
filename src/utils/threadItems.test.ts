@@ -122,6 +122,48 @@ describe("threadItems", () => {
     }
   });
 
+  it("strips synthetic Claude approval resume text from assistant messages", () => {
+    const item: ConversationItem = {
+      id: "msg-assistant-approval-resume-artifacts",
+      kind: "message",
+      role: "assistant",
+      text: [
+        "创建已经完成。",
+        "",
+        "Completed approved operations:",
+        "- Created aaa.txt",
+        "- Created bbb.txt",
+        "Please continue from the current workspace state and finish the original task.",
+        "",
+        "No response requested.",
+      ].join("\n"),
+    };
+    const normalized = normalizeItem(item);
+    expect(normalized.kind).toBe("message");
+    if (normalized.kind === "message") {
+      expect(normalized.text).toBe("创建已经完成。");
+    }
+  });
+
+  it("strips structured Claude approval resume marker from assistant messages", () => {
+    const item: ConversationItem = {
+      id: "msg-assistant-approval-marker",
+      kind: "message",
+      role: "assistant",
+      text: [
+        "创建已经完成。",
+        "",
+        '<ccgui-approval-resume>[{"summary":"Approved and updated aaa.txt","path":"aaa.txt","kind":"modified","status":"completed"}]</ccgui-approval-resume>',
+        "Please continue from the current workspace state and finish the original task.",
+      ].join("\n"),
+    };
+    const normalized = normalizeItem(item);
+    expect(normalized.kind).toBe("message");
+    if (normalized.kind === "message") {
+      expect(normalized.text).toBe("创建已经完成。");
+    }
+  });
+
   it("uses only [User Input] content for default thread title", () => {
     const source =
       "[System] [Session Spec Link] source=custom; status=visible; root=/tmp/spec. " +

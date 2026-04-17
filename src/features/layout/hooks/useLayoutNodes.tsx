@@ -196,6 +196,7 @@ type LayoutNodesOptions = {
     request: ApprovalRequest,
     decision: "accept" | "decline",
   ) => void;
+  handleApprovalBatchAccept: (request: ApprovalRequest) => void;
   handleApprovalRemember: (
     request: ApprovalRequest,
     command: string[],
@@ -1387,6 +1388,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       approvals={options.approvals}
       workspaces={options.workspaces}
       onDecision={options.handleApprovalDecision}
+      onApproveBatch={options.handleApprovalBatchAccept}
       onRemember={options.handleApprovalRemember}
     />
   );

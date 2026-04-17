@@ -4,13 +4,13 @@
 
 The system MUST expose Claude Code modes according to an explicit phased rollout policy rather than enabling all defined modes at once.
 
-#### Scenario: preview rollout exposes default plan and full access
-- **WHEN** the active provider is `Claude Code` and rollout has advanced past the initial safe-only phase
+#### Scenario: current rollout exposes default plan and full access
+- **WHEN** the active provider is `Claude Code`
 - **THEN** UI MUST allow selecting `default`, `plan`, and `bypassPermissions`
 - **AND** UI MUST continue keeping `acceptEdits` unavailable until its semantics are verified
 
 #### Scenario: later phases may expand availability without changing mode ids
-- **WHEN** rollout advances beyond Phase 1
+- **WHEN** rollout advances beyond the current phase
 - **THEN** the system MAY enable additional existing Claude modes
 - **AND** it MUST continue using the existing `default / plan / acceptEdits / bypassPermissions` mode ids
 
@@ -22,6 +22,11 @@ For Claude Code sessions, selected mode MUST remain a real runtime input and MUS
 - **WHEN** user selects Claude `plan` mode and sends a message
 - **THEN** frontend MUST send backend access mode `read-only`
 - **AND** runtime MUST NOT overwrite that selection to `full-access`
+
+#### Scenario: selected default mode reaches backend send payload
+- **WHEN** user selects Claude `default` mode and sends a message
+- **THEN** frontend MUST send backend access mode `default`
+- **AND** runtime MUST preserve that selection unchanged
 
 #### Scenario: selected full access reaches backend send payload
 - **WHEN** user selects Claude `bypassPermissions` mode and sends a message
@@ -36,38 +41,46 @@ Claude runtime MUST map each enabled access mode to a deterministic Claude CLI p
 - **WHEN** Claude runtime receives access mode `read-only`
 - **THEN** it MUST launch Claude CLI with `--permission-mode plan`
 
+#### Scenario: default mode maps to claude guarded execution
+- **WHEN** Claude runtime receives access mode `default`
+- **THEN** it MUST launch Claude CLI with `--permission-mode default`
+
 #### Scenario: full access maps to skip-permissions execution
 - **WHEN** Claude runtime receives access mode `full-access`
 - **THEN** it MUST launch Claude CLI with `--dangerously-skip-permissions`
 
-#### Scenario: default and accept edits remain gated until enabled
-- **WHEN** Claude rollout phase does not yet allow `default` or `current`
-- **THEN** user MUST NOT be able to enter those modes through normal mode selection
-- **AND** runtime contract tests MUST still preserve their mapping definitions for future phases
+#### Scenario: accept edits remains gated until enabled
+- **WHEN** Claude rollout phase does not yet allow `current`
+- **THEN** user MUST NOT be able to enter `acceptEdits` through normal mode selection
+- **AND** runtime contract tests MUST still preserve its mapping definition for future phases
 
-### Requirement: Claude Approval-Dependent Modes MUST Be Gated By Approval Bridge Readiness
+### Requirement: Claude Default Mode MUST Use The Existing Approval Workflow For Supported File Changes
 
-Modes that rely on runtime approval interaction MUST NOT be exposed as available until Claude approval requests can traverse the existing approval flow end-to-end.
+Claude `default` mode MUST NOT degrade into silent permission failure for supported file-change tools.
 
-#### Scenario: default preview can open before full approval bridge is ready
-- **WHEN** Claude approval request bridging is still incomplete but degraded paths are diagnosable
-- **THEN** the system MAY expose Claude `default` mode as a preview
-- **AND** user-facing copy MUST state that some approval flows can still degrade
-- **AND** degraded permission failures MUST surface a recoverable diagnostic instead of silently failing
+#### Scenario: claude default emits synthetic approval request for supported file tool
+- **WHEN** Claude `default` mode hits a supported blocked file tool such as `Write`, `CreateFile`, or `CreateDirectory`
+- **THEN** runtime MUST emit a synthetic approval request into the existing approval pipeline
+- **AND** user MUST see the normal approval UI instead of only natural-language failure text
 
-#### Scenario: accept edits remains unavailable before semantics are verified
-- **WHEN** Claude `acceptEdits` semantics have not been verified against current CLI behavior
-- **THEN** the system MUST keep Claude `acceptEdits` unavailable
-- **AND** it MUST NOT describe the mode as stable
+#### Scenario: unsupported approval shapes remain explicit
+- **WHEN** Claude `default` mode hits an approval shape that is not yet supported by the synthetic bridge
+- **THEN** the system MUST surface a recoverable diagnostic
+- **AND** it MUST NOT describe the mode as fully equivalent to native CLI approvals
 
 ### Requirement: Claude Approval Bridge MUST Reuse Existing Approval Workflow
 
 Once approval-dependent Claude modes are enabled, Claude approval requests MUST reuse the existing approval workflow instead of introducing a provider-specific confirmation path.
 
 #### Scenario: claude approval request enters existing approval pipeline
-- **WHEN** Claude runtime emits an operation that requires approval
+- **WHEN** Claude runtime emits a synthetic approval request
 - **THEN** the system MUST surface it through the existing approval request event flow
 - **AND** user decisions MUST continue to route through the existing server request response path
+
+#### Scenario: batch approval remains possible for related requests
+- **WHEN** multiple Claude file approvals are pending in the same turn
+- **THEN** the UI MAY allow approving the current batch together
+- **AND** runtime MUST keep the turn open until the last pending approval resolves
 
 #### Scenario: claude approval rejection stays diagnosable
 - **WHEN** user declines a Claude approval request

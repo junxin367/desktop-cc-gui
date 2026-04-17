@@ -509,6 +509,33 @@ function isPendingToolStatus(status: string) {
   );
 }
 
+function stableSerializeApprovalValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableSerializeApprovalValue(entry)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    return `{${keys
+      .map((key) => `${JSON.stringify(key)}:${stableSerializeApprovalValue(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function isSameApprovalRequest(left: ApprovalRequest, right: ApprovalRequest) {
+  return (
+    left.workspace_id === right.workspace_id &&
+    left.request_id === right.request_id &&
+    left.method === right.method &&
+    stableSerializeApprovalValue(left.params ?? {}) ===
+      stableSerializeApprovalValue(right.params ?? {})
+  );
+}
+
 type ThreadActivityStatus = {
   isProcessing: boolean;
   hasUnread: boolean;
@@ -647,7 +674,12 @@ export type ThreadAction =
       cursor: string | null;
     }
   | { type: "addApproval"; approval: ApprovalRequest }
-  | { type: "removeApproval"; requestId: number | string; workspaceId: string }
+  | {
+      type: "removeApproval";
+      requestId: number | string;
+      workspaceId: string;
+      approval?: ApprovalRequest;
+    }
   | { type: "addUserInputRequest"; request: RequestUserInputRequest }
   | {
       type: "removeUserInputRequest";
@@ -2347,9 +2379,7 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
     }
     case "addApproval": {
       const exists = state.approvals.some(
-        (item) =>
-          item.request_id === action.approval.request_id &&
-          item.workspace_id === action.approval.workspace_id,
+        (item) => isSameApprovalRequest(item, action.approval),
       );
       if (exists) {
         return state;
@@ -2361,8 +2391,10 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
         ...state,
         approvals: state.approvals.filter(
           (item) =>
-            item.request_id !== action.requestId ||
-            item.workspace_id !== action.workspaceId,
+            action.approval
+              ? !isSameApprovalRequest(item, action.approval)
+              : item.request_id !== action.requestId ||
+                item.workspace_id !== action.workspaceId,
         ),
       };
     case "addUserInputRequest": {

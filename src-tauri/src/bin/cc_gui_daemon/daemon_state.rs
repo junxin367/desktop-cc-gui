@@ -1642,7 +1642,8 @@ impl DaemonState {
         target_user_message_occurrence: Option<u32>,
         local_user_message_count: Option<u32>,
     ) -> Result<Value, String> {
-        self.ensure_codex_session_for_workspace(&workspace_id).await?;
+        self.ensure_codex_session_for_workspace(&workspace_id)
+            .await?;
         let rewind_response = crate::codex::rewind::rewind_thread_from_message(
             &self.sessions,
             &self.workspaces,
@@ -1667,7 +1668,8 @@ impl DaemonState {
             .ok_or_else(|| "codex rewind response missing child thread id".to_string())?;
 
         workspaces_core::disconnect_workspace_session_core(&self.sessions, &workspace_id).await;
-        self.ensure_codex_session_for_workspace(&workspace_id).await?;
+        self.ensure_codex_session_for_workspace(&workspace_id)
+            .await?;
         codex_core::resume_thread_core(&self.sessions, workspace_id, rewound_thread_id).await?;
 
         Ok(rewind_response)
