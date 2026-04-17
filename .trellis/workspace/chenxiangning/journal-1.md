@@ -650,3 +650,57 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: runtime orchestrator pool console proposal
+
+**Date**: 2026-04-18
+**Task**: runtime orchestrator pool console proposal
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 为 runtime 进程治理问题建立独立 OpenSpec 提案，覆盖三阶段改造路线与设置中的 Runtime Pool Console。
+
+主要改动:
+- 新建 openspec/changes/runtime-orchestrator-pool-console/ proposal/design/specs/tasks 全套 artifacts。
+- 定义 runtime-orchestrator 与 runtime-pool-console 两个 capability。
+- 补充 claude-runtime-termination-hardening 与 conversation-lifecycle-contract 的 delta spec。
+- 细化三阶段执行顺序、门禁、实现窗口与验收判断。
+
+涉及模块:
+- openspec/changes/runtime-orchestrator-pool-console/**
+- specs: runtime-orchestrator, runtime-pool-console, claude-runtime-termination-hardening, conversation-lifecycle-contract
+
+验证结果:
+- openspec status --change runtime-orchestrator-pool-console --json 显示 4/4 artifacts complete。
+- git commit 成功，commit hash: d09485a4。
+- 本次提交仅包含 runtime 提案文件，未纳入工作区其他未提交代码改动。
+
+后续事项:
+- 后续实现建议按 Phase 1 -> Phase 2 -> Phase 3 推进。
+- Phase 2 进入前需重新评估当前前端线程链路未提交改动与 restore/acquire 改造的交互风险。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d09485a4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
