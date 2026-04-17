@@ -894,3 +894,64 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: dedicated runtime pool settings panel
+
+**Date**: 2026-04-18
+**Task**: dedicated runtime pool settings panel
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 将 runtime pool console 从其他设置中抽离成独立一级面板。
+- 重做页面结构与视觉层次，补 icon、字段说明，并修复 mutate_runtime_pool 的 workspace_id 参数错误。
+
+主要改动:
+- Settings 左侧新增独立 Runtime Pool 导航入口。
+- RuntimePoolSection 重做为单独控制台式页面：摘要卡片、生命周期策略、预算卡片、活跃 runtime 列表、诊断信息。
+- OtherSection 移除 runtime 控制台，恢复为历史补全/会话管理等其他配置。
+- 前端 mutateRuntimePool 改为显式发送 workspace_id；backend RuntimePoolMutation 额外兼容 workspaceId 别名。
+- 增加多条中英文文案，补足字段说明与状态文案。
+
+涉及模块:
+- src/features/settings/components/SettingsView.tsx
+- src/features/settings/components/settings-view/sections/RuntimePoolSection.tsx
+- src/features/settings/components/settings-view/sections/OtherSection.tsx
+- src/features/settings/components/settings-view/settingsViewAppearance.ts
+- src/services/tauri.ts
+- src-tauri/src/runtime/mod.rs
+- src/i18n/locales/zh.part1.ts
+- src/i18n/locales/en.part1.ts
+
+验证结果:
+- npx vitest run src/features/settings/components/SettingsView.test.tsx 通过。
+- npm run typecheck 通过，本次未引入新的 TS 错误。
+- git diff --check 通过。
+
+后续事项:
+- 当前仓库仍有用户侧未提交的 composer/messages/threads 相关改动，本次 record 不应包含它们。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `520e706406350f6166e0bcb34e01ceeb3623856f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

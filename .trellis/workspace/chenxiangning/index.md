@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-04-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~896 | Active |
+| `journal-1.md` | ~957 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-04-18 | dedicated runtime pool settings panel | `520e706406350f6166e0bcb34e01ceeb3623856f` | `feature/vvvv0.4.3` |
 | 16 | 2026-04-18 | runtime pool console visible settings entry | `d1e17770b8e8a0cbab6c701176fbadd8c6c716cb` | `feature/vvvv0.4.3` |
 | 15 | 2026-04-18 | runtime orchestrator pool console | `cb2db54934ba419a7220b746ab1d18f68b455e8c` | `feature/vvvv0.4.3` |
 | 14 | 2026-04-18 | 完善 Claude 计划模式切换与执行审批链路 | `8ea4647a` | `feature/vvvv0.4.3` |
