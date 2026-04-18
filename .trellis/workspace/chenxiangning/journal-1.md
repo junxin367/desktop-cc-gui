@@ -1483,3 +1483,54 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: 对齐 Claude explore 卡片隐藏行为
+
+**Date**: 2026-04-19
+**Task**: 对齐 Claude explore 卡片隐藏行为
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 让 Claude 幕布对进行中的 explore 卡片隐藏行为严格对齐 Codex 现有逻辑。
+
+主要改动:
+- 在 src/features/messages/components/Messages.tsx 中复用 Codex 现有过滤分支，将 claude 纳入同一条 explore+exploring 隐藏条件。
+- 在 src/features/messages/components/Messages.explore.test.tsx 中新增 Claude 等价测试，验证仅隐藏 exploring 卡片并保留 explored 卡片。
+
+涉及模块:
+- messages canvas 渲染过滤逻辑
+- messages explore 行为测试
+
+验证结果:
+- pnpm vitest run src/features/messages/components/Messages.explore.test.tsx src/features/messages/components/Messages.live-behavior.test.tsx 通过（29/29）
+- pnpm eslint src/features/messages/components/Messages.tsx src/features/messages/components/Messages.explore.test.tsx 通过
+- pnpm tsc --noEmit 通过
+
+后续事项:
+- 若需要继续做 Claude/Codex 幕布行为完全一致性梳理，可沿 Messages 可见性过滤与 live behavior 测试继续补齐矩阵。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8df6ed06` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
