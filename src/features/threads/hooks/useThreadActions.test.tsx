@@ -1514,6 +1514,351 @@ describe("useThreadActions", () => {
     );
   });
 
+  it("recovers stale unified codex thread ids without breaking current workspace state", async () => {
+    vi.mocked(resumeThread).mockImplementation(
+      async (_workspaceId: string, threadId: string) => {
+        if (threadId === "thread-stale") {
+          throw new Error("thread not found: thread-stale");
+        }
+        return {
+          result: {
+            thread: {
+              id: "thread-recovered",
+              turns: [{ id: "turn-recovered", items: [] }],
+            },
+          },
+        };
+      },
+    );
+    vi.mocked(listThreads).mockResolvedValue({
+      result: {
+        data: [
+          {
+            id: "thread-recovered",
+            preview: "Recovered preview",
+            updated_at: 999,
+            cwd: "/tmp/codex",
+          },
+          {
+            id: "thread-other",
+            preview: "Other preview",
+            updated_at: 100,
+            cwd: "/tmp/codex",
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    vi.mocked(loadCodexSession).mockResolvedValue({ entries: [] });
+    vi.mocked(buildItemsFromThread).mockReturnValue([
+      {
+        id: "assistant-recovered",
+        kind: "message",
+        role: "assistant",
+        text: "Recovered",
+      },
+    ]);
+    const rememberThreadAlias = vi.fn();
+
+    const { result, dispatch, loadedThreadsRef } = renderActions({
+      useUnifiedHistoryLoader: true,
+      rememberThreadAlias,
+      userInputRequests: [
+        {
+          workspace_id: "ws-1",
+          request_id: "stale-request-1",
+          params: {
+            thread_id: "thread-stale",
+            turn_id: "turn-stale",
+            item_id: "item-stale",
+            questions: [],
+          },
+        },
+      ],
+      threadsByWorkspace: {
+        "ws-1": [
+          {
+            id: "thread-stale",
+            name: "Recovered preview",
+            updatedAt: 10,
+            engineSource: "codex",
+            threadKind: "native",
+          },
+        ],
+      },
+      activeThreadIdByWorkspace: {
+        "ws-1": "thread-stale",
+      },
+    });
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace, { preserveState: true });
+    });
+    dispatch.mockClear();
+
+    let resumed: string | null = null;
+    await act(async () => {
+      resumed = await result.current.resumeThreadForWorkspace("ws-1", "thread-stale");
+    });
+
+    expect(resumed).toBe("thread-recovered");
+    expect(rememberThreadAlias).toHaveBeenCalledWith("thread-stale", "thread-recovered");
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "setActiveThreadId",
+      workspaceId: "ws-1",
+      threadId: "thread-recovered",
+    });
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "setThreadItems",
+        threadId: "thread-recovered",
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "clearUserInputRequestsForThread",
+      workspaceId: "ws-1",
+      threadId: "thread-stale",
+    });
+    expect(loadedThreadsRef.current["thread-recovered"]).toBe(true);
+    expect(loadedThreadsRef.current["thread-stale"]).toBe(false);
+  });
+
+  it("recovers stale unified codex thread ids from later recovery pages", async () => {
+    vi.mocked(resumeThread).mockImplementation(
+      async (_workspaceId: string, threadId: string) => {
+        if (threadId === "thread-stale") {
+          throw new Error("thread not found: thread-stale");
+        }
+        return {
+          result: {
+            thread: {
+              id: "thread-page-2",
+              turns: [{ id: "turn-page-2", items: [] }],
+            },
+          },
+        };
+      },
+    );
+    vi.mocked(listThreads)
+      .mockResolvedValueOnce({
+        result: {
+          data: [],
+          nextCursor: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        result: {
+          data: [
+            {
+              id: "thread-page-1-a",
+              preview: "Different page 1 A",
+              updated_at: 500,
+              cwd: "/tmp/codex",
+            },
+            {
+              id: "thread-page-1-b",
+              preview: "Different page 1 B",
+              updated_at: 400,
+              cwd: "/tmp/codex",
+            },
+          ],
+          nextCursor: "cursor-2",
+        },
+      })
+      .mockResolvedValueOnce({
+        result: {
+          data: [
+            {
+              id: "thread-page-2",
+              preview: "Recovered later page",
+              updated_at: 999,
+              cwd: "/tmp/codex",
+            },
+          ],
+          nextCursor: null,
+        },
+      });
+    vi.mocked(loadCodexSession).mockResolvedValue({ entries: [] });
+    vi.mocked(buildItemsFromThread).mockReturnValue([
+      {
+        id: "assistant-page-2",
+        kind: "message",
+        role: "assistant",
+        text: "Recovered from page 2",
+      },
+    ]);
+
+    const { result } = renderActions({
+      useUnifiedHistoryLoader: true,
+      threadsByWorkspace: {
+        "ws-1": [
+          {
+            id: "thread-stale",
+            name: "Recovered later page",
+            updatedAt: 10,
+            engineSource: "codex",
+            threadKind: "native",
+          },
+        ],
+      },
+      activeThreadIdByWorkspace: {
+        "ws-1": "thread-stale",
+      },
+    });
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace, { preserveState: true });
+    });
+
+    let resumed: string | null = null;
+    await act(async () => {
+      resumed = await result.current.resumeThreadForWorkspace("ws-1", "thread-stale");
+    });
+
+    expect(resumed).toBe("thread-page-2");
+    expect(listThreads).toHaveBeenCalledTimes(3);
+    expect(listThreads).toHaveBeenNthCalledWith(2, "ws-1", null, 50);
+    expect(listThreads).toHaveBeenNthCalledWith(3, "ws-1", "cursor-2", 50);
+  });
+
+  it("keeps legacy failure behavior when stale unified thread recovery has no safe replacement", async () => {
+    vi.mocked(resumeThread).mockRejectedValue(new Error("thread not found: thread-stale"));
+    vi.mocked(listThreads).mockResolvedValue({
+      result: {
+        data: [
+          {
+            id: "thread-a",
+            preview: "Thread A",
+            updated_at: 100,
+            cwd: "/tmp/codex",
+          },
+          {
+            id: "thread-b",
+            preview: "Thread B",
+            updated_at: 99,
+            cwd: "/tmp/codex",
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    const rememberThreadAlias = vi.fn();
+
+    const { result, dispatch } = renderActions({
+      useUnifiedHistoryLoader: true,
+      rememberThreadAlias,
+      threadsByWorkspace: {
+        "ws-1": [
+          {
+            id: "thread-stale",
+            name: "Unknown stale thread",
+            updatedAt: 10,
+            engineSource: "codex",
+            threadKind: "native",
+          },
+        ],
+      },
+      activeThreadIdByWorkspace: {
+        "ws-1": "thread-stale",
+      },
+    });
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace, { preserveState: true });
+    });
+    dispatch.mockClear();
+
+    await act(async () => {
+      await result.current.resumeThreadForWorkspace("ws-1", "thread-stale");
+    });
+
+    expect(rememberThreadAlias).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "setActiveThreadId",
+        workspaceId: "ws-1",
+        threadId: "thread-a",
+      }),
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "setActiveThreadId",
+        workspaceId: "ws-1",
+        threadId: "thread-b",
+      }),
+    );
+  });
+
+  it("recovers stale unified OpenCode thread ids from refreshed native sessions", async () => {
+    vi.mocked(resumeThread).mockImplementation(
+      async (_workspaceId: string, threadId: string) => {
+        if (threadId === "opencode:stale") {
+          throw new Error("[session_not_found] session file not found");
+        }
+        return {
+          result: {
+            thread: {
+              id: "opencode:session-2",
+              turns: [{ id: "turn-2", items: [] }],
+            },
+          },
+        };
+      },
+    );
+    vi.mocked(getOpenCodeSessionList).mockResolvedValue([
+      {
+        sessionId: "session-2",
+        title: "OpenCode Session",
+        updatedLabel: "just now",
+        updatedAt: 200,
+      },
+    ]);
+    vi.mocked(buildItemsFromThread).mockReturnValue([
+      {
+        id: "assistant-opencode",
+        kind: "message",
+        role: "assistant",
+        text: "Recovered OpenCode",
+      },
+    ]);
+    const rememberThreadAlias = vi.fn();
+
+    const { result, dispatch } = renderActions({
+      useUnifiedHistoryLoader: true,
+      rememberThreadAlias,
+      threadsByWorkspace: {
+        "ws-1": [
+          {
+            id: "opencode:stale",
+            name: "OpenCode Session",
+            updatedAt: 10,
+            engineSource: "opencode",
+            threadKind: "native",
+          },
+        ],
+      },
+      activeThreadIdByWorkspace: {
+        "ws-1": "opencode:stale",
+      },
+    });
+
+    let resumed: string | null = null;
+    await act(async () => {
+      resumed = await result.current.resumeThreadForWorkspace("ws-1", "opencode:stale");
+    });
+
+    expect(resumed).toBe("opencode:session-2");
+    expect(rememberThreadAlias).toHaveBeenCalledWith(
+      "opencode:stale",
+      "opencode:session-2",
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "setActiveThreadId",
+      workspaceId: "ws-1",
+      threadId: "opencode:session-2",
+    });
+  });
+
   it("hydrates user input queue from unified history snapshots", async () => {
     const assistantItem: ConversationItem = {
       id: "assistant-unified-user-input",

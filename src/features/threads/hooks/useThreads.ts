@@ -888,6 +888,7 @@ export function useThreads({
     replaceOnResumeRef,
     applyCollabThreadLinksFromThread,
     updateThreadParent,
+    rememberThreadAlias,
     onThreadTitleMappingsLoaded: (workspaceId, titles) => {
       Object.entries(titles).forEach(([threadId, title]) => {
         if (!threadId.trim() || !title.trim()) {
@@ -923,7 +924,7 @@ export function useThreads({
         return null;
       }
     } else if (!loadedThreadsRef.current[threadId]) {
-      await resumeThreadForWorkspace(activeWorkspace.id, threadId);
+      threadId = await resumeThreadForWorkspace(activeWorkspace.id, threadId);
     }
     return threadId;
   }, [activeWorkspace, activeThreadId, activeEngine, resumeThreadForWorkspace, startThreadForWorkspace]);
@@ -942,7 +943,7 @@ export function useThreads({
           return null;
         }
       } else if (!loadedThreadsRef.current[threadId]) {
-        await resumeThreadForWorkspace(workspaceId, threadId);
+        threadId = await resumeThreadForWorkspace(workspaceId, threadId);
       }
       if (shouldActivate && currentActiveThreadId !== threadId) {
         dispatch({ type: "setActiveThreadId", workspaceId, threadId });
