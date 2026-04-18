@@ -1534,3 +1534,56 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: 修复 Claude stop 后晚到事件回流
+
+**Date**: 2026-04-19
+**Task**: 修复 Claude stop 后晚到事件回流
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 修复 Claude 会话在 stop 之后被晚到 snapshot/completed 事件重新写活的问题。
+
+主要改动:
+- 将 threads item 事件层的 interrupted 过滤从 Gemini 特判收敛为通用 thread guard。
+- 阻断 Claude interrupted thread 的 late item snapshot 与 completed agent message 回流。
+- 补充 useThreadItemEvents 的 Claude 回归测试，覆盖 late snapshot 与 late completion 两类边界。
+
+涉及模块:
+- src/features/threads/hooks/useThreadItemEvents.ts
+- src/features/threads/hooks/useThreadItemEvents.test.ts
+
+验证结果:
+- npx vitest run src/features/threads/hooks/useThreadItemEvents.test.ts
+- npx vitest run src/features/threads/hooks/useThreadTurnEvents.test.tsx src/features/threads/hooks/useThreadMessaging.test.tsx
+- npm run typecheck
+- npm run lint 存在仓库既有 react-hooks warnings，但本次改动未新增 lint error。
+
+后续事项:
+- 若线上仍偶发 stop 后复活，可进一步把 guard 从 thread 级增强到 Claude 专属 turn 级 tombstone。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b2043039` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

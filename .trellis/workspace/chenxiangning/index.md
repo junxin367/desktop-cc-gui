@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
+- **Total Sessions**: 28
 - **Last Active**: 2026-04-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1536 | Active |
+| `journal-1.md` | ~1589 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-04-19 | 修复 Claude stop 后晚到事件回流 | `b2043039` | `feature/vvvv0.4.3` |
 | 27 | 2026-04-19 | 对齐 Claude explore 卡片隐藏行为 | `8df6ed06` | `feature/vvvv0.4.3` |
 | 26 | 2026-04-19 | review 修复 runtime/workspaces 边界问题 | `441b680b` | `feature/vvvv0.4.3` |
 | 25 | 2026-04-19 | 修复 Codex stale session 重连与 reconnect 卡片误判 | `5c3cd46e8437193cbc503f3994dbce55d96a8ea1` | `feature/vvvv0.4.3` |
