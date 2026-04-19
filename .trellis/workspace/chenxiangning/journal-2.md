@@ -62,3 +62,67 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: 落地项目范围会话聚合与归属路由
+
+**Date**: 2026-04-20
+**Task**: 落地项目范围会话聚合与归属路由
+**Branch**: `feature/vv0.4.4`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 落地 OpenSpec change fix-project-session-management-scope 的主实现，修复 Session Management 仅按单 workspace 读取、批量操作路由不准、Codex 历史跨 roots 漏读的问题。
+
+主要改动:
+- 新增 fix-project-session-management-scope proposal/design/specs/tasks artifacts。
+- Rust 后端在 session_management.rs 中引入 project scope 解析：main workspace 聚合 child worktrees，worktree 维持 self-only。
+- Session catalog entry 保留真实 owner workspaceId，并按 owner workspace 单独读取 archive metadata。
+- local_usage.rs 合并 workspace override roots 与默认 Codex roots，避免会话历史因 codex home 漂移被静默隐藏。
+- 前端 useWorkspaceSessionCatalog 改为按 entry owner workspace 分桶 archive/delete，并汇总部分失败结果。
+- SessionManagementSection 展示 owner workspace/worktree 标签，并与 sourceLabel 共存。
+- 补齐 Rust 与前端回归测试，覆盖 scope 解析、roots 并集、去重键、partial source 信号、owner 标签、mutation 分桶。
+
+涉及模块:
+- openspec/changes/fix-project-session-management-scope/**
+- src-tauri/src/session_management.rs
+- src-tauri/src/local_usage.rs
+- src-tauri/src/local_usage/tests.rs
+- src/features/settings/components/settings-view/hooks/useWorkspaceSessionCatalog.ts
+- src/features/settings/components/settings-view/hooks/useWorkspaceSessionCatalog.test.tsx
+- src/features/settings/components/settings-view/sections/SessionManagementSection.tsx
+- src/features/settings/components/settings-view/sections/SessionManagementSection.test.tsx
+
+验证结果:
+- cargo test --manifest-path src-tauri/Cargo.toml session_management
+- cargo test --manifest-path src-tauri/Cargo.toml local_usage
+- npm exec vitest run src/features/settings/components/settings-view/hooks/useWorkspaceSessionCatalog.test.tsx src/features/settings/components/settings-view/sections/SessionManagementSection.test.tsx
+- tasks.md 已同步勾掉 2.2、2.3、4.2。
+
+后续事项:
+- 当前 change 仍缺 5.3 真实项目手测记录，因此暂不建议 archive。
+- 工作区仍存在与本次提交无关的未提交改动：app-shell/open-app/global-session-history-archive-center，已刻意未纳入本次提交。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `accf1da0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
