@@ -10,6 +10,10 @@ type ResolvedAppTarget = {
   appName: string;
 };
 
+type UseOpenAppIconsOptions = {
+  enabled?: boolean;
+};
+
 function detectMacOS(): boolean {
   if (typeof navigator === "undefined") {
     return false;
@@ -20,8 +24,12 @@ function detectMacOS(): boolean {
   return platform.toLowerCase().includes("mac");
 }
 
-export function useOpenAppIcons(openTargets: OpenAppTarget[]): OpenAppIconMap {
+export function useOpenAppIcons(
+  openTargets: OpenAppTarget[],
+  options?: UseOpenAppIconsOptions,
+): OpenAppIconMap {
   const isMacOS = detectMacOS();
+  const enabled = options?.enabled ?? true;
   const iconCacheRef = useRef<Map<string, string>>(new Map());
   const inFlightRef = useRef<Map<string, Promise<string | null>>>(new Map());
   const [iconById, setIconById] = useState<OpenAppIconMap>({});
@@ -39,7 +47,7 @@ export function useOpenAppIcons(openTargets: OpenAppTarget[]): OpenAppIconMap {
   );
 
   useEffect(() => {
-    if (!isMacOS || appTargets.length === 0) {
+    if (!enabled || !isMacOS || appTargets.length === 0) {
       setIconById({});
       return;
     }
@@ -85,7 +93,7 @@ export function useOpenAppIcons(openTargets: OpenAppTarget[]): OpenAppIconMap {
     return () => {
       cancelled = true;
     };
-  }, [appTargets, isMacOS]);
+  }, [appTargets, enabled, isMacOS]);
 
   return iconById;
 }

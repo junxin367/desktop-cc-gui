@@ -6,6 +6,7 @@ import { TooltipIconButton } from "../../../components/ui/tooltip-icon-button";
 import { openWorkspaceIn } from "../../../services/tauri";
 import { pushErrorToast } from "../../../services/toasts";
 import type { OpenAppTarget } from "../../../types";
+import { useOpenAppIcons } from "../hooks/useOpenAppIcons";
 import {
   DEFAULT_OPEN_APP_ID,
   DEFAULT_OPEN_APP_TARGETS,
@@ -42,6 +43,7 @@ export function OpenAppMenu({
   const openMenuRef = useRef<HTMLDivElement | null>(null);
   const availableTargets =
     openTargets.length > 0 ? openTargets : DEFAULT_OPEN_APP_TARGETS;
+  const lazyIconById = useOpenAppIcons(availableTargets, { enabled: openMenuOpen });
   const openAppId = useMemo(
     () =>
       availableTargets.find((target) => target.id === selectedOpenAppId)?.id,
@@ -57,11 +59,12 @@ export function OpenAppMenu({
         label: target.label,
         icon:
           getKnownOpenAppIcon(target.id) ??
+          lazyIconById[target.id] ??
           iconById[target.id] ??
           GENERIC_APP_ICON,
         target,
       })),
-    [availableTargets, iconById],
+    [availableTargets, iconById, lazyIconById],
   );
 
   const fallbackTarget: OpenTarget = {
@@ -82,7 +85,10 @@ export function OpenAppMenu({
     resolvedOpenTargets.find((target) => target.id === resolvedOpenAppId) ??
     resolvedOpenTargets[0] ??
     fallbackTarget;
-  const selectedOpenLabel = `Open in ${selectedOpenTarget.label}`;
+  const selectedOpenLabel = t("settings.openInTarget", {
+    target: selectedOpenTarget.label,
+  });
+  const selectEditorLabel = t("settings.selectEditor");
 
   const reportOpenError = (error: unknown, target: OpenTarget) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -239,8 +245,8 @@ export function OpenAppMenu({
           data-tauri-drag-region="false"
           aria-haspopup="menu"
           aria-expanded={openMenuOpen}
-          aria-label="Select editor"
-          title="Select editor"
+          aria-label={selectEditorLabel}
+          title={selectEditorLabel}
         >
           <ChevronDown size={14} aria-hidden />
         </button>

@@ -147,7 +147,6 @@ import type {
   WorkspaceInfo,
 } from "./types";
 import { getClientStoreSync, writeClientStoreValue } from "./services/clientStorage";
-import { useOpenAppIcons } from "./features/app/hooks/useOpenAppIcons";
 import { useCodeCssVars } from "./features/app/hooks/useCodeCssVars";
 import { useAccountSwitching } from "./features/app/hooks/useAccountSwitching";
 import { useMenuLocalization } from "./features/app/hooks/useMenuLocalization";
@@ -194,6 +193,7 @@ import {
   resolveLatestUserMessage,
 } from "./features/session-activity/utils/sessionRadarPersistence";
 
+const EMPTY_OPEN_APP_ICON_MAP: Record<string, string> = {};
 const DEFAULT_CLAUDE_MODEL_ID = "claude-sonnet-4-6";
 const INVISIBLE_SEARCH_QUERY_CHARS_REGEX = /[\u200B-\u200D\uFEFF]/g;
 
@@ -1353,7 +1353,6 @@ export function AppShell() {
     [
       listThreadsForWorkspaceTracked,
       threadListLoadingByWorkspace,
-      threadsByWorkspace,
       workspacesById,
     ],
   );
@@ -1767,7 +1766,7 @@ export function AppShell() {
     ],
   );
 
-  const openAppIconById = useOpenAppIcons(appSettings.openAppTargets);
+  const openAppIconById = EMPTY_OPEN_APP_ICON_MAP;
 
   const persistProjectCopiesFolder = useCallback(
     async (groupId: string, copiesFolder: string) => {

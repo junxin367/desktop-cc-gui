@@ -998,6 +998,8 @@ const enPart1 = {
     addApp: "Add app",
     openInHelp: "Commands receive the selected path as the final argument. Apps use macOS open with optional args.",
     newApp: "New App",
+    selectEditor: "Select editor",
+    openInTarget: "Open in {{target}}",
 
     // Git section
     gitTitle: "Git",

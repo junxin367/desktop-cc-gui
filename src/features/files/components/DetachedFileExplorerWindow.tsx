@@ -6,7 +6,6 @@ import { useAppSettingsController } from "../../app/hooks/useAppSettingsControll
 import { useCodeCssVars } from "../../app/hooks/useCodeCssVars";
 import { useWorkspaceFiles } from "../../workspaces/hooks/useWorkspaceFiles";
 import { useWindowFocusState } from "../../layout/hooks/useWindowFocusState";
-import { useOpenAppIcons } from "../../app/hooks/useOpenAppIcons";
 import { DEFAULT_OPEN_APP_ID, DEFAULT_OPEN_APP_TARGETS } from "../../app/constants";
 import { useGitStatus } from "../../git/hooks/useGitStatus";
 import { getClientStoreSync } from "../../../services/clientStorage";
@@ -22,6 +21,8 @@ import {
 import { useDetachedFileExplorerSession } from "../hooks/useDetachedFileExplorerSession";
 import { useDetachedFileExplorerState } from "../hooks/useDetachedFileExplorerState";
 import { FileExplorerWorkspace } from "./FileExplorerWorkspace";
+
+const EMPTY_OPEN_APP_ICON_MAP: Record<string, string> = {};
 
 function buildDetachedWorkspaceInfo(session: {
   workspaceId: string;
@@ -101,7 +102,7 @@ export function DetachedFileExplorerWindow() {
   const [externalChangeTransportMode, setExternalChangeTransportMode] = useState<"watcher" | "polling">(
     "polling",
   );
-  const openAppIconById = useOpenAppIcons(DEFAULT_OPEN_APP_TARGETS);
+  const openAppIconById = EMPTY_OPEN_APP_ICON_MAP;
   const externalChangeAwarenessEnabled =
     appSettings.detachedExternalChangeAwarenessEnabled !== false;
   const externalChangeWatcherEnabled =

@@ -1009,6 +1009,8 @@ const zhPart1 = {
     addApp: "添加应用",
     openInHelp: "命令接收选定路径作为最终参数。应用使用 macOS open 加可选参数。",
     newApp: "新应用",
+    selectEditor: "选择编辑器",
+    openInTarget: "在 {{target}} 中打开",
 
     // Git 部分
     gitTitle: "Git",

@@ -2,6 +2,7 @@ import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
 import type { OpenAppTarget } from "@/types";
+import { useOpenAppIcons } from "../../../../app/hooks/useOpenAppIcons";
 import { GENERIC_APP_ICON, getKnownOpenAppIcon } from "../../../../app/utils/openAppIcons";
 import type { OpenAppDraft } from "../actions/settingsViewActions";
 
@@ -34,6 +35,8 @@ export function OpenAppsSection({
   handleDeleteOpenApp,
   handleAddOpenApp,
 }: OpenAppsSectionProps) {
+  const lazyIconById = useOpenAppIcons(openAppDrafts, { enabled: active });
+
   if (!active) {
     return null;
   }
@@ -48,6 +51,7 @@ export function OpenAppsSection({
         {openAppDrafts.map((target, index) => {
           const iconSrc =
             getKnownOpenAppIcon(target.id) ??
+            lazyIconById[target.id] ??
             openAppIconById[target.id] ??
             GENERIC_APP_ICON;
           return (
