@@ -1827,3 +1827,65 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 67: 统一全局 loading 进度处理
+
+**Date**: 2026-04-21
+**Task**: 统一全局 loading 进度处理
+**Branch**: `feature/f-v0.4.6`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：
+- 修复新建会话菜单中 Claude Code + Codex shared 会话创建未接入全局 loading 的问题。
+- 收敛 loading 生命周期处理，兼容创建会话、添加项目、打开项目等多入口。
+- 修复 sidebar 刷新 icon 显示和竖向滚动条外露问题。
+
+主要改动：
+- 新增 src/features/app/utils/loadingProgressActions.ts，抽取 runWithLoadingProgress 通用 helper。
+- useWorkspaceActions 中添加项目、打开新窗口、创建普通会话统一走 runWithLoadingProgress。
+- useAppShellSections 中 shared 会话创建接入同一全局 loading helper，并从 app-shell context 传入 show/hide controller。
+- 修复 loading cleanup 异常覆盖业务异常的边界：业务失败优先保留业务错误，cleanup 失败记录 console.error；业务成功但 cleanup 失败则暴露 cleanup 异常。
+- 收窄 sidebar ScrollArea CSS selector 为 direct child，避免误伤未来嵌套滚动区；补齐刷新按钮 svg 尺寸和 padding，避免 icon 被挤压不可见。
+
+涉及模块：
+- app shell sections/context
+- workspace actions hook
+- app loading progress utility
+- sidebar CSS
+
+验证结果：
+- npm run test：324 test files completed，通过。
+- npm run typecheck：通过。
+- npm run lint：0 errors，107 existing react-hooks/exhaustive-deps warnings。
+- npm run check:large-files:near-threshold：通过，有 near-threshold warnings。
+- npm run check:large-files:gate：通过，found=0。
+- git diff --check：通过。
+- targeted vitest：loadingProgressActions/useWorkspaceActions 11 tests passed。
+
+后续事项：
+- app-shell.tsx 和 sidebar.css 仍处于 near-threshold 区间，后续继续扩展时应优先拆分上下文对象或 CSS 分片，避免超过 3000 行硬门禁。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `91edb3e8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
