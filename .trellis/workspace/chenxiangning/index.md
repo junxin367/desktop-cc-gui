@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 61
+- **Total Sessions**: 62
 - **Last Active**: 2026-04-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1517 | Active |
+| `journal-2.md` | ~1578 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 62 | 2026-04-20 | review 修复会话创建与 OpenCode 菜单边界 | `049918e90ee7130799ef7a3d31519a667043cf17` | `feature/vvvv0.4.5` |
 | 61 | 2026-04-20 | 补充 v0.4.5 发布说明 | `58e62cbb616f5cd2ff61c4bd666ae3a8bc7fa732` | `feature/vvvv0.4.5` |
 | 60 | 2026-04-20 | 同步 OpenSpec 稳定性与 Claude compact 进度 | `1924fb95488675e9b7e6fdf42def1ca1ce6e6549` | `feature/vvvv0.4.5` |
 | 59 | 2026-04-20 | 补强线程恢复诊断与会话降级承接 | `d37f2357a43f3959cef13aa7821a700932ad8020` | `feature/vvvv0.4.5` |

@@ -1515,3 +1515,64 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 62: review 修复会话创建与 OpenCode 菜单边界
+
+**Date**: 2026-04-20
+**Task**: review 修复会话创建与 OpenCode 菜单边界
+**Branch**: `feature/vvvv0.4.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 对当前工作区做全面 review，重点检查边界条件、异常输入、跨平台路径兼容与大文件治理风险
+- 直接修复本轮发现的高风险问题，并补充验证
+
+主要改动:
+- 修复 startThreadForWorkspace 返回空值或抛错时缺少用户可见反馈的问题，统一在 useWorkspaceActions 中关闭 loading dialog、写 debug、弹出创建会话失败提示
+- 修复 OpenCode provider health 探测失败后菜单状态卡在 loading 的问题，失败时回退到可继续操作的状态
+- 补充 Windows 路径 basename 提取回归测试，覆盖反斜杠分隔符场景
+- 补充中英文错误文案与 vitest i18n mock，保证失败路径可测试、可回归
+
+涉及模块:
+- src/features/app/hooks/useWorkspaceActions.ts
+- src/features/app/hooks/useSidebarMenus.ts
+- src/features/app/hooks/useWorkspaceActions.test.tsx
+- src/features/app/hooks/useSidebarMenus.test.tsx
+- src/i18n/locales/en.part1.ts
+- src/i18n/locales/zh.part1.ts
+- src/test/vitest.setup.ts
+
+验证结果:
+- npx vitest run src/features/app/hooks/useWorkspaceActions.test.tsx src/features/app/hooks/useSidebarMenus.test.tsx src/features/engine/hooks/useEngineController.test.tsx src/features/composer/components/ChatInputBox/selectors/ProviderSelect.test.tsx src/components/ui/LoadingProgressDialog.test.tsx src/features/app/hooks/useLoadingProgressDialogState.test.tsx src/features/threads/components/ThreadDeleteConfirmBubble.test.tsx 通过
+- npm run test 通过（batched 全量 323 test files）
+- npm run typecheck 通过
+- npm run check:large-files 通过
+- npx eslint 针对本次改动文件检查通过
+
+后续事项:
+- app-shell.tsx、sidebar.css 与 i18n 分片已接近大文件治理阈值，后续新增能力建议继续外提到 hook/adapter，避免被动拆分
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `049918e90ee7130799ef7a3d31519a667043cf17` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
