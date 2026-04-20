@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 46
+- **Total Sessions**: 47
 - **Last Active**: 2026-04-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~653 | Active |
+| `journal-2.md` | ~703 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 47 | 2026-04-20 | 补充顶部项目切换文件面板回归测试 | `3239d18d` | `feature/vvvv0.4.5` |
 | 46 | 2026-04-20 | 补充左侧项目显式主区切换入口 | `23f9ec09` | `feature/vvvv0.4.5` |
 | 45 | 2026-04-20 | 更新 v0.4.4 与 v0.4.5 Changelog | `cd1acabb2cfd56475039562b7ae005f9a5f1874e` | `feature/vvvv0.4.5` |
 | 44 | 2026-04-20 | 设置页实验区入口与续写融合命名收敛 | `0d5bc5a7` | `feature/vv0.4.4` |

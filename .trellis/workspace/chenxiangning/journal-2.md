@@ -651,3 +651,53 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: 补充顶部项目切换文件面板回归测试
+
+**Date**: 2026-04-20
+**Task**: 补充顶部项目切换文件面板回归测试
+**Branch**: `feature/vvvv0.4.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 为顶部 MainHeader 项目下拉补一条回归测试，锁定切换主区后右侧文件面板不会进入空白态。
+
+主要改动:
+- 新增 MainHeader.workspace-switch-regression.test.tsx。
+- 通过最小 harness 绑定真实 MainHeader 项目下拉与右侧文件面板容器状态。
+- 测试覆盖：从顶部项目下拉切换 workspace 后，右侧文件列表切换到新 workspace 内容，且不存在 blank-file-panel 占位。
+
+涉及模块:
+- src/features/app/components/MainHeader.workspace-switch-regression.test.tsx
+
+验证结果:
+- npm run typecheck 通过。
+- npm exec vitest run src/features/app/components/MainHeader.workspace-switch-regression.test.tsx src/features/app/components/MainHeader.branch-reveal.test.tsx src/features/app/components/MainHeader.topbar-session-tabs.test.tsx 通过。
+- npm exec eslint src/features/app/components/MainHeader.workspace-switch-regression.test.tsx src/features/app/components/MainHeader.branch-reveal.test.tsx src/features/app/components/MainHeader.topbar-session-tabs.test.tsx 通过。
+
+后续事项:
+- 当前仓库仍有用户自己的未提交 Session Management 相关改动，本次未触碰也未纳入提交。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3239d18d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
