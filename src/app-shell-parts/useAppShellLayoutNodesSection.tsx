@@ -373,6 +373,17 @@ export function useAppShellLayoutNodesSection(ctx: any) {
       }
       void loadOlderThreadsForWorkspace(workspace);
     },
+    onQuickReloadWorkspaceThreads: (workspaceId) => {
+      const workspace = workspacesById.get(workspaceId);
+      if (!workspace) {
+        return;
+      }
+      const targets =
+        workspace.kind === "main"
+          ? [workspace, ...workspaces.filter((candidate) => candidate.parentId === workspace.id)]
+          : [workspace];
+      void Promise.allSettled(targets.map((target) => listThreadsForWorkspaceTracked(target)));
+    },
     onReloadWorkspaceThreads: async (workspaceId) => {
       const workspace = workspacesById.get(workspaceId);
       if (!workspace) {
@@ -397,7 +408,11 @@ export function useAppShellLayoutNodesSection(ctx: any) {
       if (!confirmed) {
         return;
       }
-      void listThreadsForWorkspaceTracked(workspace);
+      const targets =
+        workspace.kind === "main"
+          ? [workspace, ...workspaces.filter((candidate) => candidate.parentId === workspace.id)]
+          : [workspace];
+      void Promise.allSettled(targets.map((target) => listThreadsForWorkspaceTracked(target)));
     },
     updaterState,
     onUpdate: startUpdate,

@@ -9,6 +9,8 @@
 ✨ Features
 - 新增全局会话归档中心，支持跨项目聚合查看历史会话，并收紧 Codex 配置边界，降低多入口配置漂移风险
 - 新增会话恢复诊断与降级承接链路，在 runtime 断连、线程失效或恢复失败时提供更明确的状态解释与后续操作入口
+- 新增加载进度弹窗，支持工作区打开、添加项目与创建会话等长耗时操作的进度提示、后台运行与多请求可见性管理
+- 增强引擎可用性状态透传，区分检测中、可用、需登录与不可用状态，并同步到侧栏、引擎选择器和输入区 provider selector
 
 🔧 Improvements
 - 收敛设置页实验区入口，将续写、融合等能力命名与归属统一到更清晰的配置结构
@@ -22,12 +24,16 @@
 - 修复工作区文件树刷新不稳定问题，避免目录节点、独立文件窗口与工作区文件状态在刷新后不同步
 - 修复 Opencode 子进程终止与超时收敛边界，降低异常退出、超时清理和会话回收中的残留风险
 - 修复 Codex 会话自恢复、零活动超时兜底与 runtime 重连场景中的诊断缺口，提升断链后的可恢复性
+- 修复会话创建失败时缺少用户可见反馈的问题，确保失败后关闭加载弹窗、记录诊断并展示错误提示
+- 修复 OpenCode provider health 探测失败后菜单状态可能卡在 loading 的问题，并补齐 Windows 路径 basename 等边界测试
 
 English:
 
 ✨ Features
 - Add a global session archive center for cross-project history aggregation, while tightening Codex configuration boundaries to reduce configuration drift across entry points
 - Add session recovery diagnostics and fallback handoff paths so runtime disconnects, stale threads, and failed recovery attempts provide clearer state and next-action guidance
+- Add a loading progress dialog for long-running workspace open, add-project, and session-creation operations, with background-running support and multi-request visibility management
+- Improve engine availability propagation by distinguishing loading, ready, requires-login, and unavailable states across the sidebar, engine selector, and input provider selector
 
 🔧 Improvements
 - Consolidate the Settings experimental area and align naming/ownership for continuation and fusion capabilities into a clearer configuration structure
@@ -41,6 +47,8 @@ English:
 - Fix unstable workspace file-tree refreshes so directory nodes, detached file windows, and workspace file state stay synchronized after refresh
 - Fix Opencode subprocess termination and timeout convergence to reduce leftover process risk during abnormal exits, timeout cleanup, and session recycling
 - Fix diagnostic gaps in Codex session self-recovery, zero-activity timeout fallback, and runtime reconnect scenarios to improve recoverability after disconnects
+- Fix missing user-visible feedback when session creation fails, ensuring the loading dialog closes, diagnostics are recorded, and an error message is shown
+- Fix OpenCode provider health-check failures leaving menu state stuck on loading, and add boundary coverage for Windows path basename extraction
 
 ---
 

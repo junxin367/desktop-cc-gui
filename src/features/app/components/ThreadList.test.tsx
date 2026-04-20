@@ -233,27 +233,12 @@ describe("ThreadList", () => {
     expect(screen.getByText("Auto naming...")).toBeTruthy();
   });
 
-  it("renders a degraded badge when the thread list is partial", () => {
-    render(
+  it("renders only relative time inline when size is available", () => {
+    const { container } = render(
       <ThreadList
         {...baseProps}
-        unpinnedRows={[
-          {
-            thread: {
-              ...thread,
-              isDegraded: true,
-            },
-            depth: 0,
-          },
-        ]}
       />,
     );
-
-    expect(screen.getByText("Incomplete")).toBeTruthy();
-  });
-
-  it("renders only relative time inline when size is available", () => {
-    const { container } = render(<ThreadList {...baseProps} />);
 
     const meta = container.querySelector(".thread-meta");
     expect(meta).toBeTruthy();

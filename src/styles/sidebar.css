@@ -1109,6 +1109,10 @@
   letter-spacing: 0.02em;
 }
 
+.sidebar-refresh-icon.is-spinning {
+  animation: sidebar-thread-engine-spin 0.9s linear infinite;
+}
+
 .workspace-folder-btn:hover,
 .workspace-folder-btn[aria-expanded="true"] {
   color: var(--text-strong);
@@ -2216,13 +2220,6 @@
   white-space: nowrap;
 }
 
-.thread-degraded-badge {
-  font-size: 10px;
-  color: var(--warning-text, #d97706);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 .thread-row:hover .thread-time {
   color: var(--text-muted);
   opacity: 1;
@@ -2602,4 +2599,27 @@
   :root[data-theme="light"] .thread-delete-popover-button-secondary {
     background: rgba(255, 255, 255, 0.9);
   }
+}
+
+/* Sidebar pointer policy: keep the left rail on the normal arrow cursor. */
+.sidebar-search-clear,
+.subtitle-button,
+.sidebar-quick-icon-button,
+.sidebar-primary-nav-mode-item,
+.workspace-group-header.is-toggleable,
+.workspace-row,
+.workspace-tree-toggle,
+.workspace-folder-btn,
+.workspace-action-btn,
+.worktree-header,
+.worktree-row,
+.worktree-create-session-button,
+.worktree-toggle,
+.worktree-row .connect,
+.thread-row,
+.thread-pin-toggle,
+.thread-more,
+.sidebar-settings-button,
+.sidebar-terminal-button {
+  cursor: default !important;
 }

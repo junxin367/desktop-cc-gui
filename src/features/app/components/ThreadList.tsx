@@ -96,6 +96,8 @@ export function ThreadList({
   const indentUnit = nested ? 10 : 14;
   const renderThreadRow = ({ thread, depth }: ThreadRow) => {
     const relativeTime = getThreadTime(thread);
+    const isActiveThread =
+      workspaceId === activeWorkspaceId && thread.id === activeThreadId;
     const indentStyle =
       depth > 0
         ? ({ "--thread-indent": `${depth * indentUnit}px` } as CSSProperties)
@@ -146,9 +148,7 @@ export function ThreadList({
             <TooltipTrigger
               delay={450}
               className={`thread-row ${
-                workspaceId === activeWorkspaceId && thread.id === activeThreadId
-                  ? "active"
-                  : ""
+                isActiveThread ? "active" : ""
               }${isDeleteConfirmOpen ? " has-delete-confirm" : ""}${
                 canPin ? " has-pin-toggle" : ""
               }`}
@@ -208,14 +208,6 @@ export function ThreadList({
               <div className="thread-meta">
                 {isAutoNaming && (
                   <span className="thread-auto-naming">{t("threads.autoNaming")}</span>
-                )}
-                {thread.isDegraded && (
-                  <span
-                    className="thread-degraded-badge"
-                    title={t("threads.degradedThreadListTooltip")}
-                  >
-                    {t("threads.degradedThreadListBadge")}
-                  </span>
                 )}
                 {relativeTime && <span className="thread-time">{relativeTime}</span>}
               </div>

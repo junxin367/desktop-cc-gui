@@ -1,6 +1,7 @@
 import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right";
+import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import type { WorkspaceInfo } from "../../../types";
 import { TooltipIconButton } from "../../../components/ui/tooltip-icon-button";
 import { isDefaultWorkspacePath } from "../../workspaces/utils/defaultWorkspace";
@@ -9,10 +10,13 @@ type WorkspaceCardProps = {
   workspace: WorkspaceInfo;
   workspaceName?: React.ReactNode;
   isActive: boolean;
+  isThreadListDegraded?: boolean;
+  isThreadListRefreshing?: boolean;
   hasPrimaryActiveThread: boolean;
   hasRunningSession?: boolean;
   isCollapsed: boolean;
   onShowWorkspaceMenu: (event: MouseEvent, workspace: WorkspaceInfo) => void;
+  onQuickReloadWorkspaceThreads?: (workspaceId: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onToggleWorkspaceCollapse: (workspaceId: string, collapsed: boolean) => void;
   children?: React.ReactNode;
@@ -22,16 +26,21 @@ export function WorkspaceCard({
   workspace,
   workspaceName,
   isActive,
+  isThreadListDegraded = false,
+  isThreadListRefreshing = false,
   hasPrimaryActiveThread,
   hasRunningSession = false,
   isCollapsed,
   onShowWorkspaceMenu,
+  onQuickReloadWorkspaceThreads,
   onSelectWorkspace,
   onToggleWorkspaceCollapse,
   children,
 }: WorkspaceCardProps) {
   const { t } = useTranslation();
   const isDefaultWorkspace = isDefaultWorkspacePath(workspace.path);
+  const canQuickReloadThreadList =
+    isThreadListDegraded && typeof onQuickReloadWorkspaceThreads === "function";
 
   const handleToggleCollapse = () => {
     onToggleWorkspaceCollapse(workspace.id, !isCollapsed);
@@ -86,6 +95,36 @@ export function WorkspaceCard({
           ) : null}
 
           <div className="workspace-actions">
+            {canQuickReloadThreadList ? (
+              <TooltipIconButton
+                className="workspace-action-btn workspace-degraded-badge"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onQuickReloadWorkspaceThreads(workspace.id);
+                }}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                }}
+                label={
+                  isThreadListRefreshing
+                    ? t("threads.degradedWorkspaceRefreshingTooltip")
+                    : t("threads.degradedWorkspaceRefreshTooltip")
+                }
+                aria-label={
+                  isThreadListRefreshing
+                    ? t("threads.degradedWorkspaceRefreshingAriaLabel")
+                    : t("threads.degradedWorkspaceRefreshAriaLabel")
+                }
+                data-tauri-drag-region="false"
+                disabled={isThreadListRefreshing}
+              >
+                <RefreshCw
+                  size={13}
+                  aria-hidden
+                  className={isThreadListRefreshing ? "sidebar-refresh-icon is-spinning" : "sidebar-refresh-icon"}
+                />
+              </TooltipIconButton>
+            ) : null}
             <TooltipIconButton
               className="workspace-action-btn"
               onClick={(event) => {

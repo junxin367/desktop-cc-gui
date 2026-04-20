@@ -2644,9 +2644,11 @@ const enPart1 = {
     loading: "Loading...",
     searchOlder: "Search older...",
     loadOlder: "Load older...",
-    degradedThreadListBadge: "Incomplete",
-    degradedThreadListTooltip:
-      "These thread results are not fully refreshed yet and may be missing some conversations. Refresh again after the runtime stabilizes.",
+    degradedWorkspaceRefreshAriaLabel: "Refresh incomplete thread list",
+    degradedWorkspaceRefreshTooltip:
+      "This project's thread list is not fully refreshed yet and may be missing some conversations. Click to refresh it again.",
+    degradedWorkspaceRefreshingAriaLabel: "Refreshing thread list",
+    degradedWorkspaceRefreshingTooltip: "Refreshing thread list...",
     sessionStopped: "Session stopped.",
     sessionStoppedForFusion: "Switched to the merged follow-up. Reply is continuing...",
     turnFailed: "Turn failed.",

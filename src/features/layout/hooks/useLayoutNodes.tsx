@@ -253,6 +253,7 @@ type LayoutNodesOptions = {
   onDeleteWorktree: (workspaceId: string) => void;
   onLoadOlderThreads: (workspaceId: string) => void;
   onReloadWorkspaceThreads: (workspaceId: string) => void;
+  onQuickReloadWorkspaceThreads?: (workspaceId: string) => void;
   workspaceDropTargetRef: RefObject<HTMLElement | null>;
   isWorkspaceDropActive: boolean;
   workspaceDropText: string;
@@ -1125,6 +1126,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       onDeleteWorktree={options.onDeleteWorktree}
       onLoadOlderThreads={options.onLoadOlderThreads}
       onReloadWorkspaceThreads={options.onReloadWorkspaceThreads}
+      onQuickReloadWorkspaceThreads={options.onQuickReloadWorkspaceThreads}
       workspaceDropTargetRef={options.workspaceDropTargetRef}
       isWorkspaceDropActive={options.isWorkspaceDropActive}
       workspaceDropText={options.workspaceDropText}

@@ -2569,9 +2569,11 @@ const zhPart1 = {
     loading: "加载中...",
     searchOlder: "搜索更早的...",
     loadOlder: "加载更早的...",
-    degradedThreadListBadge: "不完整",
-    degradedThreadListTooltip:
-      "当前显示的线程结果暂未完整刷新，可能缺少一部分会话。等待 runtime 稳定后可再刷新。",
+    degradedWorkspaceRefreshAriaLabel: "刷新不完整的会话列表",
+    degradedWorkspaceRefreshTooltip:
+      "当前项目下的会话列表暂未完整刷新，可能缺少一部分会话。点击即可重新拉取。",
+    degradedWorkspaceRefreshingAriaLabel: "正在重新拉取会话列表",
+    degradedWorkspaceRefreshingTooltip: "正在重新拉取会话列表…",
     sessionStopped: "会话已停止。",
     sessionStoppedForFusion: "已切换到融合回复，内容正在继续生成。",
     turnFailed: "会话失败。",

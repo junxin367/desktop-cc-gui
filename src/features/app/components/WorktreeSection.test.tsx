@@ -49,6 +49,7 @@ describe("WorktreeSection", () => {
         getPinTimestamp={() => null}
         onConnectWorkspace={vi.fn()}
         onShowWorktreeSessionMenu={vi.fn()}
+        onQuickReloadWorkspaceThreads={vi.fn()}
         onSelectWorkspace={vi.fn()}
         onToggleWorkspaceCollapse={vi.fn()}
         onSelectThread={vi.fn()}
@@ -97,6 +98,7 @@ describe("WorktreeSection", () => {
         getPinTimestamp={() => null}
         onConnectWorkspace={vi.fn()}
         onShowWorktreeSessionMenu={vi.fn()}
+        onQuickReloadWorkspaceThreads={vi.fn()}
         onSelectWorkspace={vi.fn()}
         onToggleWorkspaceCollapse={vi.fn()}
         onSelectThread={vi.fn()}
@@ -143,6 +145,7 @@ describe("WorktreeSection", () => {
         getPinTimestamp={() => null}
         onConnectWorkspace={vi.fn()}
         onShowWorktreeSessionMenu={vi.fn()}
+        onQuickReloadWorkspaceThreads={vi.fn()}
         onSelectWorkspace={vi.fn()}
         onToggleWorkspaceCollapse={vi.fn()}
         onSelectThread={vi.fn()}
@@ -190,6 +193,7 @@ describe("WorktreeSection", () => {
         getPinTimestamp={() => null}
         onConnectWorkspace={vi.fn()}
         onShowWorktreeSessionMenu={vi.fn()}
+        onQuickReloadWorkspaceThreads={vi.fn()}
         onSelectWorkspace={vi.fn()}
         onToggleWorkspaceCollapse={vi.fn()}
         onSelectThread={vi.fn()}
@@ -244,6 +248,7 @@ describe("WorktreeSection", () => {
         getPinTimestamp={() => null}
         onConnectWorkspace={vi.fn()}
         onShowWorktreeSessionMenu={vi.fn()}
+        onQuickReloadWorkspaceThreads={vi.fn()}
         onSelectWorkspace={vi.fn()}
         onToggleWorkspaceCollapse={onToggleWorkspaceCollapse}
         onSelectThread={vi.fn()}
@@ -297,6 +302,7 @@ describe("WorktreeSection", () => {
         getPinTimestamp={() => null}
         onConnectWorkspace={vi.fn()}
         onShowWorktreeSessionMenu={onShowWorktreeSessionMenu}
+        onQuickReloadWorkspaceThreads={vi.fn()}
         onSelectWorkspace={vi.fn()}
         onToggleWorkspaceCollapse={onToggleWorkspaceCollapse}
         onSelectThread={vi.fn()}
@@ -350,6 +356,7 @@ describe("WorktreeSection", () => {
         getPinTimestamp={() => null}
         onConnectWorkspace={vi.fn()}
         onShowWorktreeSessionMenu={vi.fn()}
+        onQuickReloadWorkspaceThreads={vi.fn()}
         onSelectWorkspace={onSelectWorkspace}
         onToggleWorkspaceCollapse={onToggleWorkspaceCollapse}
         onSelectThread={vi.fn()}
@@ -367,5 +374,160 @@ describe("WorktreeSection", () => {
 
     expect(onSelectWorkspace).toHaveBeenCalledWith("wt-1");
     expect(onToggleWorkspaceCollapse).not.toHaveBeenCalled();
+  });
+
+  it("shows a degraded refresh action for worktrees only when a reload handler exists", () => {
+    const degradedWorktree: WorkspaceInfo = {
+      ...worktree,
+      id: "wt-degraded",
+      worktree: { branch: "feature/degraded" },
+    };
+
+    const { rerender } = render(
+      <WorktreeSection
+        parentWorkspaceId="workspace-1"
+        worktrees={[degradedWorktree]}
+        isSectionCollapsed={false}
+        onToggleSectionCollapse={vi.fn()}
+        deletingWorktreeIds={new Set()}
+        threadsByWorkspace={{
+          [degradedWorktree.id]: [
+            { id: "thread-1", name: "Alpha", updatedAt: 1000, isDegraded: true },
+          ],
+        }}
+        threadStatusById={{}}
+        hydratedThreadListWorkspaceIds={new Set()}
+        threadListLoadingByWorkspace={{ [degradedWorktree.id]: false }}
+        threadListPagingByWorkspace={{ [degradedWorktree.id]: false }}
+        threadListCursorByWorkspace={{ [degradedWorktree.id]: null }}
+        expandedWorkspaces={new Set()}
+        activeWorkspaceId={null}
+        activeThreadId={null}
+        getThreadRows={() => ({
+          pinnedRows: [],
+          unpinnedRows: [],
+          totalRoots: 1,
+          hasMoreRoots: false,
+        })}
+        getThreadTime={() => null}
+        isThreadPinned={() => false}
+        isThreadAutoNaming={() => false}
+        onToggleThreadPin={vi.fn()}
+        getPinTimestamp={() => null}
+        onConnectWorkspace={vi.fn()}
+        onShowWorktreeSessionMenu={vi.fn()}
+        onQuickReloadWorkspaceThreads={undefined}
+        onSelectWorkspace={vi.fn()}
+        onToggleWorkspaceCollapse={vi.fn()}
+        onSelectThread={vi.fn()}
+        onShowThreadMenu={vi.fn()}
+        onShowWorktreeMenu={vi.fn()}
+        onToggleExpanded={vi.fn()}
+        onLoadOlderThreads={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Refresh incomplete thread list/i })).toBeNull();
+
+    rerender(
+      <WorktreeSection
+        parentWorkspaceId="workspace-1"
+        worktrees={[degradedWorktree]}
+        isSectionCollapsed={false}
+        onToggleSectionCollapse={vi.fn()}
+        deletingWorktreeIds={new Set()}
+        threadsByWorkspace={{
+          [degradedWorktree.id]: [
+            { id: "thread-1", name: "Alpha", updatedAt: 1000, isDegraded: true },
+          ],
+        }}
+        threadStatusById={{}}
+        hydratedThreadListWorkspaceIds={new Set()}
+        threadListLoadingByWorkspace={{ [degradedWorktree.id]: false }}
+        threadListPagingByWorkspace={{ [degradedWorktree.id]: false }}
+        threadListCursorByWorkspace={{ [degradedWorktree.id]: null }}
+        expandedWorkspaces={new Set()}
+        activeWorkspaceId={null}
+        activeThreadId={null}
+        getThreadRows={() => ({
+          pinnedRows: [],
+          unpinnedRows: [],
+          totalRoots: 1,
+          hasMoreRoots: false,
+        })}
+        getThreadTime={() => null}
+        isThreadPinned={() => false}
+        isThreadAutoNaming={() => false}
+        onToggleThreadPin={vi.fn()}
+        getPinTimestamp={() => null}
+        onConnectWorkspace={vi.fn()}
+        onShowWorktreeSessionMenu={vi.fn()}
+        onQuickReloadWorkspaceThreads={vi.fn()}
+        onSelectWorkspace={vi.fn()}
+        onToggleWorkspaceCollapse={vi.fn()}
+        onSelectThread={vi.fn()}
+        onShowThreadMenu={vi.fn()}
+        onShowWorktreeMenu={vi.fn()}
+        onToggleExpanded={vi.fn()}
+        onLoadOlderThreads={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: /threads\.degradedWorkspaceRefreshAriaLabel|Refresh incomplete thread list/i,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("splits Windows-style worktree names into prefix and leaf labels", () => {
+    const windowsWorktree: WorkspaceInfo = {
+      ...worktree,
+      id: "wt-win",
+      worktree: { branch: "feature\\windows" },
+    };
+
+    const { container } = render(
+      <WorktreeSection
+        parentWorkspaceId="workspace-1"
+        worktrees={[windowsWorktree]}
+        isSectionCollapsed={false}
+        onToggleSectionCollapse={vi.fn()}
+        deletingWorktreeIds={new Set()}
+        threadsByWorkspace={{ [windowsWorktree.id]: [] }}
+        threadStatusById={{}}
+        hydratedThreadListWorkspaceIds={new Set()}
+        threadListLoadingByWorkspace={{ [windowsWorktree.id]: false }}
+        threadListPagingByWorkspace={{ [windowsWorktree.id]: false }}
+        threadListCursorByWorkspace={{ [windowsWorktree.id]: null }}
+        expandedWorkspaces={new Set()}
+        activeWorkspaceId={null}
+        activeThreadId={null}
+        getThreadRows={() => ({
+          pinnedRows: [],
+          unpinnedRows: [],
+          totalRoots: 0,
+          hasMoreRoots: false,
+        })}
+        getThreadTime={() => null}
+        isThreadPinned={() => false}
+        isThreadAutoNaming={() => false}
+        onToggleThreadPin={vi.fn()}
+        getPinTimestamp={() => null}
+        onConnectWorkspace={vi.fn()}
+        onShowWorktreeSessionMenu={vi.fn()}
+        onQuickReloadWorkspaceThreads={vi.fn()}
+        onSelectWorkspace={vi.fn()}
+        onToggleWorkspaceCollapse={vi.fn()}
+        onSelectThread={vi.fn()}
+        onShowThreadMenu={vi.fn()}
+        onShowWorktreeMenu={vi.fn()}
+        onToggleExpanded={vi.fn()}
+        onLoadOlderThreads={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".worktree-label-prefix")?.textContent).toBe("feature");
+    expect(container.querySelector(".worktree-label")?.textContent).toBe("windows");
   });
 });

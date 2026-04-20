@@ -118,6 +118,7 @@ type SidebarProps = {
   onDeleteWorktree: (workspaceId: string) => void;
   onLoadOlderThreads: (workspaceId: string) => void;
   onReloadWorkspaceThreads: (workspaceId: string) => void;
+  onQuickReloadWorkspaceThreads?: (workspaceId: string) => void;
   workspaceDropTargetRef: RefObject<HTMLElement | null>;
   isWorkspaceDropActive: boolean;
   workspaceDropText: string;
@@ -196,6 +197,7 @@ export function Sidebar({
   onDeleteWorktree,
   onLoadOlderThreads,
   onReloadWorkspaceThreads,
+  onQuickReloadWorkspaceThreads,
   workspaceDropTargetRef,
   isWorkspaceDropActive,
   workspaceDropText,
@@ -723,6 +725,14 @@ export function Sidebar({
     pinThread(workspaceId, threadId);
   }, [isThreadPinned, pinThread, unpinThread]);
 
+  const hasDegradedThreadList = useCallback((threads: ThreadSummary[]) => {
+    return threads.some((thread) => {
+      const partialSource =
+        typeof thread.partialSource === "string" ? thread.partialSource.trim() : "";
+      return thread.isDegraded || partialSource.length > 0;
+    });
+  }, []);
+
   const renderWorkspaceEntry = useCallback((entry: WorkspaceInfo) => {
     const threads = threadsByWorkspace[entry.id] ?? [];
     const isCollapsed = entry.settings.sidebarCollapsed;
@@ -743,6 +753,12 @@ export function Sidebar({
       !showThreadList &&
       worktrees.length === 0 &&
       hydratedThreadListWorkspaceIds.has(entry.id);
+    const isThreadListDegraded =
+      hasDegradedThreadList(threads) ||
+      worktrees.some((worktree) => hasDegradedThreadList(threadsByWorkspace[worktree.id] ?? []));
+    const isThreadListRefreshing =
+      Boolean(_threadListLoadingByWorkspace[entry.id]) ||
+      worktrees.some((worktree) => Boolean(_threadListLoadingByWorkspace[worktree.id]));
     const hasPrimaryActiveThread =
       entry.id === activeWorkspaceId && Boolean(activeThreadId);
     const hasRunningSession = hasRunningSessionByProjectId.get(entry.id) ?? false;
@@ -752,10 +768,13 @@ export function Sidebar({
         workspace={entry}
         workspaceName={renderHighlightedName(entry.name)}
         isActive={entry.id === activeWorkspaceId}
+        isThreadListDegraded={isThreadListDegraded}
+        isThreadListRefreshing={isThreadListRefreshing}
         hasPrimaryActiveThread={hasPrimaryActiveThread}
         hasRunningSession={hasRunningSession}
         isCollapsed={isCollapsed}
         onShowWorkspaceMenu={showWorkspaceMenu}
+        onQuickReloadWorkspaceThreads={onQuickReloadWorkspaceThreads}
         onSelectWorkspace={onSelectWorkspace}
         onToggleWorkspaceCollapse={onToggleWorkspaceCollapse}
       >
@@ -785,6 +804,7 @@ export function Sidebar({
             getPinTimestamp={getPinTimestamp}
             onConnectWorkspace={onConnectWorkspace}
             onShowWorktreeSessionMenu={showWorkspaceSessionMenu}
+            onQuickReloadWorkspaceThreads={onQuickReloadWorkspaceThreads}
             onSelectWorkspace={onSelectWorkspace}
             onToggleWorkspaceCollapse={onToggleWorkspaceCollapse}
             onSelectThread={onSelectThread}
@@ -846,9 +866,11 @@ export function Sidebar({
     handleToggleThreadPin,
     handleToggleExpanded,
     handleToggleWorktreeSection,
+    hasDegradedThreadList,
     isThreadAutoNaming,
     isThreadPinned,
     hasRunningSessionByProjectId,
+    onQuickReloadWorkspaceThreads,
     onCancelDeleteConfirm,
     onConfirmDeleteConfirm,
     onConnectWorkspace,

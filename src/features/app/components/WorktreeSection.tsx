@@ -49,6 +49,7 @@ type WorktreeSectionProps = {
   getPinTimestamp: (workspaceId: string, threadId: string) => number | null;
   onConnectWorkspace: (workspace: WorkspaceInfo) => void;
   onShowWorktreeSessionMenu: (event: MouseEvent, workspace: WorkspaceInfo) => void;
+  onQuickReloadWorkspaceThreads?: (workspaceId: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onToggleWorkspaceCollapse: (workspaceId: string, collapsed: boolean) => void;
   onSelectThread: (workspaceId: string, threadId: string) => void;
@@ -77,7 +78,7 @@ export function WorktreeSection({
   threadsByWorkspace,
   threadStatusById,
   hydratedThreadListWorkspaceIds,
-  threadListLoadingByWorkspace: _threadListLoadingByWorkspace,
+  threadListLoadingByWorkspace,
   threadListPagingByWorkspace,
   threadListCursorByWorkspace,
   expandedWorkspaces,
@@ -93,6 +94,7 @@ export function WorktreeSection({
   getPinTimestamp,
   onConnectWorkspace,
   onShowWorktreeSessionMenu,
+  onQuickReloadWorkspaceThreads,
   onSelectWorkspace,
   onToggleWorkspaceCollapse,
   onSelectThread,
@@ -106,6 +108,13 @@ export function WorktreeSection({
   onToggleExpanded,
   onLoadOlderThreads,
 }: WorktreeSectionProps) {
+  const hasDegradedThreadList = (threads: ThreadSummary[]) =>
+    threads.some((thread) => {
+      const partialSource =
+        typeof thread.partialSource === "string" ? thread.partialSource.trim() : "";
+      return thread.isDegraded || partialSource.length > 0;
+    });
+
   const threadRowsByWorktreeId = useMemo(() => {
     const rowsByWorktreeId = new Map<
       string,
@@ -188,12 +197,14 @@ export function WorktreeSection({
               hydratedThreadListWorkspaceIds.has(worktree.id);
             const isWorktreePaging =
               threadListPagingByWorkspace[worktree.id] ?? false;
+            const isThreadListRefreshing = threadListLoadingByWorkspace[worktree.id] ?? false;
             const isWorktreeExpanded = expandedWorkspaces.has(worktree.id);
             const hasPrimaryActiveThread =
               worktree.id === activeWorkspaceId && Boolean(activeThreadId);
             const hasRunningSession = worktreeThreads.some(
               (thread) => Boolean(threadStatusById[thread.id]?.isProcessing),
             );
+            const isThreadListDegraded = hasDegradedThreadList(worktreeThreads);
             const threadRows = threadRowsByWorktreeId.get(worktree.id);
             const worktreeThreadRows = threadRows?.unpinnedRows ?? [];
             const totalWorktreeRoots = threadRows?.totalRoots ?? 0;
@@ -203,6 +214,8 @@ export function WorktreeSection({
                 key={worktree.id}
                 worktree={worktree}
                 isActive={worktree.id === activeWorkspaceId}
+                isThreadListDegraded={isThreadListDegraded}
+                isThreadListRefreshing={isThreadListRefreshing}
                 hasPrimaryActiveThread={hasPrimaryActiveThread}
                 hasRunningSession={hasRunningSession}
                 threadCount={totalWorktreeRoots}
@@ -210,6 +223,7 @@ export function WorktreeSection({
                 isDeleting={deletingWorktreeIds.has(worktree.id)}
                 onShowWorktreeMenu={onShowWorktreeMenu}
                 onShowWorktreeSessionMenu={onShowWorktreeSessionMenu}
+                onQuickReloadWorkspaceThreads={onQuickReloadWorkspaceThreads}
                 onToggleWorkspaceCollapse={onToggleWorkspaceCollapse}
                 onConnectWorkspace={onConnectWorkspace}
                 onSelectWorkspace={onSelectWorkspace}

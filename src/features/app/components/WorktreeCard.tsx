@@ -1,13 +1,17 @@
 import GitBranch from "lucide-react/dist/esm/icons/git-branch";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right";
+import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { WorkspaceInfo } from "../../../types";
+import { TooltipIconButton } from "../../../components/ui/tooltip-icon-button";
 
 type WorktreeCardProps = {
   worktree: WorkspaceInfo;
   isActive: boolean;
+  isThreadListDegraded?: boolean;
+  isThreadListRefreshing?: boolean;
   hasPrimaryActiveThread: boolean;
   hasRunningSession?: boolean;
   threadCount: number;
@@ -15,6 +19,7 @@ type WorktreeCardProps = {
   isDeleting?: boolean;
   onShowWorktreeMenu: (event: MouseEvent, workspaceId: string) => void;
   onShowWorktreeSessionMenu: (event: MouseEvent, workspace: WorkspaceInfo) => void;
+  onQuickReloadWorkspaceThreads?: (workspaceId: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onToggleWorkspaceCollapse: (workspaceId: string, collapsed: boolean) => void;
   onConnectWorkspace: (workspace: WorkspaceInfo) => void;
@@ -31,19 +36,24 @@ function parseWorktreeName(rawName: string): ParsedWorktreeName {
   if (!normalized) {
     return { prefix: null, leaf: rawName };
   }
-  const slashIndex = normalized.lastIndexOf("/");
-  if (slashIndex <= 0 || slashIndex >= normalized.length - 1) {
+  const separatorIndex = Math.max(
+    normalized.lastIndexOf("/"),
+    normalized.lastIndexOf("\\"),
+  );
+  if (separatorIndex <= 0 || separatorIndex >= normalized.length - 1) {
     return { prefix: null, leaf: normalized };
   }
   return {
-    prefix: normalized.slice(0, slashIndex),
-    leaf: normalized.slice(slashIndex + 1),
+    prefix: normalized.slice(0, separatorIndex),
+    leaf: normalized.slice(separatorIndex + 1),
   };
 }
 
 export function WorktreeCard({
   worktree,
   isActive,
+  isThreadListDegraded = false,
+  isThreadListRefreshing = false,
   hasPrimaryActiveThread,
   hasRunningSession = false,
   threadCount,
@@ -51,6 +61,7 @@ export function WorktreeCard({
   isDeleting = false,
   onShowWorktreeMenu,
   onShowWorktreeSessionMenu,
+  onQuickReloadWorkspaceThreads,
   onSelectWorkspace,
   onToggleWorkspaceCollapse,
   onConnectWorkspace,
@@ -61,6 +72,8 @@ export function WorktreeCard({
   const worktreeBranch = worktree.worktree?.branch ?? "";
   const displayName = worktreeBranch || worktree.name;
   const parsedName = parseWorktreeName(displayName);
+  const canQuickReloadThreadList =
+    isThreadListDegraded && typeof onQuickReloadWorkspaceThreads === "function";
   const handleToggleCollapse = () => {
     onToggleWorkspaceCollapse(worktree.id, !worktreeCollapsed);
   };
@@ -118,6 +131,36 @@ export function WorktreeCard({
             </div>
           ) : (
             <>
+              {canQuickReloadThreadList ? (
+                <TooltipIconButton
+                  className="worktree-create-session-button worktree-degraded-badge"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onQuickReloadWorkspaceThreads(worktree.id);
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                  }}
+                  label={
+                    isThreadListRefreshing
+                      ? t("threads.degradedWorkspaceRefreshingTooltip")
+                      : t("threads.degradedWorkspaceRefreshTooltip")
+                  }
+                  aria-label={
+                    isThreadListRefreshing
+                      ? t("threads.degradedWorkspaceRefreshingAriaLabel")
+                      : t("threads.degradedWorkspaceRefreshAriaLabel")
+                  }
+                  data-tauri-drag-region="false"
+                  disabled={isDeleting || isThreadListRefreshing}
+                >
+                  <RefreshCw
+                    size={13}
+                    aria-hidden
+                    className={isThreadListRefreshing ? "sidebar-refresh-icon is-spinning" : "sidebar-refresh-icon"}
+                  />
+                </TooltipIconButton>
+              ) : null}
               <button
                 type="button"
                 className="worktree-create-session-button"
