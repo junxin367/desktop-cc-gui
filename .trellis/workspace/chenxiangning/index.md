@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 65
+- **Total Sessions**: 66
 - **Last Active**: 2026-04-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1767 | Active |
+| `journal-2.md` | ~1829 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 66 | 2026-04-21 | 归档已验证 OpenSpec 提案 | `dae39948` | `feature/f-v0.4.6` |
 | 65 | 2026-04-21 | 归档已验证 OpenSpec 提案 | `80445607` | `feature/f-v0.4.6` |
 | 64 | 2026-04-20 | 侧栏降级刷新与 worktree 边界收口 | `9e91aeb8` | `feature/vvvv0.4.5` |
 | 63 | 2026-04-20 | 提交加载进度弹窗与引擎可用性状态透传 | `835c49c38d2fcd0799da6bb579983afaaaf1077a` | `feature/vvvv0.4.5` |

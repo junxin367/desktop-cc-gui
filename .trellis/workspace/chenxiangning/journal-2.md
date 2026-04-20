@@ -1765,3 +1765,65 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 66: 归档已验证 OpenSpec 提案
+
+**Date**: 2026-04-21
+**Task**: 归档已验证 OpenSpec 提案
+**Branch**: `feature/f-v0.4.6`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：
+- 基于代码事实回写实施中的 OpenSpec 提案，并归档 2 个已验证完成的提案。
+- 按 Conventional Commits 中文提交 OpenSpec 文档变更。
+
+主要改动：
+- 归档 `harden-conversation-runtime-stability` 到 `openspec/changes/archive/2026-04-21-harden-conversation-runtime-stability/`。
+- 归档 `claude-code-compact-command-adaptation` 到 `openspec/changes/archive/2026-04-21-claude-code-compact-command-adaptation/`。
+- 同步 runtime stability delta 到主 specs，新增 `openspec/specs/conversation-runtime-stability/spec.md`。
+- 同步 Claude 手动 `/compact` delta 到主 specs，新增 `openspec/specs/claude-manual-compact-command/spec.md`。
+- 增量更新 `conversation-lifecycle-contract`，补充 bounded recovery、degraded continuity、quarantine 后用户重试等语义。
+- 增量更新 `claude-context-compaction-recovery`，明确 Claude 自动 compact 是 prompt overflow scoped recovery，不等同 Codex 阈值自动压缩。
+- 保留 `project-memory-refactor` 与 `claude-code-mode-progressive-rollout` 为活跃提案，并补充代码事实回写状态。
+
+涉及模块：
+- OpenSpec changes archive
+- OpenSpec main specs
+- Trellis session journal（本记录流程自动维护）
+
+验证结果：
+- `openspec validate harden-conversation-runtime-stability --strict` 通过。
+- `openspec validate claude-code-compact-command-adaptation --strict` 通过。
+- `openspec validate project-memory-refactor --strict` 通过。
+- `openspec validate claude-code-mode-progressive-rollout --strict` 通过。
+- `git diff --check` 通过。
+- `openspec validate --all --strict` 已执行，结果为 130 passed / 1 failed；失败项为既有 spec `conversation-user-path-reference-cards` 的 Purpose 过短警告，不属于本次归档范围。
+
+后续事项：
+- 单独处理既有 `conversation-user-path-reference-cards` Purpose 过短警告。
+- 当前工作区仍存在未提交的 `src/**` 代码改动，本次 OpenSpec 提交未纳入这些代码文件。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dae39948` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
