@@ -2,6 +2,66 @@
 
 ---
 
+##### **2026年4月20日（v0.4.5）**
+
+中文：
+
+✨ Features
+- 新增全局会话归档中心，支持跨项目聚合查看历史会话，并收紧 Codex 配置边界，降低多入口配置漂移风险
+
+🔧 Improvements
+- 收敛设置页实验区入口，将续写、融合等能力命名与归属统一到更清晰的配置结构
+- 优化 Codex 实验配置展示与跨平台配置入口，减少不同系统环境下的入口差异与误导
+
+🐛 Fixes
+- 修复会话管理边界处理问题，并补齐全量回归夹具，提升归档、聚合与路由场景的稳定性
+- 修复工作树中新建会话入口交互异常，避免用户从侧栏进入新会话时出现状态错位
+
+English:
+
+✨ Features
+- Add a global session archive center for cross-project history aggregation, while tightening Codex configuration boundaries to reduce configuration drift across entry points
+
+🔧 Improvements
+- Consolidate the Settings experimental area and align naming/ownership for continuation and fusion capabilities into a clearer configuration structure
+- Refine Codex experimental settings and cross-platform configuration entry points to reduce platform-specific ambiguity
+
+🐛 Fixes
+- Fix session-management boundary handling and add full regression fixtures to improve stability across archive, aggregation, and routing scenarios
+- Fix the worktree new-session entry interaction so sidebar-launched sessions no longer drift into an incorrect state
+
+---
+
+##### **2026年4月20日（v0.4.4）**
+
+中文：
+
+✨ Features
+- 新增项目范围会话管理能力，支持按项目聚合会话并进行归属路由，让项目内历史会话更容易集中管理
+
+🔧 Improvements
+- 收口启动期图标懒加载链路，减少启动阶段不必要的资源开销，提升首屏进入稳定性
+- 归档项目会话管理范围修正提案，使行为说明与已落地实现保持一致
+
+🐛 Fixes
+- 修复空项目会话重复加载问题，避免无会话项目反复触发无效刷新
+- 修复图标懒加载回归，避免启动阶段因资源加载路径变化导致图标展示异常
+
+English:
+
+✨ Features
+- Add project-scoped session management with project-level aggregation and attribution routing, making in-project session history easier to manage
+
+🔧 Improvements
+- Tighten the startup icon lazy-loading path to reduce unnecessary startup overhead and improve first-screen stability
+- Archive the project-session-management scope correction proposal so behavior docs stay aligned with the delivered implementation
+
+🐛 Fixes
+- Fix repeated loading for projects with no sessions, preventing empty projects from triggering redundant refresh loops
+- Fix an icon lazy-loading regression so startup resource-path changes no longer break icon rendering
+
+---
+
 ##### **2026年4月18日（v0.4.3）**
 
 中文：
