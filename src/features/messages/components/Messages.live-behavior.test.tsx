@@ -228,6 +228,34 @@ describe("Messages live behavior", () => {
     },
   );
 
+  it("shows a working indicator while context compaction is in progress", () => {
+    const { container } = render(
+      <Messages
+        items={[
+          {
+            id: "assistant-before-compaction",
+            kind: "message",
+            role: "assistant",
+            text: "已有上下文",
+          },
+        ]}
+        threadId="claude:thread-compact-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        isContextCompacting={true}
+        activeEngine="claude"
+        processingStartedAt={Date.now() - 1_000}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const workingNode = container.querySelector(".working");
+    const workingText = container.querySelector(".working-text");
+    expect(workingNode).toBeTruthy();
+    expect(workingText?.textContent ?? "").toContain("Compacting context");
+  });
+
   it("shows approval resume status as the primary working label for Claude file approvals", () => {
     const { container } = render(
       <Messages

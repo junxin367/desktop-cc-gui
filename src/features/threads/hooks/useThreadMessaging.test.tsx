@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationItem, WorkspaceInfo } from "../../../types";
 import { useThreadMessaging } from "./useThreadMessaging";
 import {
+  compactThreadContext,
   engineInterruptTurn,
   engineInterrupt,
   engineSendMessage,
@@ -30,6 +31,7 @@ vi.mock("../../../services/toasts", () => ({
 }));
 
 vi.mock("../../../services/tauri", () => ({
+  compactThreadContext: vi.fn(),
   sendUserMessage: vi.fn(),
   projectMemoryCaptureAuto: vi.fn(async () => null),
   startReview: vi.fn(),
@@ -87,6 +89,7 @@ describe("useThreadMessaging", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(compactThreadContext).mockResolvedValue({ status: "completed" });
     vi.mocked(getClientStoreSync).mockReturnValue(undefined);
     vi.mocked(engineSendMessage).mockResolvedValue({
       result: { turn: { id: "turn-1" } },
@@ -146,8 +149,8 @@ describe("useThreadMessaging", () => {
     activeEngine: "claude" | "codex" | "gemini" | "opencode",
     overrides: {
       workspace?: WorkspaceInfo;
-      activeThreadId?: string;
-      ensuredThreadId?: string;
+      activeThreadId?: string | null;
+      ensuredThreadId?: string | null;
       activeTurnIdByThread?: Record<string, string | null>;
       threadEngineById?: Record<string, "claude" | "codex" | "gemini" | "opencode" | undefined>;
       itemsByThread?: Record<string, ConversationItem[]>;
@@ -156,8 +159,10 @@ describe("useThreadMessaging", () => {
       dispatch?: ReturnType<typeof vi.fn>;
     } = {},
   ) {
-    const activeThreadId = overrides.activeThreadId ?? "thread-1";
-    const ensuredThreadId = overrides.ensuredThreadId ?? activeThreadId;
+    const activeThreadId =
+      "activeThreadId" in overrides ? overrides.activeThreadId ?? null : "thread-1";
+    const ensuredThreadId =
+      "ensuredThreadId" in overrides ? overrides.ensuredThreadId ?? null : activeThreadId;
     const dispatch = overrides.dispatch ?? vi.fn();
     const markProcessing = vi.fn();
     const markReviewing = vi.fn();
@@ -1013,6 +1018,126 @@ describe("useThreadMessaging", () => {
       expect(startReviewService).not.toHaveBeenCalled();
       expect(result.current.reviewPrompt).toBeNull();
     });
+  });
+
+  it("runs /compact in active claude thread via dedicated compact RPC", async () => {
+    vi.mocked(compactThreadContext).mockResolvedValue({
+      status: "completed",
+      turnId: "compact-turn-1",
+    });
+    const { result, dispatch, recordThreadActivity, safeMessageActivity } = makeHook("claude", {
+      activeThreadId: "claude:session-1",
+      ensuredThreadId: "claude:session-1",
+      threadEngineById: {
+        "claude:session-1": "claude",
+      },
+    });
+
+    await act(async () => {
+      await result.current.startCompact("/compact now");
+    });
+
+    expect(compactThreadContext).toHaveBeenCalledWith(
+      "ws-1",
+      "claude:session-1",
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "markContextCompacting",
+      threadId: "claude:session-1",
+      isCompacting: true,
+      timestamp: expect.any(Number),
+    });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "markContextCompacting",
+      threadId: "claude:session-1",
+      isCompacting: false,
+      timestamp: expect.any(Number),
+    });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "appendContextCompacted",
+      threadId: "claude:session-1",
+      turnId: "compact-turn-1",
+    });
+    expect(recordThreadActivity).toHaveBeenCalledWith(
+      "ws-1",
+      "claude:session-1",
+      expect.any(Number),
+    );
+    expect(safeMessageActivity).toHaveBeenCalled();
+    expect(engineSendMessage).not.toHaveBeenCalled();
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not create a new thread for /compact when no active claude thread exists", async () => {
+    const startThreadForWorkspace = vi.fn(async () => "claude:session-new");
+    const { result } = makeHook("claude", {
+      activeThreadId: null,
+      ensuredThreadId: null,
+      startThreadForWorkspace,
+    });
+
+    await act(async () => {
+      await result.current.startCompact("/compact");
+    });
+
+    expect(compactThreadContext).not.toHaveBeenCalled();
+    expect(engineSendMessage).not.toHaveBeenCalled();
+    expect(startThreadForWorkspace).not.toHaveBeenCalled();
+    expect(pushErrorToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "common.warning",
+        message: "threads.claudeManualCompactUnavailable",
+      }),
+    );
+  });
+
+  it("rejects /compact on non-claude active thread without rebinding", async () => {
+    const startThreadForWorkspace = vi.fn(async () => "claude:session-new");
+    const { result } = makeHook("claude", {
+      activeThreadId: "thread-1",
+      ensuredThreadId: "thread-1",
+      threadEngineById: {
+        "thread-1": "codex",
+      },
+      startThreadForWorkspace,
+    });
+
+    await act(async () => {
+      await result.current.startCompact("/compact");
+    });
+
+    expect(compactThreadContext).not.toHaveBeenCalled();
+    expect(engineSendMessage).not.toHaveBeenCalled();
+    expect(startThreadForWorkspace).not.toHaveBeenCalled();
+    expect(pushErrorToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "common.warning",
+        message: "threads.claudeManualCompactUnavailable",
+      }),
+    );
+  });
+
+  it("rejects /compact on pending claude thread to avoid creating a session just for compaction", async () => {
+    const { result } = makeHook("claude", {
+      activeThreadId: "claude-pending-123",
+      ensuredThreadId: "claude-pending-123",
+      threadEngineById: {
+        "claude-pending-123": "claude",
+      },
+    });
+
+    await act(async () => {
+      await result.current.startCompact("/compact");
+    });
+
+    expect(compactThreadContext).not.toHaveBeenCalled();
+    expect(engineSendMessage).not.toHaveBeenCalled();
+    expect(pushErrorToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "common.warning",
+        message: "threads.claudeManualCompactUnavailable",
+      }),
+    );
   });
 
   it("ignores /review-like custom commands in review entrypoint", async () => {

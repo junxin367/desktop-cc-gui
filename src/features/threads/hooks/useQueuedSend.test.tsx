@@ -36,6 +36,7 @@ const makeOptions = (
   startImport: vi.fn().mockResolvedValue(undefined),
   startLsp: vi.fn().mockResolvedValue(undefined),
   startShare: vi.fn().mockResolvedValue(undefined),
+  startCompact: vi.fn().mockResolvedValue(undefined),
   startFast: vi.fn().mockResolvedValue(undefined),
   startMode: vi.fn().mockResolvedValue(undefined),
   setCodexCollaborationMode: vi.fn(),
@@ -597,6 +598,24 @@ describe("useQueuedSend", () => {
     expect(options.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it("routes /compact as claude command and strips images", async () => {
+    const startCompact = vi.fn().mockResolvedValue(undefined);
+    const options = makeOptions({
+      activeEngine: "claude",
+      startCompact,
+    });
+    const { result } = renderHook((props) => useQueuedSend(props), {
+      initialProps: options,
+    });
+
+    await act(async () => {
+      await result.current.handleSend("/compact", ["img-1"]);
+    });
+
+    expect(startCompact).toHaveBeenCalledWith("/compact");
+    expect(options.sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it("routes implicit current-mode question to local mode handler in codex", async () => {
     const startMode = vi.fn().mockResolvedValue(undefined);
     const options = makeOptions({
@@ -671,6 +690,43 @@ describe("useQueuedSend", () => {
     );
     expect(startMode).not.toHaveBeenCalled();
     expect(setCodexCollaborationMode).not.toHaveBeenCalled();
+  });
+
+  it("keeps /compact as plain text on non-claude engines", async () => {
+    const startCompact = vi.fn().mockResolvedValue(undefined);
+    const options = makeOptions({
+      activeEngine: "codex",
+      startCompact,
+    });
+    const { result } = renderHook((props) => useQueuedSend(props), {
+      initialProps: options,
+    });
+
+    await act(async () => {
+      await result.current.handleSend("/compact", ["img-1"]);
+    });
+
+    expect(startCompact).not.toHaveBeenCalled();
+    expect(options.sendUserMessage).toHaveBeenCalledWith("/compact", ["img-1"]);
+  });
+
+  it("routes /compact by claude thread ownership even when active engine is stale", async () => {
+    const startCompact = vi.fn().mockResolvedValue(undefined);
+    const options = makeOptions({
+      activeEngine: "codex",
+      activeThreadId: "claude:session-1",
+      startCompact,
+    });
+    const { result } = renderHook((props) => useQueuedSend(props), {
+      initialProps: options,
+    });
+
+    await act(async () => {
+      await result.current.handleSend("/compact", ["img-1"]);
+    });
+
+    expect(startCompact).toHaveBeenCalledWith("/compact");
+    expect(options.sendUserMessage).not.toHaveBeenCalled();
   });
 
   it("keeps /clear as plain text on codex engine", async () => {

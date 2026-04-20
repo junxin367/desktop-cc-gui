@@ -15,6 +15,9 @@ vi.mock("react-i18next", () => ({
         "threads.loading": "Loading...",
         "threads.searchOlder": "Search older...",
         "threads.loadOlder": "Load older...",
+        "threads.degradedThreadListBadge": "Incomplete",
+        "threads.degradedThreadListTooltip":
+          "These thread results are not fully refreshed yet and may be missing some conversations.",
         "threads.autoNaming": "Auto naming...",
         "threads.pin": "Pin",
         "threads.unpin": "Unpin",
@@ -228,6 +231,25 @@ describe("ThreadList", () => {
     );
 
     expect(screen.getByText("Auto naming...")).toBeTruthy();
+  });
+
+  it("renders a degraded badge when the thread list is partial", () => {
+    render(
+      <ThreadList
+        {...baseProps}
+        unpinnedRows={[
+          {
+            thread: {
+              ...thread,
+              isDegraded: true,
+            },
+            depth: 0,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Incomplete")).toBeTruthy();
   });
 
   it("renders only relative time inline when size is available", () => {

@@ -37,6 +37,9 @@ function shouldMirrorThreadSessionLog(entry: DebugEntry): boolean {
   const label = entry.label.toLowerCase();
   return (
     label.startsWith("thread/session:") ||
+    label.startsWith("thread/history") ||
+    label.startsWith("thread/list") ||
+    label.startsWith("workspace/reconnect") ||
     label.startsWith("reasoning/raw:") ||
     label === "item/started" ||
     label === "item/updated" ||

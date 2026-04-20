@@ -15,6 +15,7 @@ import {
   normalizeTokenUsage,
 } from "../utils/threadNormalize";
 import { previewThreadName } from "../../../utils/threadItems";
+import { resolveThreadStabilityDiagnostic } from "../utils/stabilityDiagnostics";
 import type { ThreadAction } from "./useThreadsReducer";
 
 /**
@@ -279,6 +280,7 @@ export function useThreadTurnEvents({
           type: "markContextCompacting",
           threadId: targetThreadId,
           isCompacting: false,
+          timestamp: Date.now(),
         });
         dispatch({
           type: "settleThreadPlanInProgress",
@@ -392,7 +394,12 @@ export function useThreadTurnEvents({
         threadId,
         targetStatus: "pending",
       });
-      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
+      dispatch({
+        type: "markContextCompacting",
+        threadId,
+        isCompacting: false,
+        timestamp: Date.now(),
+      });
       markProcessing(threadId, false);
       markReviewing(threadId, false);
       setActiveTurnId(threadId, null);
@@ -406,6 +413,7 @@ export function useThreadTurnEvents({
           type: "markContextCompacting",
           threadId: aliasThreadId,
           isCompacting: false,
+          timestamp: Date.now(),
         });
         dispatch({
           type: "settleThreadPlanInProgress",
@@ -420,6 +428,25 @@ export function useThreadTurnEvents({
       }
 
       if (!wasInterrupted) {
+        const stabilityDiagnostic = payload.message
+          ? resolveThreadStabilityDiagnostic(payload.message)
+          : null;
+        if (stabilityDiagnostic) {
+          onDebug?.({
+            id: `${Date.now()}-thread-stability-diagnostic`,
+            timestamp: Date.now(),
+            source: "event",
+            label: "thread/stability diagnostic",
+            payload: {
+              workspaceId,
+              threadId,
+              turnId,
+              category: stabilityDiagnostic.category,
+              rawMessage: stabilityDiagnostic.rawMessage,
+              recoveryReason: stabilityDiagnostic.reconnectReason ?? null,
+            },
+          });
+        }
         const message = payload.message
           ? t("threads.turnFailedWithMessage", { message: payload.message })
           : t("threads.turnFailed");
@@ -444,9 +471,14 @@ export function useThreadTurnEvents({
 
   const onContextCompacted = useCallback(
     (workspaceId: string, threadId: string, turnId: string) => {
-      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
       const timestamp = Date.now();
+      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
+      dispatch({
+        type: "markContextCompacting",
+        threadId,
+        isCompacting: false,
+        timestamp: timestamp,
+      });
       const resolvedTurnId = turnId || `auto-${timestamp}`;
       dispatch({ type: "appendContextCompacted", threadId, turnId: resolvedTurnId });
       recordThreadActivity(workspaceId, threadId, timestamp);
@@ -466,7 +498,12 @@ export function useThreadTurnEvents({
       },
     ) => {
       dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      dispatch({ type: "markContextCompacting", threadId, isCompacting: true });
+      dispatch({
+        type: "markContextCompacting",
+        threadId,
+        isCompacting: true,
+        timestamp: Date.now(),
+      });
       safeMessageActivity();
     },
     [dispatch, safeMessageActivity],
@@ -475,14 +512,38 @@ export function useThreadTurnEvents({
   const onContextCompactionFailed = useCallback(
     (workspaceId: string, threadId: string, reason: string) => {
       dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      dispatch({ type: "markContextCompacting", threadId, isCompacting: false });
+      dispatch({
+        type: "markContextCompacting",
+        threadId,
+        isCompacting: false,
+        timestamp: Date.now(),
+      });
       const message = reason
         ? t("threads.contextCompactionFailedWithMessage", { message: reason })
         : t("threads.contextCompactionFailed");
+      const stabilityDiagnostic = reason
+        ? resolveThreadStabilityDiagnostic(reason)
+        : null;
+      if (stabilityDiagnostic) {
+        onDebug?.({
+          id: `${Date.now()}-thread-stability-diagnostic`,
+          timestamp: Date.now(),
+          source: "event",
+          label: "thread/stability diagnostic",
+          payload: {
+            workspaceId,
+            threadId,
+            category: stabilityDiagnostic.category,
+            rawMessage: stabilityDiagnostic.rawMessage,
+            recoveryReason: stabilityDiagnostic.reconnectReason ?? null,
+            stage: "context-compaction",
+          },
+        });
+      }
       pushThreadErrorMessage(threadId, message);
       safeMessageActivity();
     },
-    [dispatch, pushThreadErrorMessage, safeMessageActivity, t],
+    [dispatch, onDebug, pushThreadErrorMessage, safeMessageActivity, t],
   );
 
   const onThreadSessionIdUpdated = useCallback(

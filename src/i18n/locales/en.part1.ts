@@ -1606,6 +1606,8 @@ const enPart1 = {
       "The runtime pipe for this session message has been closed. Reconnect the runtime, then retry your send.",
     runtimeReconnectWorkspaceNotConnected:
       "This workspace does not currently have an available managed runtime. Reconnect the runtime, then retry your send.",
+    runtimeReconnectQuarantined:
+      "The runtime is cooling down after repeated recovery failures. Wait a moment, then reconnect or resend the previous prompt.",
     runtimeReconnectAction: "Reconnect runtime",
     runtimeReconnectRunning: "Reconnecting...",
     runtimeReconnectResendAction: "Reconnect and resend previous prompt",
@@ -2638,14 +2640,15 @@ const enPart1 = {
     loading: "Loading...",
     searchOlder: "Search older...",
     loadOlder: "Load older...",
+    degradedThreadListBadge: "Incomplete",
+    degradedThreadListTooltip:
+      "These thread results are not fully refreshed yet and may be missing some conversations. Refresh again after the runtime stabilizes.",
     sessionStopped: "Session stopped.",
     sessionStoppedForFusion: "Switched to the merged follow-up. Reply is continuing...",
     turnFailed: "Turn failed.",
     turnFailedWithMessage: "Turn failed: {{message}}",
     turnFailedToStart: "Turn failed to start.",
     turnFailedToStartWithMessage: "Turn failed to start: {{message}}",
-    turnNoActivityTimeout:
-      "No turn activity was received for {{seconds}}s. Waiting was stopped. Please retry or recover the session.",
     firstPacketTimeout:
       "No initial response within {{seconds}}s. Network, proxy, or upstream service load may be causing delay. Please retry.",
     networkProxyHint:
@@ -2657,6 +2660,8 @@ const enPart1 = {
       "Request timed out before receiving a response. Network jitter or upstream service load may be causing delay. Please retry.",
     contextCompactionFailed: "Context compaction failed.",
     contextCompactionFailedWithMessage: "Context compaction failed: {{message}}",
+    claudeManualCompactUnavailable:
+      "No active Claude conversation is available to compact. Open an existing Claude thread, then run /compact again.",
     specRootContext: {
       title: "External Spec Root (Priority)",
       activeRoot: "Active root path",

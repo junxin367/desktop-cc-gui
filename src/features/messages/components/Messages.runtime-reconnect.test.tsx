@@ -174,6 +174,23 @@ describe("Messages runtime reconnect", () => {
     expect(screen.getByRole("group", { name: "messages.runtimeReconnectTitle" })).toBeTruthy();
   });
 
+  it("shows reconnect runtime recovery card for runtime quarantine diagnostics", () => {
+    renderMessages([
+      {
+        id: "assistant-runtime-quarantined",
+        kind: "message",
+        role: "assistant",
+        text:
+          "会话启动失败： [RUNTIME_RECOVERY_QUARANTINED] Runtime recovery paused for workspace ws-runtime (engine codex).",
+      },
+    ], {
+      threadId: "thread-runtime-quarantined",
+    });
+
+    expect(screen.getByRole("group", { name: "messages.runtimeReconnectTitle" })).toBeTruthy();
+    expect(screen.getByText("messages.runtimeReconnectQuarantined")).toBeTruthy();
+  });
+
   it("shows only the resend action for stale thread recovery cards", () => {
     const onRecoverThreadRuntimeAndResend = vi.fn().mockResolvedValue("thread-recovered");
 

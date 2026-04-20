@@ -89,4 +89,25 @@ describe("sidebarSnapshot", () => {
       },
     });
   });
+
+  it("keeps the last healthy snapshot when degraded threads are provided", () => {
+    saveSidebarSnapshotThreads("ws-1", [
+      { id: "thread-1", name: "Healthy chat", updatedAt: 100 },
+    ]);
+
+    saveSidebarSnapshotThreads("ws-1", [
+      {
+        id: "thread-1",
+        name: "Recovered chat",
+        updatedAt: 120,
+        isDegraded: true,
+        partialSource: "thread-list-live-timeout",
+        degradedReason: "last-good-fallback",
+      },
+    ]);
+
+    expect(loadSidebarSnapshot()?.threadsByWorkspace["ws-1"]).toEqual([
+      { id: "thread-1", name: "Healthy chat", updatedAt: 100 },
+    ]);
+  });
 });

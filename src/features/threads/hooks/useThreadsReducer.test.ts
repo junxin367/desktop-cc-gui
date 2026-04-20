@@ -2765,6 +2765,27 @@ describe("threadReducer", () => {
     }
   });
 
+  it("tracks compaction timing for context compaction status", () => {
+    const compacting = threadReducer(initialState, {
+      type: "markContextCompacting",
+      threadId: "thread-1",
+      isCompacting: true,
+      timestamp: 1_000,
+    });
+    const settled = threadReducer(compacting, {
+      type: "markContextCompacting",
+      threadId: "thread-1",
+      isCompacting: false,
+      timestamp: 2_500,
+    });
+
+    expect(compacting.threadStatusById["thread-1"]?.isContextCompacting).toBe(true);
+    expect(compacting.threadStatusById["thread-1"]?.processingStartedAt).toBe(1_000);
+    expect(settled.threadStatusById["thread-1"]?.isContextCompacting).toBe(false);
+    expect(settled.threadStatusById["thread-1"]?.processingStartedAt).toBeNull();
+    expect(settled.threadStatusById["thread-1"]?.lastDurationMs).toBe(1_500);
+  });
+
   it("ignores tool output deltas when the item is not a tool", () => {
     const message: ConversationItem = {
       id: "tool-1",

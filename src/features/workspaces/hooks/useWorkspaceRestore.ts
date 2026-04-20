@@ -9,7 +9,7 @@ type WorkspaceRestoreOptions = {
   connectWorkspace: (workspace: WorkspaceInfo) => Promise<void>;
   listThreadsForWorkspace: (
     workspace: WorkspaceInfo,
-    options?: { preserveState?: boolean },
+    options?: { preserveState?: boolean; includeOpenCodeSessions?: boolean },
   ) => Promise<void>;
 };
 
@@ -57,7 +57,9 @@ export function useWorkspaceRestore({
         if (!restoreThreadsOnlyOnLaunch && !workspace.connected) {
           await connectWorkspace(workspace);
         }
-        await listThreadsForWorkspace(workspace);
+        await listThreadsForWorkspace(workspace, {
+          includeOpenCodeSessions: false,
+        });
         // A rerender may cancel the current effect while the in-flight restore
         // still succeeds. Keep the success marker so we do not restart the same
         // workspace restore loop on every workspace refresh.

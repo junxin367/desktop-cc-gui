@@ -2171,6 +2171,13 @@
   white-space: nowrap;
 }
 
+.thread-degraded-badge {
+  font-size: 10px;
+  color: var(--warning-text, #d97706);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .thread-row:hover .thread-time {
   color: var(--text-muted);
   opacity: 1;

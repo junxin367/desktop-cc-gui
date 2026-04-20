@@ -229,6 +229,30 @@ describe("history loaders", () => {
     );
   });
 
+  it("strips gemini output language hint from restored user history text", () => {
+    const items = parseGeminiHistoryMessages([
+      {
+        id: "gemini-user-language-hint",
+        kind: "message",
+        role: "user",
+        text:
+          "Output language: Simplified Chinese.\n" +
+          "Prefer this language for reasoning and final answer unless the user explicitly requests another language.\n\n" +
+          "你好啊还能用吗",
+      },
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual(
+      expect.objectContaining({
+        id: "gemini-user-language-hint",
+        kind: "message",
+        role: "user",
+        text: "你好啊还能用吗",
+      }),
+    );
+  });
+
   it("merges gemini tool start/result rows into a completed tool item", () => {
     const items = parseGeminiHistoryMessages([
       {

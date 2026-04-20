@@ -1565,6 +1565,7 @@ const zhPart1 = {
     runtimeReconnectTitle: "Runtime 连接已中断",
     runtimeReconnectBrokenPipe: "当前这条会话消息对应的 runtime pipe 已断开。你可以先重新连接 runtime，再重试发送。",
     runtimeReconnectWorkspaceNotConnected: "当前工作区没有可用的受管 runtime。你可以先重新连接 runtime，再继续发送。",
+    runtimeReconnectQuarantined: "Runtime 正在冷却恢复窗口内。请等待短暂冷却结束后，再重新连接或重发上一条提示词。",
     runtimeReconnectAction: "重新连接 runtime",
     runtimeReconnectRunning: "正在连接...",
     runtimeReconnectResendAction: "重连并发送上一条提示词",
@@ -2565,14 +2566,15 @@ const zhPart1 = {
     loading: "加载中...",
     searchOlder: "搜索更早的...",
     loadOlder: "加载更早的...",
+    degradedThreadListBadge: "不完整",
+    degradedThreadListTooltip:
+      "当前显示的线程结果暂未完整刷新，可能缺少一部分会话。等待 runtime 稳定后可再刷新。",
     sessionStopped: "会话已停止。",
     sessionStoppedForFusion: "已切换到融合回复，内容正在继续生成。",
     turnFailed: "会话失败。",
     turnFailedWithMessage: "会话失败：{{message}}",
     turnFailedToStart: "会话启动失败。",
     turnFailedToStartWithMessage: "会话启动失败：{{message}}",
-    turnNoActivityTimeout:
-      "{{seconds}} 秒内未收到新的会话活动，已结束当前等待。请重试或恢复会话。",
     firstPacketTimeout:
       "首次响应在 {{seconds}} 秒内未返回。可能是网络、代理或上游服务繁忙导致，请稍后重试。",
     networkProxyHint:
@@ -2583,6 +2585,8 @@ const zhPart1 = {
       "请求在收到响应前已超时。可能是网络抖动或上游服务繁忙导致，请稍后重试。",
     contextCompactionFailed: "上下文压缩失败。",
     contextCompactionFailedWithMessage: "上下文压缩失败：{{message}}",
+    claudeManualCompactUnavailable:
+      "当前没有可压缩的 Claude 会话。请先打开已有 Claude 线程，再重新执行 /compact。",
     specRootContext: {
       title: "外部 Spec 根目录（优先）",
       activeRoot: "当前生效路径",

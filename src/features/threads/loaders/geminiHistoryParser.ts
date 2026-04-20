@@ -13,6 +13,8 @@ const COMMAND_TOOL_KEYWORDS = [
   "stdin",
 ];
 const FILE_CHANGE_TOOL_KEYWORDS = ["apply", "patch", "write", "edit"];
+const GEMINI_OUTPUT_LANGUAGE_HINT_PATTERN =
+  /^Output language:[^\r\n]*(?:\r?\n)+Prefer this language for reasoning and final answer unless the user explicitly requests another language\.(?:\r?\n){1,2}/i;
 
 function compactComparableReasoningText(value: string): string {
   return value
@@ -53,6 +55,14 @@ function mergeAdjacentReasoningText(existing: string, incoming: string): string 
     return normalizedExisting;
   }
   return `${normalizedExisting}\n\n${normalizedIncoming}`;
+}
+
+function stripGeminiOutputLanguageHint(text: string): string {
+  const matchedPrefix = text.match(GEMINI_OUTPUT_LANGUAGE_HINT_PATTERN)?.[0];
+  if (!matchedPrefix) {
+    return text;
+  }
+  return text.slice(matchedPrefix.length);
 }
 
 function parseHistoryTimestampMs(value: unknown): number | undefined {
@@ -443,7 +453,9 @@ export function parseGeminiHistoryMessages(messagesData: unknown): ConversationI
       const role = asString(message.role ?? "").trim().toLowerCase() === "user"
         ? "user"
         : "assistant";
-      const text = asString(message.text ?? "");
+      const rawText = asString(message.text ?? "");
+      const text =
+        role === "user" ? stripGeminiOutputLanguageHint(rawText) : rawText;
       const images = extractImageList(message.images);
       const timestampMs = parseHistoryTimestampMs(
         message.timestamp ?? message.createdAt ?? message.created_at ?? null,

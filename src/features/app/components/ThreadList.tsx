@@ -209,6 +209,14 @@ export function ThreadList({
                 {isAutoNaming && (
                   <span className="thread-auto-naming">{t("threads.autoNaming")}</span>
                 )}
+                {thread.isDegraded && (
+                  <span
+                    className="thread-degraded-badge"
+                    title={t("threads.degradedThreadListTooltip")}
+                  >
+                    {t("threads.degradedThreadListBadge")}
+                  </span>
+                )}
                 {relativeTime && <span className="thread-time">{relativeTime}</span>}
               </div>
             </TooltipTrigger>

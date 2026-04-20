@@ -188,49 +188,6 @@ describe("useThreadEventHandlers diagnostics", () => {
     expect(stalledEntry?.payload.hasExecutionItem).toBe(false);
   });
 
-  it("stops processing when no activity arrives after turn start", () => {
-    const onDebug = vi.fn();
-    const options = makeOptions(onDebug);
-    const { result } = renderHook(() => useThreadEventHandlers(options));
-
-    act(() => {
-      result.current.onTurnStarted("ws-1", "thread-1", "turn-1");
-    });
-
-    act(() => {
-      vi.advanceTimersByTime(20_000);
-    });
-
-    const labels = collectDiagnosticCalls(onDebug).map((entry) => entry.label);
-    expect(labels).toContain("thread/session:turn-diagnostic:stalled-no-activity");
-    expect(options.markProcessing).toHaveBeenCalledWith("thread-1", false);
-    expect(options.setActiveTurnId).toHaveBeenCalledWith("thread-1", null);
-    expect(options.pushThreadErrorMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it("refreshes the no-activity watchdog when heartbeat arrives", () => {
-    const onDebug = vi.fn();
-    const options = makeOptions(onDebug);
-    const { result } = renderHook(() => useThreadEventHandlers(options));
-
-    act(() => {
-      result.current.onTurnStarted("ws-1", "thread-1", "turn-1");
-      vi.advanceTimersByTime(19_000);
-      result.current.onProcessingHeartbeat("ws-1", "thread-1", 1);
-      vi.advanceTimersByTime(19_000);
-    });
-
-    const labelsBeforeTimeout = collectDiagnosticCalls(onDebug).map((entry) => entry.label);
-    expect(labelsBeforeTimeout).not.toContain("thread/session:turn-diagnostic:stalled-no-activity");
-
-    act(() => {
-      vi.advanceTimersByTime(1_000);
-    });
-
-    const labelsAfterTimeout = collectDiagnosticCalls(onDebug).map((entry) => entry.label);
-    expect(labelsAfterTimeout).toContain("thread/session:turn-diagnostic:stalled-no-activity");
-  });
-
   it("cancels the stall warning once the first execution item arrives", () => {
     const onDebug = vi.fn();
     const { result } = renderHook(() => useThreadEventHandlers(makeOptions(onDebug)));

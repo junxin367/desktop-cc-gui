@@ -1179,6 +1179,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       onOpenWorkspaceFile={options.onOpenFile}
       agentTaskScrollRequest={options.agentTaskScrollRequest}
       isThinking={isThreadThinking}
+      isContextCompacting={activeThreadStatus?.isContextCompacting ?? false}
       proxyEnabled={options.systemProxyEnabled}
       proxyUrl={options.systemProxyUrl}
       processingStartedAt={activeThreadStatus?.processingStartedAt ?? null}

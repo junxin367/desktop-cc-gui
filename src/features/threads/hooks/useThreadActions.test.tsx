@@ -35,6 +35,7 @@ import {
   mergeThreadItems,
   previewThreadName,
 } from "../../../utils/threadItems";
+import { loadSidebarSnapshot } from "../utils/sidebarSnapshot";
 import { saveThreadActivity } from "../utils/threadStorage";
 import { useThreadActions } from "./useThreadActions";
 
@@ -84,6 +85,10 @@ vi.mock("../utils/threadStorage", () => ({
   saveThreadActivity: vi.fn(),
 }));
 
+vi.mock("../utils/sidebarSnapshot", () => ({
+  loadSidebarSnapshot: vi.fn(() => null),
+}));
+
 describe("useThreadActions", () => {
   const workspace: WorkspaceInfo = {
     id: "ws-1",
@@ -131,6 +136,7 @@ describe("useThreadActions", () => {
     });
     vi.mocked(trashWorkspaceItem).mockResolvedValue(undefined);
     vi.mocked(writeWorkspaceFile).mockResolvedValue(undefined);
+    vi.mocked(loadSidebarSnapshot).mockReturnValue(null);
   });
 
   function renderActions(
@@ -2016,6 +2022,51 @@ describe("useThreadActions", () => {
         engineSource: "codex",
       },
     ]);
+  });
+
+  it("falls back to last-good thread summaries when thread list loading fails", async () => {
+    vi.mocked(listThreads).mockRejectedValue(new Error("runtime unavailable"));
+    const onDebug = vi.fn();
+
+    const { result, dispatch } = renderActions({
+      onDebug,
+      threadsByWorkspace: {
+        "ws-1": [
+          {
+            id: "thread-known",
+            name: "Known old",
+            updatedAt: 7000,
+            engineSource: "codex",
+          },
+        ],
+      },
+    });
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace);
+    });
+
+    expectSetThreadsDispatched(dispatch, "ws-1", [
+      {
+        id: "thread-known",
+        name: "Known old",
+        updatedAt: 7000,
+        engineSource: "codex",
+        isDegraded: true,
+        degradedReason: "last-good-fallback",
+        partialSource: "runtime unavailable",
+      },
+    ]);
+    const fallbackEntry = onDebug.mock.calls
+      .map(([entry]) => entry as { label: string; payload?: Record<string, unknown> })
+      .find((entry) => entry.label === "thread/list error fallback");
+    expect(fallbackEntry?.payload).toMatchObject({
+      workspaceId: "ws-1",
+      engine: "multi",
+      action: "thread-list-error-fallback",
+      recoveryState: "degraded",
+      diagnosticCategory: "partial_history",
+    });
   });
 
   it("stops scanning after capped empty pages when known activity exists", async () => {

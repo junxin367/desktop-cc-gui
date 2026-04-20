@@ -160,6 +160,8 @@ export function RuntimeReconnectCard({
 
   const description = requiresThreadRecovery
     ? t("messages.threadRecoveryThreadNotFound")
+    : hint.reason === "recovery-quarantined"
+      ? t("messages.runtimeReconnectQuarantined")
     : hint.reason === "broken-pipe"
       ? t("messages.runtimeReconnectBrokenPipe")
       : t("messages.runtimeReconnectWorkspaceNotConnected");

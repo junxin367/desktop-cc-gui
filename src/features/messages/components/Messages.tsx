@@ -73,6 +73,7 @@ type MessagesProps = {
   threadId: string | null;
   workspaceId?: string | null;
   isThinking: boolean;
+  isContextCompacting?: boolean;
   proxyEnabled?: boolean;
   proxyUrl?: string | null;
   processingStartedAt?: number | null;
@@ -1488,6 +1489,7 @@ export const Messages = memo(function Messages({
   threadId: legacyThreadId,
   workspaceId: legacyWorkspaceId = null,
   isThinking: legacyIsThinking,
+  isContextCompacting = false,
   proxyEnabled = false,
   proxyUrl = null,
   processingStartedAt = null,
@@ -1520,6 +1522,7 @@ export const Messages = memo(function Messages({
   onRecoverThreadRuntimeAndResend,
 }: MessagesProps) {
   const { t } = useTranslation();
+  const isWorking = legacyIsThinking || isContextCompacting;
   const fallbackConversationState = useMemo<ConversationState>(
     () => ({
       items: legacyItems,
@@ -1530,7 +1533,7 @@ export const Messages = memo(function Messages({
         threadId: legacyThreadId ?? "",
         engine: toConversationEngine(legacyActiveEngine),
         activeTurnId: null,
-        isThinking: legacyIsThinking,
+        isThinking: isWorking,
         heartbeatPulse: legacyHeartbeatPulse,
         historyRestoredAtMs: null,
       },
@@ -1542,7 +1545,7 @@ export const Messages = memo(function Messages({
       legacyWorkspaceId,
       legacyThreadId,
       legacyActiveEngine,
-      legacyIsThinking,
+      isWorking,
       legacyHeartbeatPulse,
     ],
   );
@@ -2110,7 +2113,7 @@ export const Messages = memo(function Messages({
   }, [effectiveItems, lastUserMessageIndex]);
 
   const waitingForFirstChunk = useMemo(() => {
-    if (!isThinking || effectiveItems.length === 0) {
+    if (!legacyIsThinking || effectiveItems.length === 0) {
       return false;
     }
     let lastUserIndex = -1;
@@ -2131,13 +2134,16 @@ export const Messages = memo(function Messages({
       }
     }
     return true;
-  }, [isThinking, effectiveItems]);
+  }, [legacyIsThinking, effectiveItems]);
   const streamActivityPhase = useStreamActivityPhase({
     isProcessing:
-      isThinking &&
+      legacyIsThinking &&
       (activeEngine === "codex" || activeEngine === "claude" || activeEngine === "gemini"),
     items: effectiveItems,
   });
+  const primaryWorkingLabel = isContextCompacting
+    ? t("chat.contextDualViewCompacting")
+    : approvalResumeWorkingLabel;
 
   const visibleItems = useMemo(() => {
     const filtered = effectiveItems.filter((item) => {
@@ -2962,7 +2968,7 @@ export const Messages = memo(function Messages({
             </div>
           )}
           <WorkingIndicator
-            isThinking={isThinking}
+            isThinking={isWorking}
             proxyEnabled={proxyEnabled}
             proxyUrl={proxyUrl}
             processingStartedAt={processingStartedAt}
@@ -2971,7 +2977,7 @@ export const Messages = memo(function Messages({
             hasItems={effectiveItems.length > 0}
             reasoningLabel={latestReasoningLabel}
             activityLabel={latestWorkingActivityLabel}
-            primaryLabel={approvalResumeWorkingLabel}
+            primaryLabel={primaryWorkingLabel}
             activeEngine={activeEngine}
             waitingForFirstChunk={waitingForFirstChunk}
             presentationProfile={presentationProfile}

@@ -158,7 +158,20 @@ function normalizeThreadSummary(value: unknown): ThreadSummary | null {
   if (typeof value.sourceLabel === "string") {
     summary.sourceLabel = value.sourceLabel;
   }
+  if (typeof value.partialSource === "string") {
+    summary.partialSource = value.partialSource;
+  }
+  if (typeof value.isDegraded === "boolean") {
+    summary.isDegraded = value.isDegraded;
+  }
+  if (typeof value.degradedReason === "string") {
+    summary.degradedReason = value.degradedReason;
+  }
   return summary;
+}
+
+function shouldPersistSidebarThreads(threads: ThreadSummary[]): boolean {
+  return !threads.some((thread) => thread.isDegraded);
 }
 
 function normalizeThreadsByWorkspace(
@@ -249,6 +262,9 @@ export function saveSidebarSnapshotThreads(
   workspaceId: string,
   threads: ThreadSummary[],
 ): void {
+  if (!shouldPersistSidebarThreads(threads)) {
+    return;
+  }
   const current = buildSnapshot(loadSidebarSnapshot());
   writeClientStoreValue("threads", SIDEBAR_SNAPSHOT_KEY, {
     ...current,

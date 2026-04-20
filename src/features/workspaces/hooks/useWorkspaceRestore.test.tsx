@@ -54,6 +54,16 @@ describe("useWorkspaceRestore", () => {
 
     expect(connectWorkspace).toHaveBeenCalledTimes(1);
     expect(connectWorkspace).toHaveBeenCalledWith(activeWorkspace);
+    expect(listThreadsForWorkspace).toHaveBeenNthCalledWith(
+      1,
+      activeWorkspace,
+      { includeOpenCodeSessions: false },
+    );
+    expect(listThreadsForWorkspace).toHaveBeenNthCalledWith(
+      2,
+      visibleWorkspace,
+      { includeOpenCodeSessions: false },
+    );
     expect(
       listThreadsForWorkspace.mock.calls.map((call) => call[0].id),
     ).toEqual(["ws-active", "ws-visible"]);
@@ -87,6 +97,16 @@ describe("useWorkspaceRestore", () => {
     });
 
     expect(connectWorkspace).not.toHaveBeenCalled();
+    expect(listThreadsForWorkspace).toHaveBeenNthCalledWith(
+      1,
+      activeWorkspace,
+      { includeOpenCodeSessions: false },
+    );
+    expect(listThreadsForWorkspace).toHaveBeenNthCalledWith(
+      2,
+      visibleWorkspace,
+      { includeOpenCodeSessions: false },
+    );
   });
 
   it("active workspace 恢复失败时不会阻断其他工作区，并且后续 render 会重试失败项", async () => {
@@ -125,7 +145,9 @@ describe("useWorkspaceRestore", () => {
     );
 
     await waitFor(() => {
-      expect(listThreadsForWorkspace).toHaveBeenCalledWith(visibleWorkspace);
+      expect(listThreadsForWorkspace).toHaveBeenCalledWith(visibleWorkspace, {
+        includeOpenCodeSessions: false,
+      });
     });
     expect(listThreadsForWorkspace).toHaveBeenCalledTimes(1);
     expect(connectWorkspace).toHaveBeenCalledTimes(1);
@@ -136,7 +158,9 @@ describe("useWorkspaceRestore", () => {
     });
 
     await waitFor(() => {
-      expect(listThreadsForWorkspace).toHaveBeenCalledWith(activeWorkspace);
+      expect(listThreadsForWorkspace).toHaveBeenCalledWith(activeWorkspace, {
+        includeOpenCodeSessions: false,
+      });
     });
     expect(connectWorkspace).toHaveBeenCalledTimes(2);
     expect(listThreadsForWorkspace).toHaveBeenCalledTimes(2);

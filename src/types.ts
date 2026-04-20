@@ -131,6 +131,9 @@ export type ThreadSummary = {
   source?: string;
   provider?: string;
   sourceLabel?: string;
+  partialSource?: string;
+  isDegraded?: boolean;
+  degradedReason?: string;
   nativeThreadIds?: string[];
 };
 

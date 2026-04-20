@@ -589,6 +589,7 @@ export type ThreadAction =
       type: "markContextCompacting";
       threadId: string;
       isCompacting: boolean;
+      timestamp?: number;
     }
   | { type: "markHeartbeat"; threadId: string; pulse: number }
   | {
@@ -1346,6 +1347,22 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       if (currentIsCompacting === action.isCompacting) {
         return state;
       }
+      const actionTimestamp =
+        typeof action.timestamp === "number" && Number.isFinite(action.timestamp)
+          ? action.timestamp
+          : null;
+      const startedAt = previous?.processingStartedAt ?? null;
+      const nextStartedAt = action.isCompacting
+        ? (startedAt ?? actionTimestamp ?? Date.now())
+        : (previous?.isProcessing ?? false ? startedAt : null);
+      const nextDuration = !action.isCompacting && currentIsCompacting
+        ? (startedAt || actionTimestamp)
+          ? Math.max(
+              0,
+              (actionTimestamp ?? Date.now()) - (startedAt ?? actionTimestamp ?? Date.now()),
+            )
+          : previous?.lastDurationMs ?? null
+        : previous?.lastDurationMs ?? null;
       return {
         ...state,
         threadStatusById: {
@@ -1355,8 +1372,8 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             hasUnread: previous?.hasUnread ?? false,
             isReviewing: previous?.isReviewing ?? false,
             isContextCompacting: action.isCompacting,
-            processingStartedAt: previous?.processingStartedAt ?? null,
-            lastDurationMs: previous?.lastDurationMs ?? null,
+            processingStartedAt: nextStartedAt,
+            lastDurationMs: nextDuration,
             heartbeatPulse: previous?.heartbeatPulse ?? 0,
           },
         },
