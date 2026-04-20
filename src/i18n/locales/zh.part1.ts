@@ -915,6 +915,10 @@ const zhPart1 = {
     sessionManagementStatusActive: "仅显示活跃",
     sessionManagementStatusArchived: "仅显示归档",
     sessionManagementStatusAll: "显示全部",
+    sessionManagementSidebarStatusHint:
+      "当前筛选为“{{status}}”；侧边栏默认只显示活跃且未归档的会话，所以数量可能更少。",
+    sessionManagementProjectScopeHint:
+      "当前项目视图会聚合这个项目以及它的 {{count}} 个 worktree；侧边栏会按 workspace 分开展示。",
     sessionManagementArchiveSelected: "归档已选",
     sessionManagementUnarchiveSelected: "取消归档",
     sessionManagementArchiveSuccess: "已归档 {{count}} 条会话。",

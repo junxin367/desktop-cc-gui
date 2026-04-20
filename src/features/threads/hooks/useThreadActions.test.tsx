@@ -1702,6 +1702,13 @@ describe("useThreadActions", () => {
             updated_at: 5800,
             source: "cli",
           },
+          {
+            id: "thread-commit-message",
+            cwd: "/tmp/codex",
+            preview: "Generate a concise git commit message for the following changes.",
+            updated_at: 5700,
+            source: "cli",
+          },
         ],
         nextCursor: null,
       },
@@ -1735,6 +1742,15 @@ describe("useThreadActions", () => {
         source: "vscode",
         provider: undefined,
         sourceLabel: "vscode",
+      },
+      {
+        id: "thread-commit-message",
+        name: "Generate a concise git commit message for the following changes.",
+        updatedAt: 5700,
+        engineSource: "codex",
+        source: "cli",
+        provider: undefined,
+        sourceLabel: "cli",
       },
     ]);
   });

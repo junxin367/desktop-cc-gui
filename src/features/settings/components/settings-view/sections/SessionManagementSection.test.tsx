@@ -355,6 +355,36 @@ describe("SessionManagementSection", () => {
     ).toBeTruthy();
   });
 
+  it("explains that project mode aggregates child worktrees", async () => {
+    vi.mocked(listWorkspaceSessions).mockResolvedValueOnce({
+      data: [
+        {
+          sessionId: "codex:main",
+          workspaceId: "ws-1",
+          title: "Main session",
+          updatedAt: 1710000000000,
+          engine: "codex",
+          archivedAt: null,
+          threadKind: "native",
+        },
+      ],
+      nextCursor: null,
+      partialSource: null,
+    });
+
+    render(
+      <SessionManagementSection
+        title="Session Management"
+        description="Manage sessions"
+        workspaces={[workspace, worktree]}
+        groupedWorkspaces={[{ id: null, name: "Ungrouped", workspaces: [workspace, worktree] }]}
+        initialWorkspaceId="ws-1"
+      />,
+    );
+
+    expect(await screen.findByText("settings.sessionManagementProjectScopeHint")).toBeTruthy();
+  });
+
   it("reloads related sessions after a successful related delete", async () => {
     vi.mocked(listWorkspaceSessions).mockResolvedValue({
       data: [],

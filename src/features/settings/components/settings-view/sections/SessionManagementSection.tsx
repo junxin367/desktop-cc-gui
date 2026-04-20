@@ -136,6 +136,19 @@ function buildWorkspaceOptions(
   return options;
 }
 
+function resolveStatusFilterLabel(
+  status: WorkspaceSessionCatalogFilters["status"],
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  if (status === "archived") {
+    return t("settings.sessionManagementStatusArchived");
+  }
+  if (status === "all") {
+    return t("settings.sessionManagementStatusAll");
+  }
+  return t("settings.sessionManagementStatusActive");
+}
+
 function normalizeEngineType(engine: string): EngineType {
   if (engine === "claude" || engine === "gemini" || engine === "opencode") {
     return engine;
@@ -448,6 +461,26 @@ export function SessionManagementSection({
     setWorkspaceId(workspaceOptions[0]?.id ?? null);
   }, [workspaceId, workspaceLabelById, workspaceOptions]);
 
+  const selectedWorkspace = useMemo(
+    () => workspaces.find((entry) => entry.id === workspaceId) ?? null,
+    [workspaceId, workspaces],
+  );
+  const projectScopeWorktreeCount = useMemo(() => {
+    if (!selectedWorkspace || (selectedWorkspace.kind ?? "main") === "worktree") {
+      return 0;
+    }
+    return workspaces.filter(
+      (entry) =>
+        (entry.kind ?? "main") === "worktree" &&
+        entry.parentId === selectedWorkspace.id,
+    ).length;
+  }, [selectedWorkspace, workspaces]);
+  const shouldShowSidebarStatusHint =
+    mode === "project" && filters.status !== "active";
+  const shouldShowProjectScopeHint =
+    mode === "project" && projectScopeWorktreeCount > 0;
+  const statusFilterLabel = resolveStatusFilterLabel(filters.status, t);
+
   const handleMutation = async (kind: "archive" | "unarchive" | "delete") => {
     const selectedEntries = visibleEntries.filter((entry) =>
       Boolean(selectedIds[buildWorkspaceSessionSelectionKey(entry)]),
@@ -730,6 +763,20 @@ export function SessionManagementSection({
 
           {notice ? (
             <div className={`settings-project-sessions-notice is-${notice.kind}`}>{notice.text}</div>
+          ) : null}
+          {shouldShowSidebarStatusHint ? (
+            <div className="settings-project-sessions-notice">
+              {t("settings.sessionManagementSidebarStatusHint", {
+                status: statusFilterLabel,
+              })}
+            </div>
+          ) : null}
+          {shouldShowProjectScopeHint ? (
+            <div className="settings-project-sessions-notice">
+              {t("settings.sessionManagementProjectScopeHint", {
+                count: projectScopeWorktreeCount,
+              })}
+            </div>
           ) : null}
           {primaryPartialSource ? (
             <div className="settings-project-sessions-notice">

@@ -905,6 +905,10 @@ const enPart1 = {
     sessionManagementStatusActive: "Active only",
     sessionManagementStatusArchived: "Archived only",
     sessionManagementStatusAll: "All sessions",
+    sessionManagementSidebarStatusHint:
+      'The current filter is "{{status}}". The sidebar only shows active, unarchived sessions, so its count can be smaller.',
+    sessionManagementProjectScopeHint:
+      "This project view aggregates the selected workspace and its {{count}} worktrees. The sidebar splits them by workspace.",
     sessionManagementArchiveSelected: "Archive selected",
     sessionManagementUnarchiveSelected: "Unarchive selected",
     sessionManagementArchiveSuccess: "Archived {{count}} sessions.",

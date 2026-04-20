@@ -578,6 +578,7 @@ vi.mock("react-i18next", () => ({
         "threads.turnFailedWithMessage": "会话失败：{{message}}",
         "threads.turnFailedToStart": "会话启动失败。",
         "threads.turnFailedToStartWithMessage": "会话启动失败：{{message}}",
+        "threads.untitledThread": "未命名对话",
         "messages.middleStepsCollapsedHint": "已折叠 {{count}} 条中间步骤（实时中）",
         "workspace.homeHeroTitle": "构建任何东西",
         "workspace.homeBranchLabelMain": "主分支",
