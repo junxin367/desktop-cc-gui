@@ -2574,15 +2574,27 @@ fn resolve_codex_sessions_roots(codex_home_override: Option<PathBuf>) -> Vec<Pat
     vec![home.join("sessions"), home.join("archived_sessions")]
 }
 
+fn normalized_sessions_root_key(root: &Path) -> String {
+    #[cfg(windows)]
+    {
+        normalize_workspace_match_path(&root.to_string_lossy())
+    }
+
+    #[cfg(not(windows))]
+    {
+        normalize_posix_workspace_match_path(&root.to_string_lossy())
+    }
+}
+
 fn merge_codex_session_roots(
     override_home: Option<PathBuf>,
     default_home: Option<PathBuf>,
 ) -> Vec<PathBuf> {
     let mut roots = Vec::new();
-    let mut seen = HashSet::new();
+    let mut seen_keys = HashSet::new();
 
     for root in resolve_codex_sessions_roots(override_home) {
-        if seen.insert(root.clone()) {
+        if seen_keys.insert(normalized_sessions_root_key(&root)) {
             roots.push(root);
         }
     }
@@ -2591,7 +2603,7 @@ fn merge_codex_session_roots(
         .map(|home| vec![home.join("sessions"), home.join("archived_sessions")])
         .unwrap_or_default()
     {
-        if seen.insert(root.clone()) {
+        if seen_keys.insert(normalized_sessions_root_key(&root)) {
             roots.push(root);
         }
     }
@@ -2610,10 +2622,10 @@ fn resolve_sessions_roots(
     }
 
     let mut roots = Vec::new();
-    let mut seen = HashSet::new();
+    let mut seen_keys = HashSet::new();
 
     for root in resolve_codex_sessions_roots(None) {
-        if seen.insert(root.clone()) {
+        if seen_keys.insert(normalized_sessions_root_key(&root)) {
             roots.push(root);
         }
     }
@@ -2627,7 +2639,7 @@ fn resolve_sessions_roots(
             continue;
         };
         for root in resolve_codex_sessions_roots(Some(codex_home)) {
-            if seen.insert(root.clone()) {
+            if seen_keys.insert(normalized_sessions_root_key(&root)) {
                 roots.push(root);
             }
         }

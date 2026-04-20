@@ -7,6 +7,7 @@ import {
   getOpenCodeSessionList,
   listClaudeSessions,
   listGeminiSessions,
+  listWorkspaceSessions,
   listThreadTitles,
   listThreads,
   readWorkspaceFile,
@@ -36,6 +37,7 @@ vi.mock("../../../services/tauri", () => ({
   getOpenCodeSessionList: vi.fn(),
   listClaudeSessions: vi.fn(),
   listGeminiSessions: vi.fn(),
+  listWorkspaceSessions: vi.fn(),
   listThreadTitles: vi.fn(),
   listThreads: vi.fn(),
   loadClaudeSession: vi.fn(),
@@ -121,6 +123,11 @@ describe("useThreadActions shared/native compatibility", () => {
     });
     vi.mocked(listClaudeSessions).mockResolvedValue([]);
     vi.mocked(listGeminiSessions).mockResolvedValue([]);
+    vi.mocked(listWorkspaceSessions).mockResolvedValue({
+      data: [],
+      nextCursor: null,
+      partialSource: null,
+    });
     vi.mocked(getOpenCodeSessionList).mockResolvedValue([]);
     vi.mocked(listSharedSessions).mockResolvedValue([]);
     vi.mocked(renameThreadTitleKey).mockResolvedValue(undefined);

@@ -1404,15 +1404,24 @@ const enPart1 = {
       "Collaboration modes and Steer mode stay in desktop-local settings.",
     configFile: "Config file",
     configFileDesc: "Open the official Codex config in {{fileManager}}.",
+    experimentalBadgeRecommended: "Recommended",
+    experimentalBadgeOfficial: "Official config",
+    experimentalBadgePreview: "Preview",
     collaborationModes: "Collaboration modes",
     collaborationModesDesc:
       "When enabled: switch between Code / Plan in composer; Plan supports interactive question cards.",
+    collaborationModesMarkerDesc:
+      "This already feeds the main interaction path and is enabled by default; keep it on if you want Plan mode.",
     backgroundTerminal: "Background terminal",
     backgroundTerminalDesc:
       "When enabled: sync the official unified_exec passthrough for background terminal runs.",
+    backgroundTerminalMarkerDesc:
+      "This is the only experimental item that syncs to the official CODEX_HOME/config.toml. Turn it on only when you need long-running background commands.",
     steerMode: "Steer mode",
     steerModeDesc:
       "When enabled: keep sending messages during runs and queue them automatically.",
+    steerModeMarkerDesc:
+      "This is wired into the send/runtime flow, but it is still better suited for users who already understand the runtime behavior. Leave it off first if you're unsure.",
 
     // Error messages
     unableToOpenConfig: "Unable to open config.",

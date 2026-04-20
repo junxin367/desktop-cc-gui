@@ -1954,7 +1954,9 @@ impl DaemonState {
         if let Some(session) = session {
             for result in &delete_results {
                 if result.deleted {
-                    session.clear_thread_effective_mode(&result.session_id).await;
+                    session
+                        .clear_thread_effective_mode(&result.session_id)
+                        .await;
                 }
             }
         }
@@ -2078,6 +2080,105 @@ impl DaemonState {
 
     pub(super) async fn skills_list(&self, workspace_id: String) -> Result<Value, String> {
         codex_core::skills_list_core(&self.sessions, workspace_id).await
+    }
+
+    pub(super) async fn list_workspace_sessions(
+        &self,
+        workspace_id: String,
+        query: Option<session_management::WorkspaceSessionCatalogQuery>,
+        cursor: Option<String>,
+        limit: Option<u32>,
+    ) -> Result<session_management::WorkspaceSessionCatalogPage, String> {
+        session_management::list_workspace_sessions_core(
+            &self.workspaces,
+            &self.sessions,
+            &self.engine_manager,
+            self.storage_path.as_path(),
+            workspace_id,
+            query,
+            cursor,
+            limit,
+        )
+        .await
+    }
+
+    pub(super) async fn list_global_codex_sessions(
+        &self,
+        query: Option<session_management::WorkspaceSessionCatalogQuery>,
+        cursor: Option<String>,
+        limit: Option<u32>,
+    ) -> Result<session_management::WorkspaceSessionCatalogPage, String> {
+        session_management::list_global_codex_sessions_core(
+            &self.workspaces,
+            self.storage_path.as_path(),
+            query,
+            cursor,
+            limit,
+        )
+        .await
+    }
+
+    pub(super) async fn list_project_related_codex_sessions(
+        &self,
+        workspace_id: String,
+        query: Option<session_management::WorkspaceSessionCatalogQuery>,
+        cursor: Option<String>,
+        limit: Option<u32>,
+    ) -> Result<session_management::WorkspaceSessionCatalogPage, String> {
+        session_management::list_project_related_codex_sessions_core(
+            &self.workspaces,
+            self.storage_path.as_path(),
+            workspace_id,
+            query,
+            cursor,
+            limit,
+        )
+        .await
+    }
+
+    pub(super) async fn archive_workspace_sessions(
+        &self,
+        workspace_id: String,
+        session_ids: Vec<String>,
+    ) -> Result<session_management::WorkspaceSessionBatchMutationResponse, String> {
+        session_management::archive_workspace_sessions_core(
+            &self.workspaces,
+            &self.sessions,
+            self.storage_path.as_path(),
+            workspace_id,
+            session_ids,
+        )
+        .await
+    }
+
+    pub(super) async fn unarchive_workspace_sessions(
+        &self,
+        workspace_id: String,
+        session_ids: Vec<String>,
+    ) -> Result<session_management::WorkspaceSessionBatchMutationResponse, String> {
+        session_management::unarchive_workspace_sessions_core(
+            &self.workspaces,
+            self.storage_path.as_path(),
+            workspace_id,
+            session_ids,
+        )
+        .await
+    }
+
+    pub(super) async fn delete_workspace_sessions(
+        &self,
+        workspace_id: String,
+        session_ids: Vec<String>,
+    ) -> Result<session_management::WorkspaceSessionBatchMutationResponse, String> {
+        session_management::delete_workspace_sessions_core(
+            &self.workspaces,
+            &self.sessions,
+            &self.engine_manager,
+            self.storage_path.as_path(),
+            workspace_id,
+            session_ids,
+        )
+        .await
     }
 
     pub(super) async fn list_thread_titles(

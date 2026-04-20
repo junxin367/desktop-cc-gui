@@ -16,6 +16,7 @@ vi.mock("../../../services/tauri", () => ({
   rewindCodexThread: vi.fn(),
   listClaudeSessions: vi.fn(),
   listGeminiSessions: vi.fn(),
+  listWorkspaceSessions: vi.fn(),
   getOpenCodeSessionList: vi.fn(),
   loadClaudeSession: vi.fn(),
   loadGeminiSession: vi.fn(),
@@ -64,6 +65,11 @@ describe("useThreadActions rewind", () => {
     vi.clearAllMocks();
     vi.mocked(tauri.listThreadTitles).mockResolvedValue({});
     vi.mocked(tauri.listGeminiSessions).mockResolvedValue([]);
+    vi.mocked(tauri.listWorkspaceSessions).mockResolvedValue({
+      data: [],
+      nextCursor: null,
+      partialSource: null,
+    });
     vi.mocked(tauri.getOpenCodeSessionList).mockResolvedValue([]);
     vi.mocked(tauri.renameThreadTitleKey).mockResolvedValue(undefined);
     vi.mocked(tauri.setThreadTitle).mockResolvedValue("title");

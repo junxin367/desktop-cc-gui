@@ -176,7 +176,7 @@ fn upsert_feature_flag(contents: &str, key: &str, enabled: bool) -> String {
     }
 
     let mut updated = lines.join("\n");
-    if contents.ends_with('\n') || updated.is_empty() {
+    if !updated.is_empty() && !updated.ends_with('\n') {
         updated.push('\n');
     }
     updated

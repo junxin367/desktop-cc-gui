@@ -170,6 +170,47 @@ type InlineNoticeState =
       message: string;
     }
   | null;
+
+type ExperimentalToggleRowProps = {
+  title: string;
+  description: string;
+  markerLabel: string;
+  markerTone: "success" | "info" | "warning";
+  markerDetail: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  highlighted?: boolean;
+};
+
+function ExperimentalToggleRow({
+  title,
+  description,
+  markerLabel,
+  markerTone,
+  markerDetail,
+  checked,
+  onCheckedChange,
+  highlighted = false,
+}: ExperimentalToggleRowProps) {
+  return (
+    <div className={`settings-toggle-row${highlighted ? " is-highlighted" : ""}`}>
+      <div>
+        <div className="settings-toggle-title flex items-center gap-2">
+          <span>{title}</span>
+          <Badge variant={markerTone} size="sm">
+            {markerLabel}
+          </Badge>
+        </div>
+        <div className="settings-toggle-subtitle">
+          {description}
+        </div>
+        <div className="settings-help">{markerDetail}</div>
+      </div>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
 export type SettingsViewProps = {
   workspaceGroups: WorkspaceGroup[];
   groupedWorkspaces: Array<{
@@ -2627,63 +2668,49 @@ export function SettingsView({
                 {openConfigError && (
                   <div className="settings-help">{openConfigError}</div>
                 )}
-                <div
-                  className={`settings-toggle-row${
-                    highlightedRow === "experimental-collaboration-modes"
-                      ? " is-highlighted"
-                      : ""
-                  }`}
-                >
-                  <div>
-                    <div className="settings-toggle-title">{t("settings.collaborationModes")}</div>
-                    <div className="settings-toggle-subtitle">
-                      {t("settings.collaborationModesDesc")}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={appSettings.experimentalCollaborationModesEnabled}
-                    onCheckedChange={(checked) =>
-                      void onUpdateAppSettings({
-                        ...appSettings,
-                        experimentalCollaborationModesEnabled: checked,
-                      })
-                    }
-                  />
-                </div>
-                <div className="settings-toggle-row">
-                  <div>
-                    <div className="settings-toggle-title">{t("settings.backgroundTerminal")}</div>
-                    <div className="settings-toggle-subtitle">
-                      {t("settings.backgroundTerminalDesc")}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={appSettings.experimentalUnifiedExecEnabled}
-                    onCheckedChange={(checked) =>
-                      void onUpdateAppSettings({
-                        ...appSettings,
-                        experimentalUnifiedExecEnabled: checked,
-                      })
-                    }
-                  />
-                </div>
-                <div className="settings-toggle-row">
-                  <div>
-                    <div className="settings-toggle-title">{t("settings.steerMode")}</div>
-                    <div className="settings-toggle-subtitle">
-                      {t("settings.steerModeDesc")}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={appSettings.experimentalSteerEnabled}
-                    onCheckedChange={(checked) =>
-                      void onUpdateAppSettings({
-                        ...appSettings,
-                        experimentalSteerEnabled: checked,
-                      })
-                    }
-                  />
-                </div>
+                <ExperimentalToggleRow
+                  title={t("settings.collaborationModes")}
+                  description={t("settings.collaborationModesDesc")}
+                  markerLabel={t("settings.experimentalBadgeRecommended")}
+                  markerTone="success"
+                  markerDetail={t("settings.collaborationModesMarkerDesc")}
+                  highlighted={highlightedRow === "experimental-collaboration-modes"}
+                  checked={appSettings.experimentalCollaborationModesEnabled}
+                  onCheckedChange={(checked) =>
+                    void onUpdateAppSettings({
+                      ...appSettings,
+                      experimentalCollaborationModesEnabled: checked,
+                    })
+                  }
+                />
+                <ExperimentalToggleRow
+                  title={t("settings.backgroundTerminal")}
+                  description={t("settings.backgroundTerminalDesc")}
+                  markerLabel={t("settings.experimentalBadgeOfficial")}
+                  markerTone="info"
+                  markerDetail={t("settings.backgroundTerminalMarkerDesc")}
+                  checked={appSettings.experimentalUnifiedExecEnabled}
+                  onCheckedChange={(checked) =>
+                    void onUpdateAppSettings({
+                      ...appSettings,
+                      experimentalUnifiedExecEnabled: checked,
+                    })
+                  }
+                />
+                <ExperimentalToggleRow
+                  title={t("settings.steerMode")}
+                  description={t("settings.steerModeDesc")}
+                  markerLabel={t("settings.experimentalBadgePreview")}
+                  markerTone="warning"
+                  markerDetail={t("settings.steerModeMarkerDesc")}
+                  checked={appSettings.experimentalSteerEnabled}
+                  onCheckedChange={(checked) =>
+                    void onUpdateAppSettings({
+                      ...appSettings,
+                      experimentalSteerEnabled: checked,
+                    })
+                  }
+                />
               </section>
             )}
           </ScrollArea>

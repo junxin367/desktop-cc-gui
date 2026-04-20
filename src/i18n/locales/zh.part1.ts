@@ -1376,12 +1376,18 @@ const zhPart1 = {
     experimentalWarning2: "协作模式与引导模式只保存在桌面端本地设置中。",
     configFile: "配置文件",
     configFileDesc: "在{{fileManager}}中打开官方 Codex 配置。",
+    experimentalBadgeRecommended: "建议开启",
+    experimentalBadgeOfficial: "官方配置",
+    experimentalBadgePreview: "预览",
     collaborationModes: "协作模式",
     collaborationModesDesc: "开启后：输入框可切换 Code / Plan；Plan 下支持交互提问卡片。",
+    collaborationModesMarkerDesc: "主链路已接入，默认设置也会启用它；如果你想用 Plan 模式，这个建议保持开启。",
     backgroundTerminal: "后台终端",
     backgroundTerminalDesc: "开启后：同步 official unified_exec，让长时间命令可在后台持续运行。",
+    backgroundTerminalMarkerDesc: "这是唯一会同步到官方 CODEX_HOME/config.toml 的实验项，适合确实需要后台长命令时按需开启。",
     steerMode: "引导模式",
     steerModeDesc: "开启后：可在运行中继续发消息，系统会自动排队处理。",
+    steerModeMarkerDesc: "已接入发送链路，但当前更适合熟悉运行时行为后再开启；默认建议先关闭观察。",
 
     // 错误消息
     unableToOpenConfig: "无法打开配置。",

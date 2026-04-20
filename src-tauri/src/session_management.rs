@@ -208,8 +208,14 @@ pub(crate) async fn list_global_codex_sessions(
     limit: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<WorkspaceSessionCatalogPage, String> {
-    list_global_codex_sessions_core(&state.workspaces, state.storage_path.as_path(), query, cursor, limit)
-        .await
+    list_global_codex_sessions_core(
+        &state.workspaces,
+        state.storage_path.as_path(),
+        query,
+        cursor,
+        limit,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -295,7 +301,9 @@ pub(crate) async fn list_workspace_sessions_core(
     let mut partial_sources = Vec::new();
     let mut entries = Vec::new();
 
-    let gemini_config = engine_manager.get_engine_config(engine::EngineType::Gemini).await;
+    let gemini_config = engine_manager
+        .get_engine_config(engine::EngineType::Gemini)
+        .await;
     for workspace in &workspace_scope {
         let owner_workspace_id = workspace.id.clone();
         let owner_workspace_path = PathBuf::from(&workspace.path);
@@ -326,7 +334,9 @@ pub(crate) async fn list_workspace_sessions_core(
                         workspace_id: owner_workspace_id.clone(),
                         workspace_label: Some(workspace.name.clone()),
                         engine: "codex".to_string(),
-                        title: summary.summary.unwrap_or_else(|| "Codex Session".to_string()),
+                        title: summary
+                            .summary
+                            .unwrap_or_else(|| "Codex Session".to_string()),
                         updated_at: summary.timestamp.max(0),
                         archived_at,
                         thread_kind: "native".to_string(),
@@ -334,7 +344,11 @@ pub(crate) async fn list_workspace_sessions_core(
                         source_label,
                         size_bytes: summary.file_size_bytes,
                         cwd: summary.cwd,
-                        attribution_status: Some(SessionCatalogAttributionStatus::StrictMatch.as_str().to_string()),
+                        attribution_status: Some(
+                            SessionCatalogAttributionStatus::StrictMatch
+                                .as_str()
+                                .to_string(),
+                        ),
                         attribution_reason: None,
                         attribution_confidence: None,
                         matched_workspace_id: Some(owner_workspace_id.clone()),
@@ -373,7 +387,11 @@ pub(crate) async fn list_workspace_sessions_core(
                         source_label: None,
                         size_bytes: session.file_size_bytes,
                         cwd: None,
-                        attribution_status: Some(SessionCatalogAttributionStatus::StrictMatch.as_str().to_string()),
+                        attribution_status: Some(
+                            SessionCatalogAttributionStatus::StrictMatch
+                                .as_str()
+                                .to_string(),
+                        ),
                         attribution_reason: None,
                         attribution_confidence: None,
                         matched_workspace_id: Some(owner_workspace_id.clone()),
@@ -394,7 +412,9 @@ pub(crate) async fn list_workspace_sessions_core(
         match engine::gemini_history::list_gemini_sessions(
             &owner_workspace_path,
             None,
-            gemini_config.as_ref().and_then(|item| item.home_dir.as_deref()),
+            gemini_config
+                .as_ref()
+                .and_then(|item| item.home_dir.as_deref()),
         )
         .await
         {
@@ -418,7 +438,11 @@ pub(crate) async fn list_workspace_sessions_core(
                         source_label: None,
                         size_bytes: session.file_size_bytes,
                         cwd: None,
-                        attribution_status: Some(SessionCatalogAttributionStatus::StrictMatch.as_str().to_string()),
+                        attribution_status: Some(
+                            SessionCatalogAttributionStatus::StrictMatch
+                                .as_str()
+                                .to_string(),
+                        ),
                         attribution_reason: None,
                         attribution_confidence: None,
                         matched_workspace_id: Some(owner_workspace_id.clone()),
@@ -463,7 +487,11 @@ pub(crate) async fn list_workspace_sessions_core(
                         source_label: None,
                         size_bytes: None,
                         cwd: None,
-                        attribution_status: Some(SessionCatalogAttributionStatus::StrictMatch.as_str().to_string()),
+                        attribution_status: Some(
+                            SessionCatalogAttributionStatus::StrictMatch
+                                .as_str()
+                                .to_string(),
+                        ),
                         attribution_reason: None,
                         attribution_confidence: None,
                         matched_workspace_id: Some(owner_workspace_id.clone()),
@@ -654,7 +682,11 @@ pub(crate) async fn unarchive_workspace_sessions_core(
     let mut results = Vec::new();
 
     for session_id in normalize_session_ids(session_ids)? {
-        if metadata.archived_at_by_session_id.remove(&session_id).is_some() {
+        if metadata
+            .archived_at_by_session_id
+            .remove(&session_id)
+            .is_some()
+        {
             results.push(batch_success(session_id, None));
         } else {
             results.push(batch_error(
@@ -696,7 +728,8 @@ pub(crate) async fn delete_workspace_sessions_core(
         }
     }
 
-    let mut results_by_session_id: HashMap<String, WorkspaceSessionBatchMutationResult> = HashMap::new();
+    let mut results_by_session_id: HashMap<String, WorkspaceSessionBatchMutationResult> =
+        HashMap::new();
 
     if !codex_session_ids.is_empty() {
         let raw_ids: Vec<String> = codex_session_ids
@@ -860,11 +893,7 @@ fn batch_success(
     }
 }
 
-fn batch_error(
-    session_id: String,
-    code: &str,
-    error: &str,
-) -> WorkspaceSessionBatchMutationResult {
+fn batch_error(session_id: String, code: &str, error: &str) -> WorkspaceSessionBatchMutationResult {
     WorkspaceSessionBatchMutationResult {
         session_id,
         ok: false,
@@ -912,7 +941,10 @@ async fn workspace_path_for_id(
 }
 
 fn build_catalog_entry_dedupe_key(entry: &WorkspaceSessionCatalogEntry) -> String {
-    format!("{}::{}::{}", entry.engine, entry.workspace_id, entry.session_id)
+    format!(
+        "{}::{}::{}",
+        entry.engine, entry.workspace_id, entry.session_id
+    )
 }
 
 fn should_replace_global_entry(
@@ -995,7 +1027,12 @@ fn write_catalog_metadata(
 }
 
 fn parse_status_filter(value: Option<&str>) -> SessionCatalogStatusFilter {
-    match value.map(str::trim).unwrap_or("").to_ascii_lowercase().as_str() {
+    match value
+        .map(str::trim)
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "archived" => SessionCatalogStatusFilter::Archived,
         "all" => SessionCatalogStatusFilter::All,
         _ => SessionCatalogStatusFilter::Active,
@@ -1070,8 +1107,10 @@ fn build_global_codex_catalog_entry(
     workspaces_snapshot: &HashMap<String, WorkspaceEntry>,
     metadata_by_workspace_id: &HashMap<String, WorkspaceSessionCatalogMetadata>,
 ) -> WorkspaceSessionCatalogEntry {
-    let owner_workspace =
-        local_usage::find_best_matching_workspace_for_cwd(workspaces_snapshot, summary.cwd.as_deref());
+    let owner_workspace = local_usage::find_best_matching_workspace_for_cwd(
+        workspaces_snapshot,
+        summary.cwd.as_deref(),
+    );
     let workspace_id = owner_workspace
         .map(|workspace| workspace.id.clone())
         .unwrap_or_else(|| SESSION_CATALOG_UNASSIGNED_WORKSPACE_ID.to_string());
@@ -1084,9 +1123,17 @@ fn build_global_codex_catalog_entry(
     });
     let source_label = build_source_label(summary.source.as_deref(), summary.provider.as_deref());
     let attribution_status = if owner_workspace.is_some() {
-        Some(SessionCatalogAttributionStatus::StrictMatch.as_str().to_string())
+        Some(
+            SessionCatalogAttributionStatus::StrictMatch
+                .as_str()
+                .to_string(),
+        )
     } else {
-        Some(SessionCatalogAttributionStatus::Unassigned.as_str().to_string())
+        Some(
+            SessionCatalogAttributionStatus::Unassigned
+                .as_str()
+                .to_string(),
+        )
     };
 
     WorkspaceSessionCatalogEntry {
@@ -1120,8 +1167,9 @@ fn apply_attribution_to_entry(
 ) -> WorkspaceSessionCatalogEntry {
     entry.attribution_status = Some(attribution.status.as_str().to_string());
     entry.attribution_reason = attribution.reason.map(|reason| reason.as_str().to_string());
-    entry.attribution_confidence =
-        attribution.confidence.map(|confidence| confidence.as_str().to_string());
+    entry.attribution_confidence = attribution
+        .confidence
+        .map(|confidence| confidence.as_str().to_string());
     entry.matched_workspace_id = attribution.matched_workspace_id;
     entry.matched_workspace_label = attribution.matched_workspace_label;
     entry
@@ -1287,7 +1335,9 @@ fn build_catalog_page(
             }
             match status_filter {
                 SessionCatalogStatusFilter::Active if entry.archived_at.is_some() => return false,
-                SessionCatalogStatusFilter::Archived if entry.archived_at.is_none() => return false,
+                SessionCatalogStatusFilter::Archived if entry.archived_at.is_none() => {
+                    return false
+                }
                 _ => {}
             }
             if let Some(keyword) = keyword.as_deref() {
@@ -1309,12 +1359,8 @@ fn build_catalog_page(
         .unwrap_or(SESSION_CATALOG_DEFAULT_LIMIT as u32)
         .clamp(1, SESSION_CATALOG_MAX_LIMIT as u32) as usize;
     let offset = parse_catalog_cursor(cursor.as_deref());
-    let data: Vec<WorkspaceSessionCatalogEntry> = filtered
-        .iter()
-        .skip(offset)
-        .take(limit)
-        .cloned()
-        .collect();
+    let data: Vec<WorkspaceSessionCatalogEntry> =
+        filtered.iter().skip(offset).take(limit).cloned().collect();
     let next_cursor = if offset + data.len() < filtered.len() {
         Some(build_catalog_cursor(offset + data.len()))
     } else {
@@ -1438,7 +1484,10 @@ mod tests {
 
         write_catalog_metadata(&storage_path, "ws-1", &metadata).expect("write metadata");
         let loaded = read_catalog_metadata(&storage_path, "ws-1").expect("read metadata");
-        assert_eq!(loaded.archived_at_by_session_id.get("claude:1").copied(), Some(42));
+        assert_eq!(
+            loaded.archived_at_by_session_id.get("claude:1").copied(),
+            Some(42)
+        );
 
         std::fs::remove_dir_all(base).ok();
     }
@@ -1469,13 +1518,7 @@ mod tests {
             WorkspaceKind::Worktree,
             Some("main"),
         );
-        let unrelated = workspace_entry(
-            "other",
-            "Other",
-            "/tmp/other",
-            WorkspaceKind::Main,
-            None,
-        );
+        let unrelated = workspace_entry("other", "Other", "/tmp/other", WorkspaceKind::Main, None);
         let workspaces = Mutex::new(HashMap::from([
             (main.id.clone(), main),
             (worktree_b.id.clone(), worktree_b),
@@ -1592,9 +1635,8 @@ mod tests {
         ]);
         let entry = catalog_entry("codex:1", "worktree-b", Some("B"), Some("/repo/worktree-b"));
 
-        let attribution =
-            infer_related_attribution_for_workspace(&workspaces, &worktree_a, &entry)
-                .expect("related attribution");
+        let attribution = infer_related_attribution_for_workspace(&workspaces, &worktree_a, &entry)
+            .expect("related attribution");
 
         assert_eq!(
             attribution.status,
@@ -1626,9 +1668,8 @@ mod tests {
             Some("/repo/tools"),
         );
 
-        let attribution =
-            infer_related_attribution_for_workspace(&workspaces, &main, &entry)
-                .expect("git root attribution");
+        let attribution = infer_related_attribution_for_workspace(&workspaces, &main, &entry)
+            .expect("git root attribution");
 
         assert_eq!(
             attribution.reason,

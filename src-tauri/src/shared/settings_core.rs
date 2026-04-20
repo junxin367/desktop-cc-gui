@@ -49,8 +49,9 @@ fn validate_ui_scale(scale: f64) -> Result<(), String> {
     Ok(())
 }
 
-fn sync_codex_config_flags(settings: &AppSettings) {
-    let _ = codex_config::write_unified_exec_enabled(settings.experimental_unified_exec_enabled);
+fn sync_codex_config_flags(settings: &AppSettings) -> Result<(), String> {
+    codex_config::write_unified_exec_enabled(settings.experimental_unified_exec_enabled)
+        .map_err(|error| format!("failed to sync Codex config feature flags: {error}"))
 }
 
 pub(crate) async fn get_app_settings_core(app_settings: &Mutex<AppSettings>) -> AppSettings {
@@ -78,7 +79,7 @@ pub(crate) async fn update_app_settings_core(
     normalized.layout_mode = sanitize_layout_mode(&normalized.layout_mode);
     validate_ui_scale(normalized.ui_scale)?;
     proxy_core::validate_proxy_settings(&normalized)?;
-    sync_codex_config_flags(&normalized);
+    sync_codex_config_flags(&normalized)?;
     write_settings(settings_path, &normalized)?;
     proxy_core::apply_app_proxy_settings(&normalized)?;
     let mut current = app_settings.lock().await;
@@ -93,7 +94,7 @@ pub(crate) async fn restore_app_settings_core(
 ) -> Result<(), String> {
     let mut normalized = previous.clone();
     normalized.experimental_collab_enabled = false;
-    sync_codex_config_flags(&normalized);
+    sync_codex_config_flags(&normalized)?;
     write_settings(settings_path, &normalized)?;
     proxy_core::apply_app_proxy_settings(&normalized)?;
     let mut current = app_settings.lock().await;
@@ -145,8 +146,8 @@ mod tests {
     use std::sync::Mutex as StdMutex;
 
     use super::{
-        get_app_settings_core, sanitize_canvas_width_mode, sanitize_layout_mode,
-        sanitize_ui_scale, update_app_settings_core, validate_ui_scale, UI_SCALE_DEFAULT,
+        get_app_settings_core, sanitize_canvas_width_mode, sanitize_layout_mode, sanitize_ui_scale,
+        update_app_settings_core, validate_ui_scale, UI_SCALE_DEFAULT,
     };
     use crate::types::AppSettings;
     use tokio::sync::Mutex;
@@ -229,10 +230,8 @@ mod tests {
     #[tokio::test]
     async fn get_app_settings_core_ignores_private_external_feature_flags() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let codex_home = env::temp_dir().join(format!(
-            "mossx-settings-core-{}",
-            std::process::id()
-        ));
+        let codex_home =
+            env::temp_dir().join(format!("mossx-settings-core-{}", std::process::id()));
         let _ = fs::remove_dir_all(&codex_home);
         fs::create_dir_all(&codex_home).unwrap();
         fs::write(
@@ -261,10 +260,8 @@ mod tests {
     #[tokio::test]
     async fn update_app_settings_core_only_syncs_unified_exec_to_external_config() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let test_root = env::temp_dir().join(format!(
-            "mossx-settings-core-update-{}",
-            std::process::id()
-        ));
+        let test_root =
+            env::temp_dir().join(format!("mossx-settings-core-update-{}", std::process::id()));
         let _ = fs::remove_dir_all(&test_root);
         fs::create_dir_all(&test_root).unwrap();
         let codex_home = test_root.join("codex-home");
@@ -279,10 +276,13 @@ mod tests {
         settings.codex_mode_enforcement_enabled = false;
         settings.experimental_unified_exec_enabled = true;
 
-        let result =
-            update_app_settings_core(settings, &Mutex::new(AppSettings::default()), &settings_path)
-                .await
-                .unwrap();
+        let result = update_app_settings_core(
+            settings,
+            &Mutex::new(AppSettings::default()),
+            &settings_path,
+        )
+        .await
+        .unwrap();
         let config_contents = fs::read_to_string(codex_home.join("config.toml")).unwrap();
 
         assert!(!result.experimental_collab_enabled);
@@ -291,6 +291,36 @@ mod tests {
         assert!(!config_contents.contains("collaboration_modes ="));
         assert!(!config_contents.contains("steer ="));
         assert!(!config_contents.contains("collaboration_mode_enforcement ="));
+        let _ = fs::remove_dir_all(&test_root);
+    }
+
+    #[tokio::test]
+    async fn update_app_settings_core_surfaces_codex_config_sync_failures() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let test_root = env::temp_dir().join(format!(
+            "mossx-settings-core-invalid-codex-home-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&test_root);
+        fs::create_dir_all(&test_root).unwrap();
+        let invalid_codex_home = test_root.join("codex-home-file");
+        fs::write(&invalid_codex_home, "not a directory").unwrap();
+        let settings_path = test_root.join("settings.json");
+        let _codex_home_guard = CodexHomeTestGuard::new(&invalid_codex_home);
+
+        let mut settings = AppSettings::default();
+        settings.experimental_unified_exec_enabled = true;
+
+        let error = update_app_settings_core(
+            settings,
+            &Mutex::new(AppSettings::default()),
+            &settings_path,
+        )
+        .await
+        .expect_err("invalid CODEX_HOME should fail");
+
+        assert!(error.contains("failed to sync Codex config feature flags"));
+        assert!(!settings_path.exists());
         let _ = fs::remove_dir_all(&test_root);
     }
 }

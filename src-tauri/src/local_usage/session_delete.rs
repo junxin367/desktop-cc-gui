@@ -284,7 +284,11 @@ fn delete_codex_session_files_batch(
         results.push(CodexSessionDeleteBatchResult {
             session_id: normalized_session_id.to_string(),
             deleted: delete_error.is_none() && deleted_count > 0,
-            deleted_count: if delete_error.is_none() { deleted_count } else { 0 },
+            deleted_count: if delete_error.is_none() {
+                deleted_count
+            } else {
+                0
+            },
             error: delete_error,
         });
     }

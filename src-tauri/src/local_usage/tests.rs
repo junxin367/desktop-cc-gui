@@ -317,6 +317,19 @@ fn merge_codex_session_roots_keeps_override_and_default_roots() {
     assert!(roots.contains(&default_home.join("archived_sessions")));
 }
 
+#[cfg(windows)]
+#[test]
+fn merge_codex_session_roots_dedupes_case_and_separator_variants() {
+    let override_home = PathBuf::from(r"C:\Users\Chen\.codex");
+    let default_home = PathBuf::from(r"c:/users/chen/.codex");
+
+    let roots = merge_codex_session_roots(Some(override_home.clone()), Some(default_home));
+
+    assert_eq!(roots.len(), 2);
+    assert!(roots.contains(&override_home.join("sessions")));
+    assert!(roots.contains(&override_home.join("archived_sessions")));
+}
+
 #[cfg(not(windows))]
 #[test]
 fn resolve_workspace_codex_home_for_path_matches_private_prefix_variant() {

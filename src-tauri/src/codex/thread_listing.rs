@@ -163,7 +163,9 @@ fn build_local_codex_thread_entry(
     })
 }
 
-pub(crate) fn codex_session_identifier_candidates(session: &LocalUsageSessionSummary) -> Vec<String> {
+pub(crate) fn codex_session_identifier_candidates(
+    session: &LocalUsageSessionSummary,
+) -> Vec<String> {
     let mut ids = Vec::new();
     let canonical = session.session_id.trim();
     if !canonical.is_empty() {

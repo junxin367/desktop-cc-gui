@@ -412,12 +412,21 @@ vi.mock("react-i18next", () => ({
         "settings.fileManagerFinder": "Finder",
         "settings.fileManagerExplorer": "Explorer",
         "settings.fileManagerGeneric": "File Manager",
+        "settings.experimentalBadgeRecommended": "Recommended",
+        "settings.experimentalBadgeOfficial": "Official config",
+        "settings.experimentalBadgePreview": "Preview",
         "settings.collaborationModes": "Collaboration modes",
         "settings.collaborationModesDesc": "Enable collaboration mode presets (Code, Plan).",
+        "settings.collaborationModesMarkerDesc":
+          "This already feeds the main interaction path and is enabled by default; keep it on if you want Plan mode.",
         "settings.backgroundTerminal": "Background terminal",
         "settings.backgroundTerminalDesc": "Enable the official unified_exec passthrough for long-running terminal commands.",
+        "settings.backgroundTerminalMarkerDesc":
+          "This is the only experimental item that syncs to the official CODEX_HOME/config.toml. Turn it on only when you need long-running background commands.",
         "settings.steerMode": "Steer mode",
         "settings.steerModeDesc": "Send messages immediately. Use Tab to queue while a run is active.",
+        "settings.steerModeMarkerDesc":
+          "This is wired into the send/runtime flow, but it is still better suited for users who already understand the runtime behavior. Leave it off first if you're unsure.",
         "chat.contextDualViewLabel": "Dual",
         "chat.contextDualViewTotalTokens": "Total {{tokens}}",
         "chat.contextDualViewEmpty": "No context usage yet",

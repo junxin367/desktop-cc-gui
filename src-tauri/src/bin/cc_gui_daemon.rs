@@ -41,11 +41,13 @@ mod state {
     use crate::engine::EngineManager;
     use crate::runtime::RuntimeManager;
     use crate::types::{AppSettings, WorkspaceEntry};
+    use std::path::PathBuf;
 
     pub(crate) struct AppState {
         pub(crate) workspaces: Mutex<HashMap<String, WorkspaceEntry>>,
         pub(crate) sessions: Mutex<HashMap<String, Arc<WorkspaceSession>>>,
         pub(crate) app_settings: Mutex<AppSettings>,
+        pub(crate) storage_path: PathBuf,
         pub(crate) runtime_manager: RuntimeManager,
         pub(crate) engine_manager: EngineManager,
     }
@@ -56,6 +58,8 @@ mod local_usage;
 mod rules;
 #[path = "../runtime/mod.rs"]
 mod runtime;
+#[path = "../session_management.rs"]
+mod session_management;
 #[path = "../shared/mod.rs"]
 mod shared;
 #[path = "../storage.rs"]
@@ -2459,6 +2463,83 @@ async fn handle_rpc_request(
             let workspace_path = parse_string(&params, "workspacePath")?;
             let limit = parse_optional_u32(&params, "limit").map(|value| value as usize);
             state.list_gemini_sessions(workspace_path, limit).await
+        }
+        "list_workspace_sessions" => {
+            let workspace_id = parse_string(&params, "workspaceId")?;
+            let query = parse_optional_value(&params, "query")
+                .filter(|value| !value.is_null())
+                .map(|value| {
+                    serde_json::from_value::<session_management::WorkspaceSessionCatalogQuery>(
+                        value,
+                    )
+                    .map_err(|err| format!("invalid `query`: {err}"))
+                })
+                .transpose()?;
+            let cursor = parse_optional_string(&params, "cursor");
+            let limit = parse_optional_u32(&params, "limit");
+            let page = state
+                .list_workspace_sessions(workspace_id, query, cursor, limit)
+                .await?;
+            serde_json::to_value(page).map_err(|err| err.to_string())
+        }
+        "list_global_codex_sessions" => {
+            let query = parse_optional_value(&params, "query")
+                .filter(|value| !value.is_null())
+                .map(|value| {
+                    serde_json::from_value::<session_management::WorkspaceSessionCatalogQuery>(
+                        value,
+                    )
+                    .map_err(|err| format!("invalid `query`: {err}"))
+                })
+                .transpose()?;
+            let cursor = parse_optional_string(&params, "cursor");
+            let limit = parse_optional_u32(&params, "limit");
+            let page = state
+                .list_global_codex_sessions(query, cursor, limit)
+                .await?;
+            serde_json::to_value(page).map_err(|err| err.to_string())
+        }
+        "list_project_related_codex_sessions" => {
+            let workspace_id = parse_string(&params, "workspaceId")?;
+            let query = parse_optional_value(&params, "query")
+                .filter(|value| !value.is_null())
+                .map(|value| {
+                    serde_json::from_value::<session_management::WorkspaceSessionCatalogQuery>(
+                        value,
+                    )
+                    .map_err(|err| format!("invalid `query`: {err}"))
+                })
+                .transpose()?;
+            let cursor = parse_optional_string(&params, "cursor");
+            let limit = parse_optional_u32(&params, "limit");
+            let page = state
+                .list_project_related_codex_sessions(workspace_id, query, cursor, limit)
+                .await?;
+            serde_json::to_value(page).map_err(|err| err.to_string())
+        }
+        "archive_workspace_sessions" => {
+            let workspace_id = parse_string(&params, "workspaceId")?;
+            let session_ids = parse_string_array(&params, "sessionIds")?;
+            let response = state
+                .archive_workspace_sessions(workspace_id, session_ids)
+                .await?;
+            serde_json::to_value(response).map_err(|err| err.to_string())
+        }
+        "unarchive_workspace_sessions" => {
+            let workspace_id = parse_string(&params, "workspaceId")?;
+            let session_ids = parse_string_array(&params, "sessionIds")?;
+            let response = state
+                .unarchive_workspace_sessions(workspace_id, session_ids)
+                .await?;
+            serde_json::to_value(response).map_err(|err| err.to_string())
+        }
+        "delete_workspace_sessions" => {
+            let workspace_id = parse_string(&params, "workspaceId")?;
+            let session_ids = parse_string_array(&params, "sessionIds")?;
+            let response = state
+                .delete_workspace_sessions(workspace_id, session_ids)
+                .await?;
+            serde_json::to_value(response).map_err(|err| err.to_string())
         }
         "load_gemini_session" => {
             let workspace_path = parse_string(&params, "workspacePath")?;

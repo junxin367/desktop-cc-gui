@@ -37,6 +37,12 @@ export type WorkspaceSessionCatalogMutationResponse = {
   results: WorkspaceSessionCatalogMutationResult[];
 };
 
+type WorkspaceSessionCatalogPageLike = {
+  data?: WorkspaceSessionCatalogEntry[] | null;
+  nextCursor?: string | null;
+  partialSource?: string | null;
+} | null;
+
 type UseWorkspaceSessionCatalogOptions = {
   mode: WorkspaceSessionCatalogMode;
   workspaceId: string | null;
@@ -83,6 +89,20 @@ function toQuery(filters: WorkspaceSessionCatalogFilters): WorkspaceSessionCatal
     keyword: filters.keyword.trim() || null,
     engine: filters.engine.trim() || null,
     status: filters.status,
+  };
+}
+
+function normalizeCatalogPage(
+  response: WorkspaceSessionCatalogPageLike,
+): {
+  data: WorkspaceSessionCatalogEntry[];
+  nextCursor: string | null;
+  partialSource: string | null;
+} {
+  return {
+    data: Array.isArray(response?.data) ? response.data : [],
+    nextCursor: response?.nextCursor ?? null,
+    partialSource: response?.partialSource ?? null,
   };
 }
 
@@ -181,11 +201,12 @@ export function useWorkspaceSessionCatalog({
         if (requestSeqRef.current !== requestId) {
           return;
         }
+        const page = normalizeCatalogPage(response);
         setEntries((current) =>
-          pageMode === "append" ? [...current, ...response.data] : response.data,
+          pageMode === "append" ? [...current, ...page.data] : page.data,
         );
-        setNextCursor(response.nextCursor ?? null);
-        setPartialSource(response.partialSource ?? null);
+        setNextCursor(page.nextCursor);
+        setPartialSource(page.partialSource);
         setError(null);
       } catch (incomingError) {
         if (requestSeqRef.current !== requestId) {
