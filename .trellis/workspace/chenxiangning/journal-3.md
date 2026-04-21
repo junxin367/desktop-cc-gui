@@ -965,3 +965,61 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 85: 修复 Codex stale thread binding recovery 连续性
+
+**Date**: 2026-04-21
+**Task**: 修复 Codex stale thread binding recovery 连续性
+**Branch**: `feature/f-v0.4.6`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标
+- 修复 Codex stale thread binding recovery 的连续性问题，覆盖 stale thread alias 持久化、canonical restore/reopen、recover-only UI 以及手动 runtime recovery 语义。
+
+主要改动
+- 新增并持久化 thread alias 映射，读取与写入时统一做 sanitize、链式压平与循环过滤。
+- 在 useThreadStorage/useThreads/useThreadActions 中统一 canonicalize active threadId，并补充 stale thread replacement 选择与恢复路径。
+- 调整 RuntimeReconnectCard，在具备安全 rebind 能力时支持 recover-only 动作，不再强制 resend。
+- 后端调整 Codex ensure/reconnect 恢复模式，用户显式恢复不再继承 automatic quarantine；为 thread/start 增加 thread-create-pending 前台保护。
+- 同步 OpenSpec/Trellis 任务与 spec 文档，补充连续性 contract。
+
+涉及模块
+- frontend threads/messages/settings
+- backend runtime/codex/storage/types
+- openspec 与 .trellis spec/task
+
+验证结果
+- 通过：Vitest 定向回归（threadStorage/useThreadActions/helpers/runtime reconnect）
+- 通过：cargo test 定向回归（leased runtime、thread-create-pending eviction guard）
+- 通过：npm run typecheck
+- 通过：npm run lint（存在仓库既有 react-hooks warnings，无新增 error）
+- 通过：npm run check:large-files（确认现有 3 个超阈值文件，未继续放大）
+
+后续事项
+- 按 large-file governance 继续拆分 src-tauri/src/runtime/mod.rs、useThreadActions.ts、useThreadActions.test.tsx。
+- 视需要继续清理仓库既有 react-hooks/exhaustive-deps warnings。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2628c4119753547df4461fb16db02dfa0c02bfbb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
