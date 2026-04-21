@@ -373,6 +373,7 @@ fn engine_observability_uses_tracked_snapshot_fields() {
         active_work_since_ms: Some(1),
         active_work_last_renewed_at_ms: Some(2),
         foreground_work_state: None,
+        foreground_work_source: None,
         foreground_work_thread_id: None,
         foreground_work_turn_id: None,
         foreground_work_since_ms: None,

@@ -25,7 +25,7 @@ use self::mcp_config::{
     list_global_mcp_servers as list_global_mcp_servers_impl, GlobalMcpServerEntry,
 };
 use self::thread_listing::{build_unified_codex_thread_page, resolve_workspace_fallback_model};
-pub(crate) use crate::backend::app_server::WorkspaceSession;
+pub(crate) use crate::backend::app_server::{ResumePendingSource, WorkspaceSession};
 use crate::backend::app_server::{
     build_codex_path_env, check_codex_installation, get_cli_debug_info, probe_codex_app_server,
     resolve_codex_launch_context, spawn_workspace_session as spawn_workspace_session_inner,
@@ -789,6 +789,8 @@ pub(crate) async fn send_user_message(
     collaboration_mode: Option<Value>,
     preferred_language: Option<String>,
     custom_spec_root: Option<String>,
+    resume_source: Option<String>,
+    resume_turn_id: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Value, String> {
@@ -831,6 +833,8 @@ pub(crate) async fn send_user_message(
         payload.insert("accessMode".to_string(), json!(access_mode));
         payload.insert("images".to_string(), json!(images));
         payload.insert("preferredLanguage".to_string(), json!(preferred_language));
+        payload.insert("resumeSource".to_string(), json!(resume_source));
+        payload.insert("resumeTurnId".to_string(), json!(resume_turn_id));
         if let Some(spec_root) = custom_spec_root.clone() {
             if !spec_root.trim().is_empty() {
                 payload.insert("customSpecRoot".to_string(), json!(spec_root));
@@ -878,6 +882,27 @@ pub(crate) async fn send_user_message(
         mode_enforcement_enabled,
     )
     .await?;
+
+    if resume_source.as_deref() == Some("queue-fusion-cutover") {
+        let session = {
+            let sessions = state.sessions.lock().await;
+            sessions.get(&workspace_id).cloned()
+        };
+        if let Some(session) = session {
+            session
+                .start_resume_pending_watch(
+                    app.clone(),
+                    thread_id.clone(),
+                    None,
+                    ResumePendingSource::QueueFusionCutover {
+                        previous_turn_id: resume_turn_id
+                            .map(|value| value.trim().to_string())
+                            .filter(|value| !value.is_empty()),
+                    },
+                )
+                .await;
+        }
+    }
 
     let session = {
         let sessions = state.sessions.lock().await;
@@ -1307,7 +1332,12 @@ pub(crate) async fn respond_to_server_request(
             };
             if let Some(session) = session {
                 session
-                    .start_resume_pending_watch(app, thread_id, normalized_turn_id)
+                    .start_resume_pending_watch(
+                        app,
+                        thread_id,
+                        normalized_turn_id,
+                        ResumePendingSource::UserInputResume,
+                    )
                     .await;
             }
         }

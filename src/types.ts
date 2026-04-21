@@ -314,6 +314,7 @@ export type RuntimePoolRow = {
   activeWorkSinceMs?: number | null;
   activeWorkLastRenewedAtMs?: number | null;
   foregroundWorkState?: "startup-pending" | "resume-pending" | null;
+  foregroundWorkSource?: "user-input-resume" | "queue-fusion-cutover" | null;
   foregroundWorkThreadId?: string | null;
   foregroundWorkTurnId?: string | null;
   foregroundWorkSinceMs?: number | null;
@@ -922,6 +923,8 @@ export type MessageSendOptions = {
   effort?: string | null;
   collaborationMode?: Record<string, unknown> | null;
   accessMode?: AccessMode;
+  resumeSource?: "queue-fusion-cutover" | null;
+  resumeTurnId?: string | null;
   skipOptimisticUserBubble?: boolean;
   suppressUserMessageRender?: boolean;
 };

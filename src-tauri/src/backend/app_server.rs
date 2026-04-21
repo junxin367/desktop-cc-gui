@@ -89,11 +89,74 @@ struct TimedOutRequest {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) enum ResumePendingSource {
+    UserInputResume,
+    QueueFusionCutover { previous_turn_id: Option<String> },
+}
+
+impl ResumePendingSource {
+    fn runtime_source_label(&self) -> &'static str {
+        match self {
+            Self::UserInputResume => "user-input-resume",
+            Self::QueueFusionCutover { .. } => "queue-fusion-cutover",
+        }
+    }
+
+    fn stalled_reason_code(&self) -> &'static str {
+        match self {
+            Self::UserInputResume => "resume_timeout",
+            Self::QueueFusionCutover { .. } => "fusion_resume_timeout",
+        }
+    }
+
+    fn stalled_stage(&self) -> &'static str {
+        match self {
+            Self::UserInputResume => "resume-pending",
+            Self::QueueFusionCutover { .. } => "fusion-resume-pending",
+        }
+    }
+
+    fn stalled_message(&self, timeout_ms: u64) -> String {
+        match self {
+            Self::UserInputResume => format!(
+                "[TURN_STALLED] User input was submitted, but Codex did not resume within {}s. You can continue from the latest visible state.",
+                timeout_ms.div_ceil(1000)
+            ),
+            Self::QueueFusionCutover { .. } => format!(
+                "[TURN_STALLED] Queue fusion switched to a successor run, but Codex did not resume within {}s. You can continue from the latest visible state.",
+                timeout_ms.div_ceil(1000)
+            ),
+        }
+    }
+
+    fn should_clear_on_event(&self, method: Option<&str>, turn_id: Option<&str>) -> bool {
+        match self {
+            Self::UserInputResume => true,
+            Self::QueueFusionCutover { previous_turn_id } => {
+                if !matches!(method, Some("turn/started")) {
+                    return false;
+                }
+                let normalized_turn_id = turn_id.map(str::trim).filter(|value| !value.is_empty());
+                match (previous_turn_id.as_deref(), normalized_turn_id) {
+                    (Some(previous_turn_id), Some(candidate_turn_id)) => {
+                        candidate_turn_id != previous_turn_id
+                    }
+                    (Some(_), None) => false,
+                    (None, Some(_)) => true,
+                    (None, None) => false,
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct ResumePendingTurnState {
     nonce: String,
     turn_id: Option<String>,
     started_at_ms: u64,
     timeout_ms: u64,
+    source: ResumePendingSource,
 }
 
 fn now_millis() -> u64 {
@@ -543,6 +606,7 @@ impl WorkspaceSession {
         &self,
         thread_id: Option<&str>,
         turn_id: Option<&str>,
+        method: Option<&str>,
     ) {
         let Some(thread_id) = thread_id.map(str::trim).filter(|value| !value.is_empty()) else {
             return;
@@ -551,6 +615,9 @@ impl WorkspaceSession {
         let should_remove = resume_pending_turns
             .get(thread_id)
             .map(|state| {
+                if !state.source.should_clear_on_event(method, turn_id) {
+                    return false;
+                }
                 if let Some(expected_turn_id) = state.turn_id.as_deref() {
                     if let Some(candidate_turn_id) = turn_id.map(str::trim) {
                         return candidate_turn_id.is_empty()
@@ -570,6 +637,7 @@ impl WorkspaceSession {
         app: AppHandle,
         thread_id: String,
         turn_id: Option<String>,
+        source: ResumePendingSource,
     ) {
         let normalized_thread_id = thread_id.trim().to_string();
         if normalized_thread_id.is_empty() {
@@ -587,6 +655,7 @@ impl WorkspaceSession {
             turn_id: normalized_turn_id.clone(),
             started_at_ms: now_millis(),
             timeout_ms,
+            source: source.clone(),
         };
         self.resume_pending_turns
             .lock()
@@ -599,6 +668,7 @@ impl WorkspaceSession {
                     "codex",
                     &normalized_thread_id,
                     normalized_turn_id.as_deref(),
+                    source.runtime_source_label(),
                     timeout_ms,
                 )
                 .await;
@@ -618,10 +688,9 @@ impl WorkspaceSession {
             let Some(timed_out_state) = timed_out_state else {
                 return;
             };
-            let message = format!(
-                "[TURN_STALLED] User input was submitted, but Codex did not resume within {}s. You can continue from the latest visible state.",
-                timed_out_state.timeout_ms.div_ceil(1000)
-            );
+            let message = timed_out_state
+                .source
+                .stalled_message(timed_out_state.timeout_ms);
             let _ = app.emit(
                 "app-server-event",
                 AppServerEvent {
@@ -629,8 +698,9 @@ impl WorkspaceSession {
                     message: build_turn_stalled_event(
                         &normalized_thread_id,
                         timed_out_state.turn_id.as_deref(),
-                        "resume_timeout",
-                        "resume-pending",
+                        timed_out_state.source.stalled_reason_code(),
+                        timed_out_state.source.stalled_stage(),
+                        timed_out_state.source.runtime_source_label(),
                         &message,
                         timed_out_state.started_at_ms,
                         timed_out_state.timeout_ms,

@@ -1574,6 +1574,7 @@ export function useThreads({
   );
 
   const {
+    handleFusionStalled,
     interruptTurn,
     sendUserMessage,
     sendUserMessageToThread,
@@ -2161,6 +2162,7 @@ export function useThreads({
     loadOlderThreadsForWorkspace,
     sendUserMessage,
     sendUserMessageToThread,
+    handleFusionStalled,
     startFork,
     startReview,
     startResume,

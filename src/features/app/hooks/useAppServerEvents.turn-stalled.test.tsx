@@ -59,6 +59,7 @@ describe("useAppServerEvents turn stalled", () => {
             turnId: "turn-1",
             reasonCode: "resume_timeout",
             stage: "resume-pending",
+            source: "user-input-resume",
             message: "resume timeout",
             startedAtMs: 123,
             timeoutMs: 45_000,
@@ -71,13 +72,14 @@ describe("useAppServerEvents turn stalled", () => {
       "ws-stalled",
       "thread-1",
       "turn-1",
-      {
+      expect.objectContaining({
         message: "resume timeout",
         reasonCode: "resume_timeout",
         stage: "resume-pending",
+        source: "user-input-resume",
         startedAtMs: 123,
         timeoutMs: 45_000,
-      },
+      }),
     );
 
     await act(async () => {

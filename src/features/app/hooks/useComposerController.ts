@@ -23,6 +23,7 @@ export function useComposerController({
   startThreadForWorkspace,
   sendUserMessage,
   sendUserMessageToThread,
+  handleFusionStalled,
   startFork,
   startReview,
   startResume,
@@ -67,6 +68,10 @@ export function useComposerController({
     images?: string[],
     options?: MessageSendOptions,
   ) => Promise<void>;
+  handleFusionStalled?: (
+    threadId: string,
+    options?: { message?: string | null },
+  ) => void;
   startFork: (text: string) => Promise<void>;
   startReview: (text: string) => Promise<void>;
   startResume: (text: string) => Promise<void>;
@@ -128,6 +133,7 @@ export function useComposerController({
     startThreadForWorkspace,
     sendUserMessage,
     sendUserMessageToThread,
+    handleFusionStalled,
     startFork,
     startReview,
     startResume,

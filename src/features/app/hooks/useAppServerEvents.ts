@@ -99,6 +99,7 @@ type AppServerEventHandlers = {
       message: string;
       reasonCode: string;
       stage: string;
+      source: string;
       startedAtMs: number | null;
       timeoutMs: number | null;
     },
@@ -1144,6 +1145,7 @@ export function useAppServerEvents(
             message: String(params.message ?? ""),
             reasonCode: String(params.reasonCode ?? params.reason_code ?? ""),
             stage: String(params.stage ?? ""),
+            source: String(params.source ?? ""),
             startedAtMs:
               Number.isFinite(rawStartedAtMs) && rawStartedAtMs > 0
                 ? Math.trunc(rawStartedAtMs)

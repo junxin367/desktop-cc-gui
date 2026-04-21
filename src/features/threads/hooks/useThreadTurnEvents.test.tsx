@@ -1228,6 +1228,7 @@ describe("useThreadTurnEvents", () => {
         message: "resume timeout",
         reasonCode: "resume_timeout",
         stage: "resume-pending",
+        source: "user-input-resume",
         startedAtMs: 123,
         timeoutMs: 45_000,
       });

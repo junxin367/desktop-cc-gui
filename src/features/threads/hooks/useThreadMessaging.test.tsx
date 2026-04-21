@@ -1406,7 +1406,7 @@ describe("useThreadMessaging", () => {
     expect(dispatch).toHaveBeenCalledWith({
       type: "addAssistantMessage",
       threadId: "thread-1",
-      text: "已切换到融合回复，内容正在继续生成。",
+      text: "正在切换到融合回复，等待新的接续事件…",
     });
   });
 

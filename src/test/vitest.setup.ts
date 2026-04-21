@@ -56,6 +56,37 @@ vi.mock("react-i18next", () => ({
         "errors.runtimeRecovered": "Runtime recovered.",
         "errors.retryingCreateSessionAfterRecovery":
           "Retrying session creation...",
+        "runtimeNotice.title": "运行时提示",
+        "runtimeNotice.open": "打开运行时提示",
+        "runtimeNotice.minimize": "最小化",
+        "runtimeNotice.clear": "清空",
+        "runtimeNotice.emptyTitle": "暂无运行时提示",
+        "runtimeNotice.emptyDescription": "初始化进度和关键错误会显示在这里",
+        "runtimeNotice.statusIdle": "空闲",
+        "runtimeNotice.statusStreaming": "运行中",
+        "runtimeNotice.statusError": "异常",
+        "runtimeNotice.severityInfo": "提示",
+        "runtimeNotice.severityWarning": "警告",
+        "runtimeNotice.severityError": "错误",
+        "runtimeNotice.bootstrap.start": "正在初始化本地状态...",
+        "runtimeNotice.bootstrap.localStorageMigrationFailed":
+          "本地状态迁移失败，已按降级模式继续启动",
+        "runtimeNotice.bootstrap.ready": "客户端初始化完成",
+        "runtimeNotice.bootstrap.failed": "客户端初始化失败，请刷新后重试",
+        "runtimeNotice.runtime.startupPending":
+          `${String(params?.workspace ?? "")}：Codex runtime 正在连接...`,
+        "runtimeNotice.runtime.resumePending":
+          `${String(params?.workspace ?? "")}：Runtime 探活异常，正在尝试恢复`,
+        "runtimeNotice.runtime.ready":
+          `${String(params?.workspace ?? "")}：Codex runtime 已连接`,
+        "runtimeNotice.runtime.suspectStale":
+          `${String(params?.workspace ?? "")}：Runtime 探活异常，正在尝试恢复`,
+        "runtimeNotice.runtime.cooldown":
+          `${String(params?.workspace ?? "")}：Runtime 恢复失败，当前处于冷却期`,
+        "runtimeNotice.runtime.quarantined":
+          `${String(params?.workspace ?? "")}：Runtime 恢复失败，需要人工关注`,
+        "runtimeNotice.error.createSessionRecoveryRequired":
+          `${String(params?.workspace ?? "")}：会话创建失败，运行时正在恢复`,
         "sidebar.searchProjects": "Search projects",
         "sidebar.clearSearch": "Clear search",
         "sidebar.pinned": "Pinned",
@@ -628,11 +659,13 @@ vi.mock("react-i18next", () => ({
         "settings.unableToOpenConfig": "Unable to open config.",
         // Thread error messages
         "threads.sessionStopped": "会话已停止。",
-        "threads.sessionStoppedForFusion": "已切换到融合回复，内容正在继续生成。",
+        "threads.sessionStoppedForFusion": "正在切换到融合回复，等待新的接续事件…",
         "threads.turnFailed": "会话失败。",
         "threads.turnFailedWithMessage": "会话失败：{{message}}",
         "threads.turnFailedToStart": "会话启动失败。",
         "threads.turnFailedToStartWithMessage": "会话启动失败：{{message}}",
+        "threads.fusionTurnStalled": "融合回复未能接上，当前线程已回到可继续操作的状态。",
+        "threads.fusionTurnStalledWithMessage": "融合回复未能接上：{{message}}",
         "threads.untitledThread": "未命名对话",
         "messages.middleStepsCollapsedHint": "已折叠 {{count}} 条中间步骤（实时中）",
         "workspace.homeHeroTitle": "构建任何东西",

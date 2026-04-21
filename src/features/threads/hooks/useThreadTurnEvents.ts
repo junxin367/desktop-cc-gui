@@ -478,6 +478,7 @@ export function useThreadTurnEvents({
         message: string;
         reasonCode: string;
         stage: string;
+        source: string;
         startedAtMs: number | null;
         timeoutMs: number | null;
       },
@@ -540,13 +541,20 @@ export function useThreadTurnEvents({
           rawMessage: payload.message,
           reasonCode: payload.reasonCode,
           stage: payload.stage,
+          source: payload.source,
           startedAtMs: payload.startedAtMs,
           timeoutMs: payload.timeoutMs,
         },
       });
+      const isFusionStalled = payload.source === "queue-fusion-cutover";
       const message = payload.message
-        ? t("threads.turnStalledWithMessage", { message: payload.message })
-        : t("threads.turnStalled");
+        ? t(
+            isFusionStalled
+              ? "threads.fusionTurnStalledWithMessage"
+              : "threads.turnStalledWithMessage",
+            { message: payload.message },
+          )
+        : t(isFusionStalled ? "threads.fusionTurnStalled" : "threads.turnStalled");
       pushThreadErrorMessage(threadId, message);
       safeMessageActivity();
     },

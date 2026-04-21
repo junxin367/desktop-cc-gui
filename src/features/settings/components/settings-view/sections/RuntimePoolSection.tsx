@@ -772,6 +772,7 @@ export function RuntimePoolSection({
                           <span className="font-medium text-slate-900 dark:text-slate-100">{t("settings.runtimeStartupStateLabel")}</span>{" "}
                           {getRuntimeStartupStateLabel(t, row.startupState)}
                           {row.lastRecoverySource ? ` · ${t("settings.runtimeRecoverySourceLabel")} ${row.lastRecoverySource}` : ""}
+                          {row.foregroundWorkSource ? ` · ${t("settings.runtimeForegroundSourceLabel")} ${row.foregroundWorkSource}` : ""}
                           {row.lastGuardState ? ` · ${t("settings.runtimeGuardStateLabel")} ${row.lastGuardState}` : ""}
                           {row.foregroundWorkThreadId ? ` · ${t("settings.runtimeForegroundThreadLabel")} ${row.foregroundWorkThreadId}` : ""}
                           {row.foregroundWorkTurnId ? ` · ${t("settings.runtimeForegroundTurnLabel")} ${row.foregroundWorkTurnId}` : ""}
@@ -862,6 +863,11 @@ export function RuntimePoolSection({
                               <div className="mt-1">
                                 {t("settings.runtimeForegroundSinceLabel")} {formatTimestamp(row.foregroundWorkSinceMs)}
                               </div>
+                              {row.foregroundWorkSource ? (
+                                <div className="mt-1">
+                                  {t("settings.runtimeForegroundSourceLabel")} {row.foregroundWorkSource}
+                                </div>
+                              ) : null}
                               {row.foregroundWorkTimeoutAtMs ? (
                                 <div className="mt-1">
                                   {t("settings.runtimeForegroundTimeoutLabel")} {formatTimestamp(row.foregroundWorkTimeoutAtMs)}

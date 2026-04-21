@@ -7,7 +7,7 @@ import type {
 } from "../../../types";
 
 const OPENCODE_INFLIGHT_STALL_MS = 18_000;
-const FUSION_AWAIT_START_GRACE_MS = 1_200;
+const FUSION_CUTOVER_RESUME_TIMEOUT_MS = 48_000;
 
 type UseQueuedSendOptions = {
   activeThreadId: string | null;
@@ -54,6 +54,10 @@ type UseQueuedSendOptions = {
   interruptTurn?: (options?: {
     reason?: "user-stop" | "queue-fusion";
   }) => Promise<void>;
+  handleFusionStalled?: (
+    threadId: string,
+    options?: { message?: string | null },
+  ) => void;
   clearActiveImages: () => void;
 };
 
@@ -80,8 +84,8 @@ type ThreadFusionState = {
   messageId: string;
   turnIdBeforeFusion: string | null;
   mode: "same-run" | "cutover";
-  awaitingIdleBeforeStart: boolean;
   stage: "dispatching" | "awaiting-cutover";
+  startedAtMs: number;
 };
 
 type SlashCommandKind =
@@ -283,6 +287,7 @@ export function useQueuedSend({
   getCodexCollaborationMode,
   getCodexCollaborationPayload,
   interruptTurn,
+  handleFusionStalled,
   clearActiveImages,
 }: UseQueuedSendOptions): UseQueuedSendResult {
   const isClaudePendingBootstrapThread =
@@ -820,8 +825,8 @@ export function useQueuedSend({
           messageId,
           turnIdBeforeFusion: activeTurnId ?? null,
           mode: useSameRunContinuation ? "same-run" : "cutover",
-          awaitingIdleBeforeStart: !useSameRunContinuation,
           stage: "dispatching",
+          startedAtMs: Date.now(),
         },
       }));
       setQueuedByThread((prev) => ({
@@ -835,7 +840,18 @@ export function useQueuedSend({
         if (!useSameRunContinuation && interruptTurn) {
           await interruptTurn({ reason: "queue-fusion" });
         }
-        const dispatchedRun = await dispatchQueuedMessage(item);
+        const fusionItem =
+          useSameRunContinuation
+            ? item
+            : {
+                ...item,
+                sendOptions: {
+                  ...(item.sendOptions ?? {}),
+                  resumeSource: "queue-fusion-cutover" as const,
+                  resumeTurnId: activeTurnId ?? null,
+                },
+              };
+        const dispatchedRun = await dispatchQueuedMessage(fusionItem);
         if (!dispatchedRun) {
           setFusionByThread((prev) => ({ ...prev, [threadId]: null }));
           return;
@@ -863,6 +879,7 @@ export function useQueuedSend({
             [threadId]: {
               ...current,
               stage: "awaiting-cutover",
+              startedAtMs: Date.now(),
             },
           };
         });
@@ -963,76 +980,13 @@ export function useQueuedSend({
     ) {
       return;
     }
-    if (isProcessing || isReviewing) {
-      if (fusion.awaitingIdleBeforeStart) {
-        return;
-      }
-      setFusionByThread((prev) => {
-        const current = prev[activeThreadId];
-        if (
-          !current ||
-          current.mode !== "cutover" ||
-          current.stage !== "awaiting-cutover" ||
-          current.awaitingIdleBeforeStart
-        ) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [activeThreadId]: null,
-        };
-      });
-      return;
-    }
-    if (fusion.awaitingIdleBeforeStart) {
-      setFusionByThread((prev) => {
-        const current = prev[activeThreadId];
-        if (
-          !current ||
-          current.mode !== "cutover" ||
-          current.stage !== "awaiting-cutover" ||
-          !current.awaitingIdleBeforeStart
-        ) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [activeThreadId]: {
-            ...current,
-            awaitingIdleBeforeStart: false,
-          },
-        };
-      });
-      return;
-    }
-  }, [activeThreadId, fusionByThread, isProcessing, isReviewing]);
-
-  useEffect(() => {
-    if (!activeThreadId) {
-      return;
-    }
-    const fusion = fusionByThread[activeThreadId];
-    if (
-      !fusion ||
-      fusion.mode !== "cutover" ||
-      fusion.stage !== "awaiting-cutover"
-    ) {
-      return;
-    }
-    if (fusion.awaitingIdleBeforeStart) {
-      return;
-    }
-    if (isProcessing || isReviewing) {
-      return;
-    }
     const timer = window.setTimeout(() => {
       setFusionByThread((prev) => {
         const current = prev[activeThreadId];
         if (
           !current ||
           current.mode !== "cutover" ||
-          current.stage !== "awaiting-cutover" ||
-          current.awaitingIdleBeforeStart
+          current.stage !== "awaiting-cutover"
         ) {
           return prev;
         }
@@ -1041,11 +995,12 @@ export function useQueuedSend({
           [activeThreadId]: null,
         };
       });
-    }, FUSION_AWAIT_START_GRACE_MS);
+      handleFusionStalled?.(activeThreadId);
+    }, FUSION_CUTOVER_RESUME_TIMEOUT_MS);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [activeThreadId, fusionByThread, isProcessing, isReviewing]);
+  }, [activeThreadId, fusionByThread, handleFusionStalled]);
 
   useEffect(() => {
     if (activeEngine !== "opencode") {

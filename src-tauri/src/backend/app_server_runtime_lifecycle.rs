@@ -280,6 +280,7 @@ async fn process_workspace_stdout_value<E: EventSink>(
         .clear_resume_pending_watch(
             extract_thread_id(&value).as_deref(),
             extract_turn_id(&value).as_deref(),
+            extract_event_method(&value),
         )
         .await;
     if let Some(runtime_manager) = session.runtime_manager() {

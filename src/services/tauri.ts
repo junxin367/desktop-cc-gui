@@ -516,6 +516,8 @@ export async function sendUserMessage(
     collaborationMode?: Record<string, unknown> | null;
     preferredLanguage?: string | null;
     customSpecRoot?: string | null;
+    resumeSource?: "queue-fusion-cutover" | null;
+    resumeTurnId?: string | null;
   },
 ) {
   const payload: Record<string, unknown> = {
@@ -527,6 +529,8 @@ export async function sendUserMessage(
     accessMode: options?.accessMode ?? null,
     images: options?.images ?? null,
     preferredLanguage: options?.preferredLanguage ?? null,
+    resumeSource: options?.resumeSource ?? null,
+    resumeTurnId: options?.resumeTurnId ?? null,
   };
   if (options?.customSpecRoot !== undefined) {
     payload.customSpecRoot = options.customSpecRoot;

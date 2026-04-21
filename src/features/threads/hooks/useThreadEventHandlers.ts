@@ -794,6 +794,7 @@ export function useThreadEventHandlers({
         message: string;
         reasonCode: string;
         stage: string;
+        source: string;
         startedAtMs: number | null;
         timeoutMs: number | null;
       },
@@ -808,6 +809,7 @@ export function useThreadEventHandlers({
         diagnosticCategory: "resume_stalled",
         reasonCode: payload.reasonCode,
         stage: payload.stage,
+        source: payload.source,
         startedAtMs: payload.startedAtMs,
         timeoutMs: payload.timeoutMs,
       });

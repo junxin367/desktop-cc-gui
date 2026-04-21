@@ -1306,6 +1306,7 @@ const enPart1 = {
     runtimeStartupStateLabel: "Startup state:",
     runtimeForegroundThreadLabel: "Foreground thread:",
     runtimeForegroundTurnLabel: "Foreground turn:",
+    runtimeForegroundSourceLabel: "Foreground source:",
     runtimeForegroundStateLabel: "Foreground state:",
     runtimeForegroundSinceLabel: "Foreground since:",
     runtimeForegroundTimeoutLabel: "Foreground timeout:",
@@ -2725,13 +2726,16 @@ const enPart1 = {
     degradedWorkspaceRefreshingAriaLabel: "Refreshing thread list",
     degradedWorkspaceRefreshingTooltip: "Refreshing thread list...",
     sessionStopped: "Session stopped.",
-    sessionStoppedForFusion: "Switched to the merged follow-up. Reply is continuing...",
+    sessionStoppedForFusion: "Switching to the merged follow-up and waiting for resume evidence...",
     turnFailed: "Turn failed.",
     turnFailedWithMessage: "Turn failed: {{message}}",
     turnFailedToStart: "Turn failed to start.",
     turnFailedToStartWithMessage: "Turn failed to start: {{message}}",
     turnStalled: "Turn stalled after user input. You can continue from the latest visible state.",
     turnStalledWithMessage: "Turn stalled after user input: {{message}}",
+    fusionTurnStalled:
+      "The merged follow-up did not resume. The thread is interactive again from the latest visible state.",
+    fusionTurnStalledWithMessage: "The merged follow-up did not resume: {{message}}",
     firstPacketTimeout:
       "No initial response within {{seconds}}s. Network, proxy, or upstream service load may be causing delay. Please retry.",
     networkProxyHint:
