@@ -144,12 +144,12 @@ export function RuntimePoolSection({
   const [runtimeSaving, setRuntimeSaving] = useState(false);
   const [hotDraft, setHotDraft] = useState(String(appSettings.codexMaxHotRuntimes ?? 1));
   const [warmDraft, setWarmDraft] = useState(String(appSettings.codexMaxWarmRuntimes ?? 1));
-  const [ttlDraft, setTtlDraft] = useState(String(appSettings.codexWarmTtlSeconds ?? 90));
+  const [ttlDraft, setTtlDraft] = useState(String(appSettings.codexWarmTtlSeconds ?? 7200));
 
   useEffect(() => {
     setHotDraft(String(appSettings.codexMaxHotRuntimes ?? 1));
     setWarmDraft(String(appSettings.codexMaxWarmRuntimes ?? 1));
-    setTtlDraft(String(appSettings.codexWarmTtlSeconds ?? 90));
+    setTtlDraft(String(appSettings.codexWarmTtlSeconds ?? 7200));
   }, [
     appSettings.codexMaxHotRuntimes,
     appSettings.codexMaxWarmRuntimes,
@@ -300,7 +300,7 @@ export function RuntimePoolSection({
   const handleSaveRuntimeSettings = async () => {
     const nextHot = normalizeBoundedIntegerInput(hotDraft, 1, 0, 8);
     const nextWarm = normalizeBoundedIntegerInput(warmDraft, 1, 0, 16);
-    const nextTtl = normalizeBoundedIntegerInput(ttlDraft, 90, 15, 3600);
+    const nextTtl = normalizeBoundedIntegerInput(ttlDraft, 7200, 15, 14400);
     setRuntimeSaving(true);
     setRuntimeError(null);
     try {
@@ -580,6 +580,7 @@ export function RuntimePoolSection({
                   onChange={(event) => setTtlDraft(event.target.value)}
                   inputMode="numeric"
                   pattern="[0-9]*"
+                  max={14400}
                   className="h-7.5 rounded-xl border-slate-200 bg-slate-50/75 px-3 text-[12px] dark:border-slate-700 dark:bg-slate-900/80"
                 />
                 <div className="text-[10px] leading-4 text-slate-500 dark:text-slate-400/90">

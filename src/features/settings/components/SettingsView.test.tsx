@@ -152,7 +152,7 @@ const baseSettings: AppSettings = {
   runtimeOrphanSweepOnLaunch: true,
   codexMaxHotRuntimes: 1,
   codexMaxWarmRuntimes: 1,
-  codexWarmTtlSeconds: 90,
+  codexWarmTtlSeconds: 7200,
   preloadGitDiffs: true,
   experimentalCollabEnabled: false,
   experimentalCollaborationModesEnabled: false,

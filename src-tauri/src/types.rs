@@ -1251,14 +1251,14 @@ fn default_codex_max_warm_runtimes() -> u8 {
 }
 
 fn default_codex_warm_ttl_seconds() -> u16 {
-    120
+    7200
 }
 
 impl AppSettings {
     pub(crate) fn sanitize_runtime_pool_settings(&mut self) {
         self.codex_max_hot_runtimes = self.codex_max_hot_runtimes.clamp(0, 8);
         self.codex_max_warm_runtimes = self.codex_max_warm_runtimes.clamp(0, 16);
-        self.codex_warm_ttl_seconds = self.codex_warm_ttl_seconds.clamp(15, 3600);
+        self.codex_warm_ttl_seconds = self.codex_warm_ttl_seconds.clamp(15, 14400);
     }
 }
 
@@ -1556,13 +1556,13 @@ mod tests {
         let mut settings = AppSettings::default();
         settings.codex_max_hot_runtimes = 200;
         settings.codex_max_warm_runtimes = 99;
-        settings.codex_warm_ttl_seconds = 1;
+        settings.codex_warm_ttl_seconds = 20_000;
 
         settings.sanitize_runtime_pool_settings();
 
         assert_eq!(settings.codex_max_hot_runtimes, 8);
         assert_eq!(settings.codex_max_warm_runtimes, 16);
-        assert_eq!(settings.codex_warm_ttl_seconds, 15);
+        assert_eq!(settings.codex_warm_ttl_seconds, 14_400);
     }
 
     #[test]
