@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useEngineController } from "./useEngineController";
 import {
@@ -7,7 +7,6 @@ import {
   getActiveEngine,
   getEngineModels,
   getOpenCodeCommandsList,
-  getOpenCodeProviderHealth,
   isWebServiceRuntime,
   switchEngine,
 } from "../../../services/tauri";
@@ -18,12 +17,21 @@ import {
 import type { EngineStatus } from "../../../types";
 import { STORAGE_KEYS as PROVIDER_STORAGE_KEYS } from "../../composer/types/provider";
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+}
+
 vi.mock("../../../services/tauri", () => ({
   detectEngines: vi.fn(),
   getActiveEngine: vi.fn(),
   getEngineModels: vi.fn(),
   getOpenCodeCommandsList: vi.fn(),
-  getOpenCodeProviderHealth: vi.fn(),
   isWebServiceRuntime: vi.fn(),
   switchEngine: vi.fn(),
 }));
@@ -36,20 +44,10 @@ const detectEnginesMock = vi.mocked(detectEngines);
 const getActiveEngineMock = vi.mocked(getActiveEngine);
 const getEngineModelsMock = vi.mocked(getEngineModels);
 const getOpenCodeCommandsListMock = vi.mocked(getOpenCodeCommandsList);
-const getOpenCodeProviderHealthMock = vi.mocked(getOpenCodeProviderHealth);
 const isWebServiceRuntimeMock = vi.mocked(isWebServiceRuntime);
 const switchEngineMock = vi.mocked(switchEngine);
 const getClientStoreSyncMock = vi.mocked(getClientStoreSync);
 const writeClientStoreValueMock = vi.mocked(writeClientStoreValue);
-
-type MockOpenCodeProviderHealth = {
-  provider: string;
-  connected: boolean;
-  credentialCount: number;
-  matched: boolean;
-  authenticatedProviders: string[];
-  error: null;
-};
 
 describe("useEngineController", () => {
   beforeEach(() => {
@@ -57,14 +55,6 @@ describe("useEngineController", () => {
     window.localStorage.clear();
     isWebServiceRuntimeMock.mockReturnValue(false);
     getOpenCodeCommandsListMock.mockResolvedValue([]);
-    getOpenCodeProviderHealthMock.mockResolvedValue({
-      provider: "openai",
-      connected: true,
-      credentialCount: 1,
-      matched: true,
-      authenticatedProviders: ["openai"],
-      error: null,
-    });
     switchEngineMock.mockResolvedValue(undefined);
     getClientStoreSyncMock.mockReturnValue(undefined);
     writeClientStoreValueMock.mockReset();
@@ -272,7 +262,7 @@ describe("useEngineController", () => {
     ).toBe(true);
   });
 
-  it("marks opencode as requires-login when provider health is disconnected", async () => {
+  it("keeps opencode ready without automatic provider health probing", async () => {
     detectEnginesMock.mockResolvedValue([
       {
         engineType: "claude",
@@ -337,14 +327,6 @@ describe("useEngineController", () => {
     ]);
     getActiveEngineMock.mockResolvedValue("claude");
     getEngineModelsMock.mockResolvedValue([]);
-    getOpenCodeProviderHealthMock.mockResolvedValue({
-      provider: "openai",
-      connected: false,
-      credentialCount: 0,
-      matched: false,
-      authenticatedProviders: [],
-      error: null,
-    });
 
     const { result } = renderHook(() =>
       useEngineController({
@@ -367,10 +349,8 @@ describe("useEngineController", () => {
     const opencodeEngine = result.current.availableEngines.find(
       (engine) => engine.type === "opencode",
     );
-    expect(opencodeEngine?.availabilityState).toBe("requires-login");
-    expect(opencodeEngine?.availabilityLabelKey).toBe(
-      "workspace.engineStatusRequiresLogin",
-    );
+    expect(opencodeEngine?.availabilityState).toBe("ready");
+    expect(opencodeEngine?.availabilityLabelKey).toBeNull();
   });
 
   it("restores opencode through command fallback even when detectEngines omits the row", async () => {
@@ -486,7 +466,7 @@ describe("useEngineController", () => {
     expect(switchEngineMock).toHaveBeenCalledWith("gemini");
   });
 
-  it("keeps opencode in loading state until provider health resolves", async () => {
+  it("refreshEngineModels reloads only the requested engine catalog", async () => {
     detectEnginesMock.mockResolvedValue([
       {
         engineType: "claude",
@@ -522,15 +502,6 @@ describe("useEngineController", () => {
     getActiveEngineMock.mockResolvedValue("claude");
     getEngineModelsMock.mockResolvedValue([]);
 
-    let resolveProviderHealth: (value: MockOpenCodeProviderHealth) => void =
-      () => {};
-    getOpenCodeProviderHealthMock.mockImplementation(
-      () =>
-        new Promise<MockOpenCodeProviderHealth>((resolve) => {
-          resolveProviderHealth = resolve;
-        }),
-    );
-
     const { result } = renderHook(() =>
       useEngineController({
         activeWorkspace: {
@@ -548,32 +519,203 @@ describe("useEngineController", () => {
     );
 
     await waitFor(() => expect(result.current.isInitialized).toBe(true));
-    await waitFor(() => {
-      const opencodeEngine = result.current.availableEngines.find(
-        (engine) => engine.type === "opencode",
-      );
-      expect(opencodeEngine?.availabilityState).toBe("loading");
+    expect(getEngineModelsMock).toHaveBeenCalledWith("claude");
+
+    getEngineModelsMock.mockClear();
+
+    await act(async () => {
+      await result.current.refreshEngineModels("claude");
     });
 
-    if (!resolveProviderHealth) {
-      throw new Error("expected provider health resolver to be ready");
-    }
+    expect(getEngineModelsMock).toHaveBeenCalledTimes(1);
+    expect(getEngineModelsMock).toHaveBeenCalledWith("claude");
+    expect(getEngineModelsMock).not.toHaveBeenCalledWith("opencode");
+  });
 
-    resolveProviderHealth({
-      provider: "openai",
-      connected: true,
-      credentialCount: 1,
-      matched: true,
-      authenticatedProviders: ["openai"],
-      error: null,
+  it("does not refresh opencode when claude models are manually refreshed", async () => {
+    detectEnginesMock.mockResolvedValue([
+      {
+        engineType: "claude",
+        installed: true,
+        version: "1.0.0",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+      {
+        engineType: "opencode",
+        installed: true,
+        version: "1.4.4",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+    ]);
+    getActiveEngineMock.mockResolvedValue("claude");
+    getEngineModelsMock.mockResolvedValue([]);
+
+    const { result } = renderHook(() =>
+      useEngineController({ activeWorkspace: null }),
+    );
+
+    await waitFor(() => expect(result.current.isInitialized).toBe(true));
+    getEngineModelsMock.mockClear();
+
+    await act(async () => {
+      await result.current.refreshEngineModels("claude");
     });
 
-    await waitFor(() => {
-      const opencodeEngine = result.current.availableEngines.find(
-        (engine) => engine.type === "opencode",
-      );
-      expect(opencodeEngine?.availabilityState).toBe("ready");
-      expect(opencodeEngine?.availabilityLabelKey).toBeNull();
+    expect(getEngineModelsMock).toHaveBeenCalledTimes(1);
+    expect(getEngineModelsMock).toHaveBeenCalledWith("claude");
+    expect(getOpenCodeCommandsListMock).not.toHaveBeenCalled();
+  });
+
+  it("refreshes active engine models on workspace switch without probing unrelated engines", async () => {
+    detectEnginesMock.mockResolvedValue([
+      {
+        engineType: "claude",
+        installed: true,
+        version: "1.0.0",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+      {
+        engineType: "opencode",
+        installed: true,
+        version: "1.4.4",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+    ]);
+    getActiveEngineMock.mockResolvedValue("claude");
+    getEngineModelsMock.mockResolvedValue([]);
+
+    const { rerender } = renderHook(
+      ({ workspace }) => useEngineController({ activeWorkspace: workspace }),
+      {
+        initialProps: {
+          workspace: {
+            id: "ws-1",
+            name: "mossx",
+            path: "/tmp/mossx",
+            connected: true,
+            kind: "main" as const,
+            settings: {
+              sidebarCollapsed: false,
+              worktreeSetupScript: null,
+            },
+          },
+        },
+      },
+    );
+
+    await waitFor(() => expect(getEngineModelsMock).toHaveBeenCalledWith("claude"));
+    getEngineModelsMock.mockClear();
+
+    rerender({
+      workspace: {
+        id: "ws-2",
+        name: "mossx-2",
+        path: "/tmp/mossx-2",
+        connected: true,
+        kind: "main" as const,
+        settings: {
+          sidebarCollapsed: false,
+          worktreeSetupScript: null,
+        },
+      },
     });
+
+    await waitFor(() => expect(getEngineModelsMock).toHaveBeenCalledWith("claude"));
+    expect(getEngineModelsMock).not.toHaveBeenCalledWith("opencode");
+  });
+
+  it("reuses the in-flight engine detection when refresh is clicked during initial load", async () => {
+    const detectDeferred = createDeferred<EngineStatus[]>();
+    const activeEngineDeferred = createDeferred<"claude">();
+
+    detectEnginesMock.mockReturnValueOnce(detectDeferred.promise);
+    getActiveEngineMock.mockReturnValueOnce(activeEngineDeferred.promise);
+    getEngineModelsMock.mockResolvedValue([]);
+
+    const { result } = renderHook(() =>
+      useEngineController({ activeWorkspace: null }),
+    );
+
+    expect(result.current.isDetecting).toBe(true);
+    expect(detectEnginesMock).toHaveBeenCalledTimes(1);
+
+    let refreshSettled = false;
+    let refreshResult:
+      | Awaited<ReturnType<typeof result.current.refreshEngines>>
+      | undefined;
+    let refreshPromise: Promise<void>;
+    act(() => {
+      refreshPromise = result.current.refreshEngines().then((value) => {
+        refreshResult = value;
+        refreshSettled = true;
+      });
+    });
+
+    await Promise.resolve();
+    expect(detectEnginesMock).toHaveBeenCalledTimes(1);
+    expect(refreshSettled).toBe(false);
+
+    detectDeferred.resolve([
+      {
+        engineType: "claude",
+        installed: true,
+        version: "1.0.0",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+    ]);
+    activeEngineDeferred.resolve("claude");
+
+    await act(async () => {
+      await refreshPromise;
+    });
+    await waitFor(() => expect(result.current.isInitialized).toBe(true));
+    expect(refreshSettled).toBe(true);
+    expect(detectEnginesMock).toHaveBeenCalledTimes(1);
+    expect(refreshResult?.availableEngines.find((engine) => engine.type === "claude")?.installed).toBe(true);
   });
 });

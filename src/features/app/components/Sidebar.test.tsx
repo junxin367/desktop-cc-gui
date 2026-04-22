@@ -29,6 +29,7 @@ vi.mock("react-i18next", () => ({
         "sidebar.openHome": "Open home",
         "panels.memory": "Project Memory",
         "common.terminal": "Terminal",
+        "common.refresh": "Refresh",
         "common.toggleTerminalPanel": "Toggle terminal panel",
         "git.logMode": "Git",
         "sidebar.releaseNotes": "Release Notes",
@@ -38,6 +39,11 @@ vi.mock("react-i18next", () => ({
         "threads.degradedWorkspaceRefreshAriaLabel": "Refresh incomplete thread list",
         "threads.degradedWorkspaceRefreshTooltip":
           "This project's thread list is not fully refreshed yet and may be missing some conversations. Click to refresh it again.",
+        "workspace.engineClaudeCode": "Claude Code",
+        "workspace.engineCodex": "Codex",
+        "workspace.engineOpenCode": "OpenCode",
+        "workspace.engineGemini": "Gemini",
+        "sidebar.cliNotInstalled": "CLI not installed",
         "settings.title": "Settings",
         "tabbar.primaryNavigation": "Primary navigation",
       };
@@ -921,6 +927,60 @@ describe("Sidebar", () => {
 
     expect(onToggleWorkspaceCollapse).not.toHaveBeenCalled();
     expect(onSelectWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("triggers workspace engine refresh from the menu refresh button", () => {
+    const workspace = {
+      id: "ws-1",
+      name: "codemoss",
+      path: "/tmp/codemoss",
+      connected: true,
+      kind: "main" as const,
+      settings: {
+        sidebarCollapsed: true,
+        worktreeSetupScript: null,
+      },
+    };
+    const onRefreshEngineOptions = vi.fn(async () => ({
+      activeEngine: "claude" as const,
+      availableEngines: [
+        {
+          type: "claude" as const,
+          displayName: "Claude Code",
+          shortName: "Claude Code",
+          installed: true,
+          version: "1.0.0",
+          error: null,
+          availabilityState: "ready" as const,
+          availabilityLabelKey: null,
+        },
+      ],
+    }));
+
+    render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[workspace]}
+        groupedWorkspaces={[
+          {
+            id: null,
+            name: "Ungrouped",
+            workspaces: [workspace],
+          },
+        ]}
+        engineOptions={[]}
+        onRefreshEngineOptions={onRefreshEngineOptions}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "New Session" }));
+
+    const refreshButtons = screen.getAllByRole("button", { name: "Refresh" });
+    fireEvent.mouseDown(refreshButtons[0]!);
+    fireEvent.click(refreshButtons[0]!);
+
+    expect(onRefreshEngineOptions).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("menu")).toBeTruthy();
   });
 
   it("activates the workspace from the explicit main-panel action without toggling collapse", () => {

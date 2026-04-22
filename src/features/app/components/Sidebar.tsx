@@ -25,7 +25,10 @@ import { isDefaultWorkspacePath } from "../../workspaces/utils/defaultWorkspace"
 import { formatShortcutForPlatform, isMacPlatform } from "../../../utils/shortcuts";
 import { formatRelativeTimeShort } from "../../../utils/time";
 import { EngineIcon } from "../../engine/components/EngineIcon";
-import type { EngineDisplayInfo } from "../../engine/hooks/useEngineController";
+import type {
+  EngineDisplayInfo,
+  EngineRefreshResult,
+} from "../../engine/hooks/useEngineController";
 import { TooltipIconButton } from "../../../components/ui/tooltip-icon-button";
 import { SharedSessionIcon } from "../../shared-session/components/SharedSessionIcon";
 import { pushErrorToast } from "../../../services/toasts";
@@ -94,7 +97,10 @@ type SidebarProps = {
   onConnectWorkspace: (workspace: WorkspaceInfo) => void;
   onAddAgent: (workspace: WorkspaceInfo, engine?: EngineType) => void;
   engineOptions?: EngineDisplayInfo[];
-  onRefreshEngineOptions?: () => Promise<void> | void;
+  onRefreshEngineOptions?: () =>
+    | Promise<EngineRefreshResult | void>
+    | EngineRefreshResult
+    | void;
   onAddSharedAgent?: (workspace: WorkspaceInfo) => void;
   onAddWorktreeAgent: (workspace: WorkspaceInfo) => void;
   onAddCloneAgent: (workspace: WorkspaceInfo) => void;
@@ -1260,6 +1266,8 @@ export function Sidebar({
               left: workspaceMenuState.x,
               top: workspaceMenuState.y,
             }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
             onContextMenu={(event) => event.preventDefault()}
           >
@@ -1309,12 +1317,26 @@ export function Sidebar({
                         className={`sidebar-workspace-menu-item-refresh${
                           action.refreshing ? " is-refreshing" : ""
                         }`}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
                         onClick={(event) => {
+                          event.preventDefault();
                           event.stopPropagation();
                           void action.onRefresh?.();
                         }}
+                        onDoubleClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
                         aria-label={t("common.refresh")}
                         title={t("common.refresh")}
+                        data-tauri-drag-region="false"
                         disabled={action.refreshing}
                       >
                         <RefreshCw size={13} aria-hidden />

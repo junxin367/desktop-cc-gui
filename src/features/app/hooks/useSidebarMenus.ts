@@ -8,7 +8,10 @@ import type { EngineType, WorkspaceInfo } from "../../../types";
 import { getOpenCodeProviderHealth } from "../../../services/tauri";
 import { pushGlobalRuntimeNotice } from "../../../services/globalRuntimeNotices";
 import { formatByteSize } from "../../../utils/formatting";
-import type { EngineDisplayInfo } from "../../engine/hooks/useEngineController";
+import type {
+  EngineDisplayInfo,
+  EngineRefreshResult,
+} from "../../engine/hooks/useEngineController";
 
 export type WorkspaceMenuIconKind =
   | "engine-claude"
@@ -52,7 +55,10 @@ export type WorkspaceMenuState = {
 type SidebarMenuHandlers = {
   onAddAgent: (workspace: WorkspaceInfo, engine?: EngineType) => void;
   engineOptions?: EngineDisplayInfo[];
-  onRefreshEngineOptions?: () => Promise<void> | void;
+  onRefreshEngineOptions?: () =>
+    | Promise<EngineRefreshResult | void>
+    | EngineRefreshResult
+    | void;
   onAddSharedAgent?: (workspace: WorkspaceInfo) => void;
   onDeleteThread: (workspaceId: string, threadId: string) => void;
   onSyncThread: (workspaceId: string, threadId: string) => void;
@@ -122,11 +128,48 @@ export function useSidebarMenus({
     latestEngineOptionsRef.current = engineOptions;
   }, [engineOptions]);
 
+  const isMatchingEngineInfo = useCallback(
+    (left: EngineDisplayInfo, right: EngineDisplayInfo) =>
+      left.type === right.type &&
+      left.displayName === right.displayName &&
+      left.shortName === right.shortName &&
+      left.installed === right.installed &&
+      left.version === right.version &&
+      left.error === right.error &&
+      left.availabilityState === right.availabilityState &&
+      (left.availabilityLabelKey ?? null) === (right.availabilityLabelKey ?? null),
+    [],
+  );
+
   const closeWorkspaceMenu = useCallback(() => {
     setWorkspaceMenuState(null);
     setWorkspaceEngineOverrides({});
     setWorkspaceEngineRefreshing({});
   }, []);
+
+  useEffect(() => {
+    setWorkspaceEngineOverrides((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      Object.entries(prev).forEach(([workspaceEngineKey, override]) => {
+        if (override.availabilityState === "loading") {
+          return;
+        }
+        const engineType = workspaceEngineKey.slice(
+          workspaceEngineKey.lastIndexOf(":") + 1,
+        ) as EngineType;
+        const engineInfo =
+          engineOptions.find((entry) => entry.type === engineType) ?? null;
+        if (engineInfo && isMatchingEngineInfo(override, engineInfo)) {
+          delete next[workspaceEngineKey];
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [engineOptions, isMatchingEngineInfo]);
 
   const onWorkspaceMenuAction = useCallback(
     (action: WorkspaceMenuAction) => {
@@ -154,10 +197,16 @@ export function useSidebarMenus({
       workspace: WorkspaceInfo,
       options?: {
         force?: boolean;
+        bypassAvailabilityCheck?: boolean;
       },
     ) => {
       const force = options?.force ?? false;
-      if (!canResolveWorkspaceOpenCodeLoginState(workspace)) {
+      const bypassAvailabilityCheck =
+        options?.bypassAvailabilityCheck ?? false;
+      if (
+        !bypassAvailabilityCheck &&
+        !canResolveWorkspaceOpenCodeLoginState(workspace)
+      ) {
         return;
       }
       const previousState = workspaceOpenCodeLoginState[workspace.id];
@@ -247,16 +296,18 @@ export function useSidebarMenus({
         dedupeKey: `engine:${engineType}:checking`,
       });
 
+      let resolvedOverride: EngineDisplayInfo | null = null;
       try {
-        await onRefreshEngineOptions?.();
-        const refreshedEngineInfo =
-          latestEngineOptionsRef.current.find((entry) => entry.type === engineType) ?? null;
-        if (
-          engineType === "opencode" &&
-          workspace.connected &&
-          refreshedEngineInfo?.installed
-        ) {
-          await primeWorkspaceOpenCodeLoginState(workspace, { force: true });
+        const refreshResult = await onRefreshEngineOptions?.();
+        resolvedOverride =
+          refreshResult?.availableEngines.find((entry) => entry.type === engineType) ??
+          latestEngineOptionsRef.current.find((entry) => entry.type === engineType) ??
+          null;
+        if (engineType === "opencode" && workspace.connected) {
+          await primeWorkspaceOpenCodeLoginState(workspace, {
+            force: true,
+            bypassAvailabilityCheck: true,
+          });
         }
       } finally {
         if (workspaceEngineRefreshRequestIdRef.current[workspaceEngineKey] === requestId) {
@@ -265,6 +316,12 @@ export function useSidebarMenus({
             [workspaceEngineKey]: false,
           }));
           setWorkspaceEngineOverrides((prev) => {
+            if (resolvedOverride) {
+              return {
+                ...prev,
+                [workspaceEngineKey]: resolvedOverride,
+              };
+            }
             const next = { ...prev };
             delete next[workspaceEngineKey];
             return next;
@@ -410,12 +467,6 @@ export function useSidebarMenus({
     if (!workspaceMenuState?.workspace) {
       return;
     }
-    if (
-      canResolveWorkspaceOpenCodeLoginState(workspaceMenuState.workspace) &&
-      !workspaceOpenCodeLoginState[workspaceMenuState.workspace.id]
-    ) {
-      void primeWorkspaceOpenCodeLoginState(workspaceMenuState.workspace);
-    }
     setWorkspaceMenuState((prev) => {
       if (!prev?.workspace) {
         return prev;
@@ -450,8 +501,6 @@ export function useSidebarMenus({
     });
   }, [
     buildSessionMenuGroup,
-    canResolveWorkspaceOpenCodeLoginState,
-    primeWorkspaceOpenCodeLoginState,
     workspaceMenuState?.workspace,
     workspaceOpenCodeLoginState,
   ]);
@@ -576,7 +625,6 @@ export function useSidebarMenus({
     (event: MouseEvent, workspace: WorkspaceInfo) => {
       event.preventDefault();
       event.stopPropagation();
-      void primeWorkspaceOpenCodeLoginState(workspace, { force: true });
       const workspaceId = workspace.id;
       const { x, y } = resolveWorkspaceMenuPosition(event);
 
@@ -627,7 +675,6 @@ export function useSidebarMenus({
     [
       t,
       buildSessionMenuGroup,
-      primeWorkspaceOpenCodeLoginState,
       resolveWorkspaceMenuPosition,
       onReloadWorkspaceThreads,
       onDeleteWorkspace,
@@ -640,7 +687,6 @@ export function useSidebarMenus({
     (event: MouseEvent, workspace: WorkspaceInfo) => {
       event.preventDefault();
       event.stopPropagation();
-      void primeWorkspaceOpenCodeLoginState(workspace, { force: true });
       const { x, y } = resolveWorkspaceMenuPosition(event);
 
       setWorkspaceMenuState({
@@ -651,7 +697,7 @@ export function useSidebarMenus({
         workspace,
       });
     },
-    [buildSessionMenuGroup, primeWorkspaceOpenCodeLoginState, resolveWorkspaceMenuPosition],
+    [buildSessionMenuGroup, resolveWorkspaceMenuPosition],
   );
 
   const showWorktreeMenu = useCallback(
