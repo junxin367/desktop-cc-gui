@@ -4,28 +4,31 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   loadCustomNames,
   loadPinnedThreads,
+  loadThreadAliases,
   loadThreadActivity,
   savePinnedThreads,
   saveThreadActivity,
 } from "../utils/threadStorage";
 import { useThreadStorage } from "./useThreadStorage";
 
-vi.mock("../utils/threadStorage", () => ({
-  MAX_PINS_SOFT_LIMIT: 2,
-  loadCustomNames: vi.fn(),
-  loadPinnedThreads: vi.fn(),
-  loadThreadActivity: vi.fn(),
-  makeCustomNameKey: (workspaceId: string, threadId: string) =>
-    `${workspaceId}:${threadId}`,
-  makePinKey: (workspaceId: string, threadId: string) =>
-    `${workspaceId}:${threadId}`,
-  savePinnedThreads: vi.fn(),
-  saveThreadActivity: vi.fn(),
-}));
+vi.mock("../utils/threadStorage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../utils/threadStorage")>();
+  return {
+    ...actual,
+    MAX_PINS_SOFT_LIMIT: 2,
+    loadCustomNames: vi.fn(),
+    loadPinnedThreads: vi.fn(),
+    loadThreadAliases: vi.fn(),
+    loadThreadActivity: vi.fn(),
+    savePinnedThreads: vi.fn(),
+    saveThreadActivity: vi.fn(),
+  };
+});
 
 describe("useThreadStorage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(loadThreadAliases).mockReturnValue({});
   });
 
   it("loads initial data and custom names from store", async () => {

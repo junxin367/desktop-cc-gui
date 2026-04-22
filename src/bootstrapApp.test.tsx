@@ -8,6 +8,7 @@ const migrateLocalStorageToFileStoreMock = vi.hoisted(() => vi.fn());
 const initInputHistoryStoreMock = vi.hoisted(() => vi.fn());
 const appendRendererDiagnosticMock = vi.hoisted(() => vi.fn());
 const flushRendererDiagnosticsBufferMock = vi.hoisted(() => vi.fn());
+const pushGlobalRuntimeNoticeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("react-dom/client", () => ({
   default: {
@@ -32,6 +33,10 @@ vi.mock("./services/rendererDiagnostics", () => ({
   flushRendererDiagnosticsBuffer: flushRendererDiagnosticsBufferMock,
 }));
 
+vi.mock("./services/globalRuntimeNotices", () => ({
+  pushGlobalRuntimeNotice: pushGlobalRuntimeNoticeMock,
+}));
+
 vi.mock("./components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: unknown }) => children,
 }));
@@ -47,6 +52,7 @@ describe("startApp", () => {
     initInputHistoryStoreMock.mockReset();
     appendRendererDiagnosticMock.mockReset();
     flushRendererDiagnosticsBufferMock.mockReset();
+    pushGlobalRuntimeNoticeMock.mockReset();
     createRootMock.mockReturnValue({ render: renderMock });
   });
 
@@ -62,6 +68,18 @@ describe("startApp", () => {
     expect(appendRendererDiagnosticMock).toHaveBeenNthCalledWith(2, "bootstrap/failed", {
       error: "Error: preload failed",
     });
+    expect(pushGlobalRuntimeNoticeMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        messageKey: "runtimeNotice.bootstrap.start",
+      }),
+    );
+    expect(pushGlobalRuntimeNoticeMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        messageKey: "runtimeNotice.bootstrap.failed",
+      }),
+    );
     expect(flushRendererDiagnosticsBufferMock).toHaveBeenCalledTimes(1);
     expect(createRootMock).toHaveBeenCalledWith(document.getElementById("root"));
     expect(renderMock).toHaveBeenCalledTimes(1);

@@ -65,6 +65,7 @@ vi.mock("./useThreadMessaging", () => ({
 vi.mock("../../../services/tauri", () => ({
   respondToServerRequest: vi.fn(),
   respondToUserInputRequest: vi.fn(),
+  connectWorkspace: vi.fn().mockResolvedValue(undefined),
   listThreadTitles: vi.fn(),
   setThreadTitle: vi.fn(),
   renameThreadTitleKey: vi.fn(),

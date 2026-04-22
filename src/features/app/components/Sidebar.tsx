@@ -94,6 +94,7 @@ type SidebarProps = {
   onConnectWorkspace: (workspace: WorkspaceInfo) => void;
   onAddAgent: (workspace: WorkspaceInfo, engine?: EngineType) => void;
   engineOptions?: EngineDisplayInfo[];
+  onRefreshEngineOptions?: () => Promise<void> | void;
   onAddSharedAgent?: (workspace: WorkspaceInfo) => void;
   onAddWorktreeAgent: (workspace: WorkspaceInfo) => void;
   onAddCloneAgent: (workspace: WorkspaceInfo) => void;
@@ -173,6 +174,7 @@ export function Sidebar({
   onConnectWorkspace,
   onAddAgent,
   engineOptions = [],
+  onRefreshEngineOptions,
   onAddSharedAgent,
   onAddWorktreeAgent,
   onAddCloneAgent,
@@ -270,6 +272,7 @@ export function Sidebar({
     useSidebarMenus({
       onAddAgent,
       engineOptions,
+      onRefreshEngineOptions,
       onAddSharedAgent,
       onDeleteThread,
       onSyncThread,

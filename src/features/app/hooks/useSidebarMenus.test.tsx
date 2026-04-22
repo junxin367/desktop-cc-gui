@@ -3,7 +3,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceInfo } from "../../../types";
 import { useSidebarMenus } from "./useSidebarMenus";
-import { detectEngines, getOpenCodeProviderHealth } from "../../../services/tauri";
+import { getOpenCodeProviderHealth } from "../../../services/tauri";
+import { pushGlobalRuntimeNotice } from "../../../services/globalRuntimeNotices";
 import type { EngineDisplayInfo } from "../../engine/hooks/useEngineController";
 
 const mockMenuPopup = vi.fn<
@@ -77,12 +78,14 @@ vi.mock("@tauri-apps/api/dpi", () => ({
 }));
 
 vi.mock("../../../services/tauri", () => ({
-  detectEngines: vi.fn(),
   getOpenCodeProviderHealth: vi.fn(),
 }));
+vi.mock("../../../services/globalRuntimeNotices", () => ({
+  pushGlobalRuntimeNotice: vi.fn(),
+}));
 
-const detectEnginesMock = vi.mocked(detectEngines);
 const getOpenCodeProviderHealthMock = vi.mocked(getOpenCodeProviderHealth);
+const pushGlobalRuntimeNoticeMock = vi.mocked(pushGlobalRuntimeNotice);
 
 const workspace: WorkspaceInfo = {
   id: "ws-1",
@@ -143,6 +146,7 @@ function createHandlers() {
   return {
     onAddAgent: vi.fn(),
     engineOptions,
+    onRefreshEngineOptions: vi.fn(async () => undefined),
     onAddSharedAgent: vi.fn(),
     onDeleteThread: vi.fn(),
     onSyncThread: vi.fn(),
@@ -162,7 +166,7 @@ function createHandlers() {
 
 describe("useSidebarMenus", () => {
   beforeEach(() => {
-    detectEnginesMock.mockResolvedValue([]);
+    pushGlobalRuntimeNoticeMock.mockReset();
     getOpenCodeProviderHealthMock.mockResolvedValue({
       provider: "openai",
       connected: true,
@@ -242,25 +246,18 @@ describe("useSidebarMenus", () => {
   it("refreshes a single engine action without closing the menu", async () => {
     const handlers = createHandlers();
     handlers.engineOptions = [];
-    detectEnginesMock.mockResolvedValueOnce([
-      {
-        engineType: "claude",
-        installed: true,
-        version: "2.1.111",
-        binPath: null,
-        features: {
-          streaming: true,
-          reasoning: true,
-          toolUse: true,
-          imageInput: true,
-          sessionContinuation: true,
-        },
-        models: [],
-        error: null,
-      },
-    ]);
+    let rerenderHook:
+      | ((nextHandlers: ReturnType<typeof createHandlers>) => void)
+      | null = null;
+    handlers.onRefreshEngineOptions = vi.fn(async () => {
+      rerenderHook?.(createHandlers());
+    });
 
-    const { result } = renderHook(() => useSidebarMenus(handlers));
+    const { result, rerender } = renderHook(
+      (nextHandlers: ReturnType<typeof createHandlers>) => useSidebarMenus(nextHandlers),
+      { initialProps: handlers },
+    );
+    rerenderHook = rerender;
 
     act(() => {
       const event = {
@@ -283,12 +280,22 @@ describe("useSidebarMenus", () => {
       await initialClaudeAction?.onRefresh?.();
     });
 
-    const refreshedClaudeAction = result.current.workspaceMenuState?.groups
-      .find((group) => group.id === "new-session")
-      ?.actions.find((action) => action.id === "new-session-claude");
+    await waitFor(() => {
+      const refreshedClaudeAction = result.current.workspaceMenuState?.groups
+        .find((group) => group.id === "new-session")
+        ?.actions.find((action) => action.id === "new-session-claude");
 
-    expect(refreshedClaudeAction?.unavailable).toBe(false);
-    expect(refreshedClaudeAction?.statusLabel).toBeNull();
+      expect(refreshedClaudeAction?.unavailable).toBe(false);
+      expect(refreshedClaudeAction?.statusLabel).toBeNull();
+    });
+
+    expect(handlers.onRefreshEngineOptions).toHaveBeenCalledTimes(1);
+    expect(pushGlobalRuntimeNoticeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageKey: "runtimeNotice.engine.checking",
+        messageParams: { engine: "Claude Code" },
+      }),
+    );
     expect(result.current.workspaceMenuState?.workspaceId).toBe(workspace.id);
   });
 

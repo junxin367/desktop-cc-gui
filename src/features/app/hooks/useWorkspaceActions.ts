@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useNewAgentShortcut } from "./useNewAgentShortcut";
 import type { LoadingProgressDialogConfig } from "./useLoadingProgressDialogState";
 import { runWithLoadingProgress } from "../utils/loadingProgressActions";
+import { pushGlobalRuntimeNotice } from "../../../services/globalRuntimeNotices";
 import { ensureRuntimeReady, openNewWindow, pickWorkspacePath } from "../../../services/tauri";
 import { pushErrorToast } from "../../../services/toasts";
 import type { DebugEntry, EngineType, WorkspaceInfo } from "../../../types";
@@ -24,6 +25,21 @@ function isStoppingRuntimeCreateSessionError(message: string): boolean {
     normalized.includes("manual shutdown") ||
     normalized.includes("manual_shutdown") ||
     (normalized.includes("[runtime_ended]") && normalized.includes("stopped after"))
+  );
+}
+
+function isCliNotFoundError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    message.startsWith("CLI_NOT_FOUND:") ||
+    normalized.includes("no such file or directory") ||
+    normalized.includes("the system cannot find the file specified") ||
+    normalized.includes("is not recognized as an internal or external command") ||
+    normalized.includes("spawn") && normalized.includes("enoent") ||
+    normalized.includes("failed to execute claude") ||
+    normalized.includes("failed to execute codex") ||
+    normalized.includes("failed to execute gemini") ||
+    normalized.includes("failed to execute opencode")
   );
 }
 
@@ -111,14 +127,7 @@ export function useWorkspaceActions({
 
   const localizeErrorMessage = useCallback(
     (message: string): string => {
-      if (
-        message.startsWith("CLI_NOT_FOUND:") ||
-        message.includes("No such file or directory") ||
-        message.includes("Failed to execute claude") ||
-        message.includes("Failed to execute codex") ||
-        message.includes("Failed to execute gemini") ||
-        message.includes("Failed to execute opencode")
-      ) {
+      if (isCliNotFoundError(message)) {
         return `${t("errors.cliNotFound")}\n\n${t("errors.cliNotFoundHint")}`;
       }
       return message;
@@ -231,6 +240,15 @@ export function useWorkspaceActions({
   const showRecoverableCreateSessionToast = useCallback(
     (workspace: WorkspaceInfo, targetEngine: EngineType, message: string) => {
       const detail = localizeSessionCreationErrorMessage(message);
+      pushGlobalRuntimeNotice({
+        severity: "error",
+        category: "workspace",
+        messageKey: "runtimeNotice.error.createSessionRecoveryRequired",
+        messageParams: {
+          workspace: resolveWorkspaceLabel(workspace),
+        },
+        dedupeKey: `workspace:create-session-recovery:${workspace.id}:${targetEngine}`,
+      });
       pushErrorToast({
         id: `${CREATE_SESSION_RECOVERY_TOAST_ID_PREFIX}-${workspace.id}-${targetEngine}`,
         title: t("errors.failedToCreateSession"),
@@ -260,6 +278,7 @@ export function useWorkspaceActions({
     [
       localizeSessionCreationErrorMessage,
       onDebug,
+      resolveWorkspaceLabel,
       retryCreateSessionAfterRuntimeRecovery,
       t,
     ],

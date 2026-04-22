@@ -27,6 +27,7 @@ type AppLayoutProps = {
   approvalToastsNode: ReactNode;
   updateToastNode: ReactNode;
   errorToastsNode: ReactNode;
+  globalRuntimeNoticeDockNode: ReactNode;
   homeNode: ReactNode;
   mainHeaderNode: ReactNode;
   desktopTopbarLeftNode: ReactNode;
@@ -77,6 +78,7 @@ export const AppLayout = memo(function AppLayout({
   approvalToastsNode,
   updateToastNode,
   errorToastsNode,
+  globalRuntimeNoticeDockNode,
   homeNode,
   mainHeaderNode,
   desktopTopbarLeftNode,
@@ -108,6 +110,7 @@ export const AppLayout = memo(function AppLayout({
         approvalToastsNode={approvalToastsNode}
         updateToastNode={updateToastNode}
         errorToastsNode={errorToastsNode}
+        globalRuntimeNoticeDockNode={globalRuntimeNoticeDockNode}
         tabBarNode={tabBarNode}
         sidebarNode={sidebarNode}
         activeTab={activeTab}
@@ -138,6 +141,7 @@ export const AppLayout = memo(function AppLayout({
         approvalToastsNode={approvalToastsNode}
         updateToastNode={updateToastNode}
         errorToastsNode={errorToastsNode}
+        globalRuntimeNoticeDockNode={globalRuntimeNoticeDockNode}
         showGitHistory={showGitHistory}
         gitHistoryNode={gitHistoryNode}
         homeNode={homeNode}
@@ -164,6 +168,7 @@ export const AppLayout = memo(function AppLayout({
       updateToastNode={updateToastNode}
       approvalToastsNode={approvalToastsNode}
       errorToastsNode={errorToastsNode}
+      globalRuntimeNoticeDockNode={globalRuntimeNoticeDockNode}
       homeNode={homeNode}
       showHome={showHome}
       showWorkspace={activeWorkspace && !showHome && !showKanban}

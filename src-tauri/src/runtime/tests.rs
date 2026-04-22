@@ -132,6 +132,16 @@ async fn record_runtime_ended_clears_leases_and_persists_exit_diagnostics() {
     manager
         .acquire_stream_lease(&entry, "codex", "stream:a")
         .await;
+    manager
+        .note_foreground_resume_pending(
+            &entry,
+            "codex",
+            "thread-1",
+            Some("turn-1"),
+            "queue-fusion-cutover",
+            48_000,
+        )
+        .await;
     {
         let mut entries = manager.entries.lock().await;
         let runtime = entries
@@ -167,6 +177,8 @@ async fn record_runtime_ended_clears_leases_and_persists_exit_diagnostics() {
     assert!(!row.active_work_protected);
     assert_eq!(row.turn_lease_count, 0);
     assert_eq!(row.stream_lease_count, 0);
+    assert!(row.foreground_work_state.is_none());
+    assert!(row.foreground_work_source.is_none());
     assert_eq!(row.last_exit_reason_code.as_deref(), Some("process_exit"));
     assert_eq!(
         row.last_exit_message.as_deref(),
@@ -180,6 +192,85 @@ async fn record_runtime_ended_clears_leases_and_persists_exit_diagnostics() {
         Some("[RUNTIME_ENDED] Managed runtime process exited unexpectedly."),
     );
     assert_eq!(row.pid, None);
+}
+
+#[tokio::test]
+async fn terminal_turn_events_clear_foreground_resume_pending_continuity() {
+    let manager = RuntimeManager::new(&std::env::temp_dir());
+    let entry = workspace_entry("resume-pending-terminal");
+    manager.record_starting(&entry, "codex", "test").await;
+    {
+        let mut entries = manager.entries.lock().await;
+        let runtime = entries
+            .get_mut("codex::resume-pending-terminal")
+            .expect("runtime entry should exist");
+        runtime.session_exists = true;
+        runtime.starting = false;
+    }
+
+    manager
+        .note_foreground_resume_pending(
+            &entry,
+            "codex",
+            "thread-1",
+            Some("turn-1"),
+            "queue-fusion-cutover",
+            48_000,
+        )
+        .await;
+    manager
+        .handle_codex_runtime_event(
+            &entry,
+            &json!({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1"
+                }
+            }),
+        )
+        .await;
+
+    let completed_snapshot = manager.snapshot(&AppSettings::default()).await;
+    let completed_row = completed_snapshot
+        .rows
+        .iter()
+        .find(|item| item.workspace_id == "resume-pending-terminal")
+        .expect("runtime row should exist");
+    assert!(completed_row.foreground_work_state.is_none());
+    assert!(completed_row.foreground_work_source.is_none());
+
+    manager
+        .note_foreground_resume_pending(
+            &entry,
+            "codex",
+            "thread-1",
+            Some("turn-1"),
+            "queue-fusion-cutover",
+            48_000,
+        )
+        .await;
+    manager
+        .handle_codex_runtime_event(
+            &entry,
+            &json!({
+                "method": "turn/error",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1"
+                }
+            }),
+        )
+        .await;
+
+    let errored_snapshot = manager.snapshot(&AppSettings::default()).await;
+    let errored_row = errored_snapshot
+        .rows
+        .iter()
+        .find(|item| item.workspace_id == "resume-pending-terminal")
+        .expect("runtime row should exist");
+    assert!(errored_row.foreground_work_state.is_none());
+    assert!(errored_row.foreground_work_source.is_none());
 }
 
 #[tokio::test]

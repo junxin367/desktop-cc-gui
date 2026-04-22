@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { preloadClientStores } from "./services/clientStorage";
+import { pushGlobalRuntimeNotice } from "./services/globalRuntimeNotices";
 import { migrateLocalStorageToFileStore } from "./services/migrateLocalStorage";
 import { initInputHistoryStore } from "./features/composer/hooks/useInputHistoryStore";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -97,6 +98,12 @@ async function markRendererReady() {
 
 async function bootstrap() {
   appendRendererDiagnostic("bootstrap/start");
+  pushGlobalRuntimeNotice({
+    severity: "info",
+    category: "bootstrap",
+    messageKey: "runtimeNotice.bootstrap.start",
+    dedupeKey: "bootstrap:start",
+  });
   await preloadClientStores();
   flushRendererDiagnosticsBuffer();
   appendRendererDiagnostic("bootstrap/preload-complete");
@@ -105,6 +112,12 @@ async function bootstrap() {
   } catch (error) {
     appendRendererDiagnostic("bootstrap/local-storage-migration-failed", {
       error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    });
+    pushGlobalRuntimeNotice({
+      severity: "warning",
+      category: "bootstrap",
+      messageKey: "runtimeNotice.bootstrap.localStorageMigrationFailed",
+      dedupeKey: "bootstrap:local-storage-migration-failed",
     });
     console.error("[bootstrap] localStorage migration failed, continue startup:", error);
   }
@@ -122,6 +135,12 @@ async function bootstrap() {
     </React.StrictMode>,
   );
   appendRendererDiagnostic("bootstrap/render-committed");
+  pushGlobalRuntimeNotice({
+    severity: "info",
+    category: "bootstrap",
+    messageKey: "runtimeNotice.bootstrap.ready",
+    dedupeKey: "bootstrap:ready",
+  });
   void markRendererReady();
 }
 
@@ -131,6 +150,12 @@ export async function startApp() {
   } catch (error) {
     appendRendererDiagnostic("bootstrap/failed", {
       error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    });
+    pushGlobalRuntimeNotice({
+      severity: "error",
+      category: "bootstrap",
+      messageKey: "runtimeNotice.bootstrap.failed",
+      dedupeKey: "bootstrap:failed",
     });
     flushRendererDiagnosticsBuffer();
     console.error("[bootstrap] Startup failed:", error);

@@ -66,7 +66,7 @@ export function renderAppShell(ctx: any) {
     handleStageGitAll, handleStageGitFile, handleStartGuidedConversation, handleStartSharedConversation, handleStartWorkspaceConversation, handleSwitchAccount, handleSync, handleTestNotificationSound, handleToggleDictation,
     handleToggleRuntimeConsole, handleToggleSearchContentFilter, handleToggleSearchPalette, handleToggleTerminal, handleToggleTerminalPanel, handleUnlockPanel, handleUnstageGitFile, handleUpdatePrompt,
     handleUserInputSubmit, handleUserInputSubmitWithPlanApply, handleWorkspaceDragEnter, handleWorkspaceDragLeave, handleWorkspaceDragOver, handleWorkspaceDrop, handleWorktreeCreated, hasActivePlan,
-    hasLoaded, hasPlanData, highlightedBranchIndex, highlightedCommitIndex, highlightedPresetIndex, historySearchItems, homeNode, hydratedThreadListWorkspaceIdsRef,
+    hasLoaded, hasPlanData, highlightedBranchIndex, highlightedCommitIndex, highlightedPresetIndex, historySearchItems, homeNode, globalRuntimeNoticeDockNode, hydratedThreadListWorkspaceIdsRef,
     installedEngines, interruptTurn, isCompact, isDeleteThreadPromptBusy, isEditorFileMaximized, isFilesLoading, isLoadingLatestAgents, isMacDesktop,
     isPanelLocked, isPhone, isPlanMode, isPlanPanelDismissed, isProcessing, isProcessingNow, isPullRequestComposer, isPullRequestComposerFromSections,
     isReviewing, isSearchPaletteOpen, isSoloMode, isTablet, isThreadAutoNaming, isThreadPinned, isValid, isWindowsDesktop,
@@ -354,6 +354,7 @@ export function renderAppShell(ctx: any) {
         approvalToastsNode={approvalToastsNode}
         updateToastNode={updateToastNode}
         errorToastsNode={errorToastsNode}
+        globalRuntimeNoticeDockNode={globalRuntimeNoticeDockNode}
         homeNode={homeNode}
         mainHeaderNode={mainHeaderNode}
         desktopTopbarLeftNode={desktopTopbarLeftNodeWithToggle}

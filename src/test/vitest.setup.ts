@@ -85,6 +85,14 @@ vi.mock("react-i18next", () => ({
           `${String(params?.workspace ?? "")}：Runtime 恢复失败，当前处于冷却期`,
         "runtimeNotice.runtime.quarantined":
           `${String(params?.workspace ?? "")}：Runtime 恢复失败，需要人工关注`,
+        "runtimeNotice.engine.checking":
+          `正在检测 ${String(params?.engine ?? "")} 状态...`,
+        "runtimeNotice.engine.ready":
+          `${String(params?.engine ?? "")} 已就绪`,
+        "runtimeNotice.engine.unavailable":
+          `${String(params?.engine ?? "")} 未安装，请先安装`,
+        "runtimeNotice.engine.requiresLogin":
+          `${String(params?.engine ?? "")} 需先登录`,
         "runtimeNotice.error.createSessionRecoveryRequired":
           `${String(params?.workspace ?? "")}：会话创建失败，运行时正在恢复`,
         "sidebar.searchProjects": "Search projects",

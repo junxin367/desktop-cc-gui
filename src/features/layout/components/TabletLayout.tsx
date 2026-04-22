@@ -7,6 +7,7 @@ type TabletLayoutProps = {
   approvalToastsNode: ReactNode;
   updateToastNode: ReactNode;
   errorToastsNode: ReactNode;
+  globalRuntimeNoticeDockNode: ReactNode;
   showGitHistory: boolean;
   gitHistoryNode: ReactNode;
   homeNode: ReactNode;
@@ -30,6 +31,7 @@ export function TabletLayout({
   approvalToastsNode,
   updateToastNode,
   errorToastsNode,
+  globalRuntimeNoticeDockNode,
   showGitHistory,
   gitHistoryNode,
   homeNode,
@@ -63,6 +65,7 @@ export function TabletLayout({
         {approvalToastsNode}
         {updateToastNode}
         {errorToastsNode}
+        {globalRuntimeNoticeDockNode}
         {settingsOpen && settingsNode}
         {!settingsOpen && showGitHistory && gitHistoryNode}
         {!settingsOpen && showHome && homeNode}

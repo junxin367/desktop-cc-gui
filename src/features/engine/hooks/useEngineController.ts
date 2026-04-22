@@ -17,6 +17,11 @@ import {
   switchEngine,
 } from "../../../services/tauri";
 import {
+  getClientStoreSync,
+  writeClientStoreValue,
+} from "../../../services/clientStorage";
+import { pushGlobalRuntimeNotice } from "../../../services/globalRuntimeNotices";
+import {
   STORAGE_KEYS as MODEL_STORAGE_KEYS,
   getModelMapping,
   applyModelMapping as applyMappingToDisplayName,
@@ -62,6 +67,8 @@ const ENGINE_DISPLAY_MAP: Record<
 const GEMINI_VENDOR_UPDATED_EVENT = "ccgui:gemini-vendor-updated";
 const WEB_RUNTIME_DEFAULT_ENGINE: EngineType = "codex";
 const ENGINE_TYPES: EngineType[] = ["claude", "codex", "gemini", "opencode"];
+const ENGINE_SELECTION_STORE = "composer";
+const ENGINE_SELECTION_KEY = "selectedEngine";
 const WEB_RUNTIME_INITIAL_STATUSES: EngineStatus[] = [
   {
     engineType: "codex",
@@ -226,6 +233,53 @@ function mergeClaudeModelsPreserveDefault(
   ];
 }
 
+function isSupportedEngineType(value: unknown): value is EngineType {
+  return (
+    value === "claude" ||
+    value === "codex" ||
+    value === "gemini" ||
+    value === "opencode"
+  );
+}
+
+function readPersistedEngineSelection(): EngineType | null {
+  const stored = getClientStoreSync<string>(
+    ENGINE_SELECTION_STORE,
+    ENGINE_SELECTION_KEY,
+  );
+  return isSupportedEngineType(stored) ? stored : null;
+}
+
+function persistEngineSelection(engineType: EngineType) {
+  writeClientStoreValue(
+    ENGINE_SELECTION_STORE,
+    ENGINE_SELECTION_KEY,
+    engineType,
+    { immediate: true },
+  );
+}
+
+function createFallbackEngineStatus(
+  engineType: EngineType,
+  version: string | null = "unknown",
+): EngineStatus {
+  return {
+    engineType,
+    installed: true,
+    version,
+    binPath: null,
+    features: {
+      streaming: true,
+      reasoning: true,
+      toolUse: true,
+      imageInput: engineType === "codex",
+      sessionContinuation: true,
+    },
+    models: [],
+    error: null,
+  };
+}
+
 /**
  * Convert EngineModelInfo to ModelOption format for UI compatibility
  */
@@ -267,6 +321,9 @@ export function useEngineController({
   const initRef = useRef(false);
   const lastWorkspaceId = useRef<string | null>(null);
   const openCodeProviderHealthRequestIdRef = useRef(0);
+  const previousAvailabilityRef = useRef<
+    Partial<Record<EngineType, EngineDisplayInfo["availabilityState"]>>
+  >({});
 
   const workspaceId = activeWorkspace?.id ?? null;
   const isConnected = Boolean(activeWorkspace?.connected);
@@ -354,7 +411,7 @@ export function useEngineController({
     });
 
     try {
-      const [rawStatuses, currentEngine] = await Promise.all([
+      const [rawStatuses, detectedEngine] = await Promise.all([
         detectEngines(),
         getActiveEngine(),
       ]);
@@ -377,10 +434,45 @@ export function useEngineController({
                 error: null,
                 version: existingStatus.version ?? "unknown",
               };
+            } else {
+              statuses = [
+                ...statuses,
+                createFallbackEngineStatus("opencode"),
+              ];
             }
           }
         } catch {
           // Keep backend detection result when fallback probe fails.
+        }
+      }
+
+      let nextActiveEngine = detectedEngine;
+      const persistedEngine = readPersistedEngineSelection();
+      const persistedEngineInstalled = persistedEngine
+        ? Boolean(
+            statuses.find((status) => status.engineType === persistedEngine)
+              ?.installed,
+          )
+        : false;
+      if (
+        persistedEngine &&
+        persistedEngineInstalled &&
+        persistedEngine !== detectedEngine
+      ) {
+        try {
+          await switchEngine(persistedEngine);
+          nextActiveEngine = persistedEngine;
+        } catch (error) {
+          onDebug?.({
+            id: `${Date.now()}-engine-restore-selection-error`,
+            timestamp: Date.now(),
+            source: "error",
+            label: "engine/restore persisted selection error",
+            payload: {
+              engine: persistedEngine,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
         }
       }
 
@@ -389,16 +481,16 @@ export function useEngineController({
         timestamp: Date.now(),
         source: "server",
         label: "engine/detect response",
-        payload: { statuses, currentEngine },
+        payload: { statuses, currentEngine: nextActiveEngine },
       });
 
       setEngineStatuses(statuses);
-      setActiveEngineState(currentEngine);
+      setActiveEngineState(nextActiveEngine);
       setIsInitialized(true);
       await refreshOpenCodeProviderState(statuses);
 
       // Get models from the detected status first.
-      const currentStatus = statuses.find((s) => s.engineType === currentEngine);
+      const currentStatus = statuses.find((s) => s.engineType === nextActiveEngine);
       if (currentStatus?.installed && currentStatus.models.length > 0) {
         setEngineModels(currentStatus.models);
       } else {
@@ -408,7 +500,7 @@ export function useEngineController({
       // For OpenCode, always refresh from CLI model list to ensure "all models"
       // are shown independent of provider login status.
       if (currentStatus?.installed) {
-        await loadModelsForEngine(currentEngine, currentStatus.models);
+        await loadModelsForEngine(nextActiveEngine, currentStatus.models);
       }
     } catch (error) {
       onDebug?.({
@@ -456,6 +548,7 @@ export function useEngineController({
       try {
         await switchEngine(engineType);
         setActiveEngineState(engineType);
+        persistEngineSelection(engineType);
         // Immediately switch visible model list to target engine snapshot to avoid
         // showing stale models from previous engine while CLI refresh is in flight.
         setEngineModels(status.models.length > 0 ? status.models : []);
@@ -693,6 +786,60 @@ export function useEngineController({
     loadModelsForEngine,
     refreshOpenCodeProviderState,
   ]);
+
+  useEffect(() => {
+    if (!isInitialized) {
+      return;
+    }
+
+    const previousAvailability = previousAvailabilityRef.current;
+    const nextAvailability: Partial<
+      Record<EngineType, EngineDisplayInfo["availabilityState"]>
+    > = {};
+
+    availableEngines.forEach((engine) => {
+      const nextState = engine.availabilityState ?? (engine.installed ? "ready" : "unavailable");
+      const previousState = previousAvailability[engine.type];
+      nextAvailability[engine.type] = nextState;
+
+      if (nextState === previousState) {
+        return;
+      }
+
+      let severity: "info" | "warning" = "info";
+      let messageKey: string | null = null;
+
+      if (nextState === "requires-login") {
+        severity = "warning";
+        messageKey = "runtimeNotice.engine.requiresLogin";
+      } else if (nextState === "unavailable") {
+        severity = "warning";
+        messageKey = "runtimeNotice.engine.unavailable";
+      } else if (
+        nextState === "ready" &&
+        previousState != null &&
+        previousState !== "ready"
+      ) {
+        messageKey = "runtimeNotice.engine.ready";
+      }
+
+      if (!messageKey) {
+        return;
+      }
+
+      pushGlobalRuntimeNotice({
+        severity,
+        category: "diagnostic",
+        messageKey,
+        messageParams: {
+          engine: engine.displayName,
+        },
+        dedupeKey: `engine:${engine.type}:${nextState}`,
+      });
+    });
+
+    previousAvailabilityRef.current = nextAvailability;
+  }, [availableEngines, isInitialized]);
 
   return {
     // State

@@ -11,6 +11,10 @@ import {
   isWebServiceRuntime,
   switchEngine,
 } from "../../../services/tauri";
+import {
+  getClientStoreSync,
+  writeClientStoreValue,
+} from "../../../services/clientStorage";
 import type { EngineStatus } from "../../../types";
 import { STORAGE_KEYS as PROVIDER_STORAGE_KEYS } from "../../composer/types/provider";
 
@@ -23,6 +27,10 @@ vi.mock("../../../services/tauri", () => ({
   isWebServiceRuntime: vi.fn(),
   switchEngine: vi.fn(),
 }));
+vi.mock("../../../services/clientStorage", () => ({
+  getClientStoreSync: vi.fn(),
+  writeClientStoreValue: vi.fn(),
+}));
 
 const detectEnginesMock = vi.mocked(detectEngines);
 const getActiveEngineMock = vi.mocked(getActiveEngine);
@@ -31,6 +39,8 @@ const getOpenCodeCommandsListMock = vi.mocked(getOpenCodeCommandsList);
 const getOpenCodeProviderHealthMock = vi.mocked(getOpenCodeProviderHealth);
 const isWebServiceRuntimeMock = vi.mocked(isWebServiceRuntime);
 const switchEngineMock = vi.mocked(switchEngine);
+const getClientStoreSyncMock = vi.mocked(getClientStoreSync);
+const writeClientStoreValueMock = vi.mocked(writeClientStoreValue);
 
 type MockOpenCodeProviderHealth = {
   provider: string;
@@ -56,6 +66,8 @@ describe("useEngineController", () => {
       error: null,
     });
     switchEngineMock.mockResolvedValue(undefined);
+    getClientStoreSyncMock.mockReturnValue(undefined);
+    writeClientStoreValueMock.mockReset();
   });
 
   it("preserves default flag when custom claude model overrides same id", async () => {
@@ -359,6 +371,119 @@ describe("useEngineController", () => {
     expect(opencodeEngine?.availabilityLabelKey).toBe(
       "workspace.engineStatusRequiresLogin",
     );
+  });
+
+  it("restores opencode through command fallback even when detectEngines omits the row", async () => {
+    detectEnginesMock.mockResolvedValue([
+      {
+        engineType: "claude",
+        installed: true,
+        version: "1.0.0",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+      {
+        engineType: "codex",
+        installed: true,
+        version: "1.0.0",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+      {
+        engineType: "gemini",
+        installed: true,
+        version: "1.0.0",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+    ]);
+    getOpenCodeCommandsListMock.mockResolvedValue(["opencode"]);
+    getActiveEngineMock.mockResolvedValue("claude");
+    getEngineModelsMock.mockResolvedValue([]);
+
+    const { result } = renderHook(() =>
+      useEngineController({ activeWorkspace: null }),
+    );
+
+    await waitFor(() => expect(result.current.isInitialized).toBe(true));
+
+    const opencodeEngine = result.current.availableEngines.find(
+      (engine) => engine.type === "opencode",
+    );
+    expect(opencodeEngine?.installed).toBe(true);
+    expect(opencodeEngine?.availabilityState).toBe("ready");
+    expect(opencodeEngine?.version).toBe("unknown");
+  });
+
+  it("restores persisted engine selection when the stored engine is installed", async () => {
+    detectEnginesMock.mockResolvedValue([
+      {
+        engineType: "claude",
+        installed: true,
+        version: "1.0.0",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+      {
+        engineType: "gemini",
+        installed: true,
+        version: "1.0.0",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+    ]);
+    getActiveEngineMock.mockResolvedValue("claude");
+    getEngineModelsMock.mockResolvedValue([]);
+    getClientStoreSyncMock.mockReturnValue("gemini");
+
+    const { result } = renderHook(() =>
+      useEngineController({ activeWorkspace: null }),
+    );
+
+    await waitFor(() => expect(result.current.isInitialized).toBe(true));
+    await waitFor(() => expect(result.current.activeEngine).toBe("gemini"));
+
+    expect(switchEngineMock).toHaveBeenCalledWith("gemini");
   });
 
   it("keeps opencode in loading state until provider health resolves", async () => {

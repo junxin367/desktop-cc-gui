@@ -13,6 +13,8 @@ import { useQueuedSend } from "../../threads/hooks/useQueuedSend";
 export function useComposerController({
   activeThreadId,
   activeTurnId,
+  activeContinuationPulse,
+  activeTerminalPulse,
   activeWorkspaceId,
   activeWorkspace,
   isProcessing,
@@ -45,6 +47,8 @@ export function useComposerController({
 }: {
   activeThreadId: string | null;
   activeTurnId?: string | null;
+  activeContinuationPulse?: number;
+  activeTerminalPulse?: number;
   activeWorkspaceId: string | null;
   activeWorkspace: WorkspaceInfo | null;
   isProcessing: boolean;
@@ -124,6 +128,8 @@ export function useComposerController({
   } = useQueuedSend({
     activeThreadId,
     activeTurnId,
+    activeContinuationPulse,
+    activeTerminalPulse,
     isProcessing,
     isReviewing,
     steerEnabled,

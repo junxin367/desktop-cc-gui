@@ -15,6 +15,7 @@ type DesktopLayoutProps = {
   updateToastNode: ReactNode;
   approvalToastsNode: ReactNode;
   errorToastsNode: ReactNode;
+  globalRuntimeNoticeDockNode: ReactNode;
   homeNode: ReactNode;
   showHome: boolean;
   showWorkspace: boolean;
@@ -52,6 +53,7 @@ export function DesktopLayout({
   updateToastNode,
   approvalToastsNode,
   errorToastsNode,
+  globalRuntimeNoticeDockNode,
   homeNode,
   showHome,
   showWorkspace,
@@ -209,6 +211,7 @@ export function DesktopLayout({
     return (
       <section className="main kanban-fullscreen">
         {kanbanNode}
+        {globalRuntimeNoticeDockNode}
         {runtimeConsoleDockNode}
         {terminalDockNode}
       </section>
@@ -249,6 +252,7 @@ export function DesktopLayout({
         style={settingsOpen ? { gridColumn: "1 / -1" } : undefined}
       >
         {errorToastsNode}
+        {globalRuntimeNoticeDockNode}
 
         {settingsOpen && settingsNode}
 

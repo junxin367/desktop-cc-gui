@@ -1978,6 +1978,12 @@ export function AppShell() {
   } = useComposerController({
     activeThreadId,
     activeTurnId,
+    activeContinuationPulse: activeThreadId
+      ? (threadStatusById[activeThreadId]?.continuationPulse ?? 0)
+      : 0,
+    activeTerminalPulse: activeThreadId
+      ? (threadStatusById[activeThreadId]?.terminalPulse ?? 0)
+      : 0,
     activeWorkspaceId,
     activeWorkspace,
     isProcessing,

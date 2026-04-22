@@ -11,6 +11,7 @@ import { TopbarSessionTabs } from "../../app/components/TopbarSessionTabs";
 import { Messages } from "../../messages/components/Messages";
 import { UpdateToast } from "../../update/components/UpdateToast";
 import { ErrorToasts } from "../../notifications/components/ErrorToasts";
+import { GlobalRuntimeNoticeDock } from "../../notifications/components/GlobalRuntimeNoticeDock";
 import { Composer } from "../../composer/components/Composer";
 import { GitDiffPanel } from "../../git/components/GitDiffPanel";
 import { GitDiffViewer } from "../../git/components/GitDiffViewer";
@@ -30,6 +31,7 @@ import { TerminalDock } from "../../terminal/components/TerminalDock";
 import { TerminalPanel } from "../../terminal/components/TerminalPanel";
 import { StatusPanel } from "../../status-panel/components/StatusPanel";
 import { useStatusPanelData } from "../../status-panel/hooks/useStatusPanelData";
+import { useGlobalRuntimeNoticeDock } from "../../notifications/hooks/useGlobalRuntimeNoticeDock";
 import type { AgentTaskScrollRequest } from "../../messages/types";
 import type { SubagentInfo } from "../../status-panel/types";
 import type {
@@ -229,6 +231,7 @@ type LayoutNodesOptions = {
   onConnectWorkspace: (workspace: WorkspaceInfo) => Promise<void>;
   onAddAgent: (workspace: WorkspaceInfo, engine?: EngineType) => Promise<void>;
   engineOptions?: EngineDisplayInfo[];
+  onRefreshEngineOptions?: () => Promise<void> | void;
   onAddSharedAgent: (workspace: WorkspaceInfo) => Promise<void>;
   onAddWorktreeAgent: (workspace: WorkspaceInfo) => Promise<void>;
   onAddCloneAgent: (workspace: WorkspaceInfo) => Promise<void>;
@@ -626,6 +629,7 @@ type LayoutNodesResult = {
   approvalToastsNode: ReactNode;
   updateToastNode: ReactNode;
   errorToastsNode: ReactNode;
+  globalRuntimeNoticeDockNode: ReactNode;
   homeNode: ReactNode;
   mainHeaderNode: ReactNode;
   desktopTopbarLeftNode: ReactNode;
@@ -1102,6 +1106,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       onConnectWorkspace={options.onConnectWorkspace}
       onAddAgent={options.onAddAgent}
       engineOptions={options.engineOptions}
+      onRefreshEngineOptions={options.onRefreshEngineOptions}
       onAddSharedAgent={options.onAddSharedAgent}
       onAddWorktreeAgent={options.onAddWorktreeAgent}
       onAddCloneAgent={options.onAddCloneAgent}
@@ -1422,6 +1427,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   const composerNode = renderComposerNode();
   const homeComposerNode = renderComposerNode(false);
   const approvalToastsNode = null;
+  const globalRuntimeNoticeDock = useGlobalRuntimeNoticeDock();
 
   const updateToastNode = (
     <UpdateToast
@@ -1433,6 +1439,16 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
 
   const errorToastsNode = (
     <ErrorToasts toasts={options.errorToasts} onDismiss={options.onDismissErrorToast} />
+  );
+  const globalRuntimeNoticeDockNode = (
+    <GlobalRuntimeNoticeDock
+      notices={globalRuntimeNoticeDock.notices}
+      visibility={globalRuntimeNoticeDock.visibility}
+      status={globalRuntimeNoticeDock.status}
+      onExpand={globalRuntimeNoticeDock.expand}
+      onMinimize={globalRuntimeNoticeDock.minimize}
+      onClear={globalRuntimeNoticeDock.clear}
+    />
   );
   const homeWorkspaceOptions = getHomeWorkspaceOptions(
     options.groupedWorkspaces,
@@ -1896,6 +1912,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
     approvalToastsNode,
     updateToastNode,
     errorToastsNode,
+    globalRuntimeNoticeDockNode,
     homeNode,
     mainHeaderNode,
     desktopTopbarLeftNode,

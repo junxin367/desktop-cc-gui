@@ -606,6 +606,7 @@ export function useThreadEventHandlers({
         return;
       }
       dispatch({ type: "markHeartbeat", threadId, pulse });
+      dispatch({ type: "markContinuationEvidence", threadId });
       safeMessageActivity();
     },
     [dispatch, safeMessageActivity],
@@ -620,6 +621,7 @@ export function useThreadEventHandlers({
         createTurnDiagnosticState(workspaceId, threadId, turnId, startedAt),
       );
       onTurnStarted(workspaceId, threadId, turnId);
+      dispatch({ type: "markContinuationEvidence", threadId });
       const lifecycle = getThreadLifecycleSnapshot(threadId);
       emitTurnDiagnostic("started", {
         workspaceId,
@@ -640,6 +642,7 @@ export function useThreadEventHandlers({
       delta: string;
     }) => {
       onAgentMessageDelta(payload);
+      dispatch({ type: "markContinuationEvidence", threadId: payload.threadId });
       if (interruptedThreadsRef.current.has(payload.threadId)) {
         return;
       }
@@ -677,25 +680,28 @@ export function useThreadEventHandlers({
   const onItemStartedTracked = useCallback(
     (workspaceId: string, threadId: string, item: Record<string, unknown>) => {
       onItemStarted(workspaceId, threadId, item);
+      dispatch({ type: "markContinuationEvidence", threadId });
       captureTurnItemDiagnostic(threadId, "started", item);
     },
-    [captureTurnItemDiagnostic, onItemStarted],
+    [captureTurnItemDiagnostic, dispatch, onItemStarted],
   );
 
   const onItemUpdatedTracked = useCallback(
     (workspaceId: string, threadId: string, item: Record<string, unknown>) => {
       onItemUpdated(workspaceId, threadId, item);
+      dispatch({ type: "markContinuationEvidence", threadId });
       captureTurnItemDiagnostic(threadId, "updated", item);
     },
-    [captureTurnItemDiagnostic, onItemUpdated],
+    [captureTurnItemDiagnostic, dispatch, onItemUpdated],
   );
 
   const onItemCompletedTracked = useCallback(
     (workspaceId: string, threadId: string, item: Record<string, unknown>) => {
       onItemCompleted(workspaceId, threadId, item);
+      dispatch({ type: "markContinuationEvidence", threadId });
       captureTurnItemDiagnostic(threadId, "completed", item);
     },
-    [captureTurnItemDiagnostic, onItemCompleted],
+    [captureTurnItemDiagnostic, dispatch, onItemCompleted],
   );
 
   const finalizeTurnDiagnostic = useCallback(

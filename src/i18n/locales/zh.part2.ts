@@ -1,4 +1,41 @@
 const zhPart2 = {
+  runtimeNotice: {
+    title: "运行时提示",
+    open: "打开运行时提示",
+    minimize: "最小化",
+    clear: "清空",
+    emptyTitle: "暂无运行时提示",
+    emptyDescription: "初始化进度和关键错误会显示在这里",
+    statusIdle: "空闲",
+    statusStreaming: "运行中",
+    statusError: "异常",
+    severityInfo: "提示",
+    severityWarning: "警告",
+    severityError: "错误",
+    bootstrap: {
+      start: "正在初始化本地状态...",
+      localStorageMigrationFailed: "本地状态迁移失败，已按降级模式继续启动",
+      ready: "客户端初始化完成",
+      failed: "客户端初始化失败，请刷新后重试",
+    },
+    runtime: {
+      startupPending: "{{workspace}}：Codex runtime 正在连接...",
+      resumePending: "{{workspace}}：Runtime 探活异常，正在尝试恢复",
+      ready: "{{workspace}}：Codex runtime 已连接",
+      suspectStale: "{{workspace}}：Runtime 探活异常，正在尝试恢复",
+      cooldown: "{{workspace}}：Runtime 恢复失败，当前处于冷却期",
+      quarantined: "{{workspace}}：Runtime 恢复失败，需要人工关注",
+    },
+    engine: {
+      checking: "正在检测 {{engine}} 状态...",
+      ready: "{{engine}} 已就绪",
+      unavailable: "{{engine}} 未安装，请先安装",
+      requiresLogin: "{{engine}} 需先登录",
+    },
+    error: {
+      createSessionRecoveryRequired: "{{workspace}}：会话创建失败，运行时正在恢复",
+    },
+  },
   // 工作区
   workspace: {
     connect: "连接",

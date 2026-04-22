@@ -544,6 +544,8 @@ type ThreadActivityStatus = {
   processingStartedAt: number | null;
   lastDurationMs: number | null;
   heartbeatPulse?: number;
+  continuationPulse?: number;
+  terminalPulse?: number;
 };
 
 export type ThreadState = {
@@ -592,6 +594,8 @@ export type ThreadAction =
       timestamp?: number;
     }
   | { type: "markHeartbeat"; threadId: string; pulse: number }
+  | { type: "markContinuationEvidence"; threadId: string }
+  | { type: "markTerminalSettlement"; threadId: string }
   | {
       type: "finalizePendingToolStatuses";
       threadId: string;
@@ -947,6 +951,10 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
                   state.threadStatusById[action.threadId]?.lastDurationMs ?? null,
                 heartbeatPulse:
                   state.threadStatusById[action.threadId]?.heartbeatPulse ?? 0,
+                continuationPulse:
+                  state.threadStatusById[action.threadId]?.continuationPulse ?? 0,
+                terminalPulse:
+                  state.threadStatusById[action.threadId]?.terminalPulse ?? 0,
               },
             }
           : state.threadStatusById,
@@ -1170,6 +1178,8 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             processingStartedAt: null,
             lastDurationMs: null,
             heartbeatPulse: 0,
+            continuationPulse: 0,
+            terminalPulse: 0,
           },
         },
         activeThreadIdByWorkspace: {
@@ -1291,6 +1301,8 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       const startedAt = previous?.processingStartedAt ?? null;
       const lastDurationMs = previous?.lastDurationMs ?? null;
       const heartbeatPulse = previous?.heartbeatPulse ?? 0;
+      const continuationPulse = previous?.continuationPulse ?? 0;
+      const terminalPulse = previous?.terminalPulse ?? 0;
       if (action.isProcessing) {
         if (REDUCER_NOOP_GUARD_ENABLED && wasProcessing) {
           return state;
@@ -1308,6 +1320,8 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
                 wasProcessing && startedAt ? startedAt : action.timestamp,
               lastDurationMs,
               heartbeatPulse: wasProcessing ? heartbeatPulse : 0,
+              continuationPulse,
+              terminalPulse,
             },
           },
         };
@@ -1337,6 +1351,8 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             processingStartedAt: null,
             lastDurationMs: nextDuration,
             heartbeatPulse: 0,
+            continuationPulse,
+            terminalPulse,
           },
         },
       };
@@ -1375,6 +1391,8 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
             processingStartedAt: nextStartedAt,
             lastDurationMs: nextDuration,
             heartbeatPulse: previous?.heartbeatPulse ?? 0,
+            continuationPulse: previous?.continuationPulse ?? 0,
+            terminalPulse: previous?.terminalPulse ?? 0,
           },
         },
       };
@@ -1394,6 +1412,48 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
           [action.threadId]: {
             ...previous,
             heartbeatPulse: action.pulse,
+          },
+        },
+      };
+    }
+    case "markContinuationEvidence": {
+      const previous = state.threadStatusById[action.threadId];
+      const nextPulse = (previous?.continuationPulse ?? 0) + 1;
+      return {
+        ...state,
+        threadStatusById: {
+          ...state.threadStatusById,
+          [action.threadId]: {
+            isProcessing: previous?.isProcessing ?? false,
+            hasUnread: previous?.hasUnread ?? false,
+            isReviewing: previous?.isReviewing ?? false,
+            isContextCompacting: previous?.isContextCompacting ?? false,
+            processingStartedAt: previous?.processingStartedAt ?? null,
+            lastDurationMs: previous?.lastDurationMs ?? null,
+            heartbeatPulse: previous?.heartbeatPulse ?? 0,
+            continuationPulse: nextPulse,
+            terminalPulse: previous?.terminalPulse ?? 0,
+          },
+        },
+      };
+    }
+    case "markTerminalSettlement": {
+      const previous = state.threadStatusById[action.threadId];
+      const nextPulse = (previous?.terminalPulse ?? 0) + 1;
+      return {
+        ...state,
+        threadStatusById: {
+          ...state.threadStatusById,
+          [action.threadId]: {
+            isProcessing: previous?.isProcessing ?? false,
+            hasUnread: previous?.hasUnread ?? false,
+            isReviewing: previous?.isReviewing ?? false,
+            isContextCompacting: previous?.isContextCompacting ?? false,
+            processingStartedAt: previous?.processingStartedAt ?? null,
+            lastDurationMs: previous?.lastDurationMs ?? null,
+            heartbeatPulse: previous?.heartbeatPulse ?? 0,
+            continuationPulse: previous?.continuationPulse ?? 0,
+            terminalPulse: nextPulse,
           },
         },
       };
@@ -1465,6 +1525,10 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               state.threadStatusById[action.threadId]?.lastDurationMs ?? null,
             heartbeatPulse:
               state.threadStatusById[action.threadId]?.heartbeatPulse ?? 0,
+            continuationPulse:
+              state.threadStatusById[action.threadId]?.continuationPulse ?? 0,
+            terminalPulse:
+              state.threadStatusById[action.threadId]?.terminalPulse ?? 0,
           },
         },
       };
@@ -1488,6 +1552,10 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
               state.threadStatusById[action.threadId]?.lastDurationMs ?? null,
             heartbeatPulse:
               state.threadStatusById[action.threadId]?.heartbeatPulse ?? 0,
+            continuationPulse:
+              state.threadStatusById[action.threadId]?.continuationPulse ?? 0,
+            terminalPulse:
+              state.threadStatusById[action.threadId]?.terminalPulse ?? 0,
           },
         },
       };
@@ -2045,6 +2113,12 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
                 oldStatus.lastDurationMs ?? existingStatus.lastDurationMs,
               heartbeatPulse:
                 oldStatus.heartbeatPulse ?? existingStatus.heartbeatPulse ?? 0,
+              continuationPulse:
+                oldStatus.continuationPulse
+                ?? existingStatus.continuationPulse
+                ?? 0,
+              terminalPulse:
+                oldStatus.terminalPulse ?? existingStatus.terminalPulse ?? 0,
             }
           : oldStatus;
         delete newThreadStatusById[oldThreadId];

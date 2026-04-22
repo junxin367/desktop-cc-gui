@@ -271,6 +271,7 @@ export function useThreadTurnEvents({
         ? [threadId, aliasThreadId]
         : [threadId];
       targetThreadIds.forEach((targetThreadId) => {
+        dispatch({ type: "markTerminalSettlement", threadId: targetThreadId });
         dispatch({
           type: "finalizePendingToolStatuses",
           threadId: targetThreadId,
@@ -384,6 +385,7 @@ export function useThreadTurnEvents({
       }
 
       dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
+      dispatch({ type: "markTerminalSettlement", threadId });
       dispatch({
         type: "finalizePendingToolStatuses",
         threadId,
@@ -404,6 +406,10 @@ export function useThreadTurnEvents({
       markReviewing(threadId, false);
       setActiveTurnId(threadId, null);
       if (aliasThreadId) {
+        dispatch({
+          type: "markTerminalSettlement",
+          threadId: aliasThreadId,
+        });
         dispatch({
           type: "finalizePendingToolStatuses",
           threadId: aliasThreadId,
@@ -498,6 +504,7 @@ export function useThreadTurnEvents({
       }
 
       dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
+      dispatch({ type: "markTerminalSettlement", threadId });
       dispatch({
         type: "settleThreadPlanInProgress",
         threadId,
@@ -513,6 +520,10 @@ export function useThreadTurnEvents({
       markReviewing(threadId, false);
       setActiveTurnId(threadId, null);
       if (aliasThreadId) {
+        dispatch({
+          type: "markTerminalSettlement",
+          threadId: aliasThreadId,
+        });
         dispatch({
           type: "settleThreadPlanInProgress",
           threadId: aliasThreadId,

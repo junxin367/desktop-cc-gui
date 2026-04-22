@@ -11,6 +11,7 @@ function renderDesktopLayout(overrides: Partial<ComponentProps<typeof DesktopLay
       updateToastNode={<div>update-toast</div>}
       approvalToastsNode={<div>approval-toast</div>}
       errorToastsNode={<div>error-toast</div>}
+      globalRuntimeNoticeDockNode={<div>runtime-notice-dock</div>}
       homeNode={<div>home</div>}
       showHome={false}
       showWorkspace
@@ -52,6 +53,7 @@ describe("DesktopLayout", () => {
 
     expect(container.textContent ?? "").toContain("activity-panel");
     expect(container.textContent ?? "").toContain("plan-panel");
+    expect(container.textContent ?? "").toContain("runtime-notice-dock");
 
     const rightPanel = container.querySelector(".right-panel");
     expect(rightPanel?.className).not.toContain("plan-collapsed");

@@ -5,7 +5,8 @@ import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { EngineType, WorkspaceInfo } from "../../../types";
-import { detectEngines, getOpenCodeProviderHealth } from "../../../services/tauri";
+import { getOpenCodeProviderHealth } from "../../../services/tauri";
+import { pushGlobalRuntimeNotice } from "../../../services/globalRuntimeNotices";
 import { formatByteSize } from "../../../utils/formatting";
 import type { EngineDisplayInfo } from "../../engine/hooks/useEngineController";
 
@@ -51,6 +52,7 @@ export type WorkspaceMenuState = {
 type SidebarMenuHandlers = {
   onAddAgent: (workspace: WorkspaceInfo, engine?: EngineType) => void;
   engineOptions?: EngineDisplayInfo[];
+  onRefreshEngineOptions?: () => Promise<void> | void;
   onAddSharedAgent?: (workspace: WorkspaceInfo) => void;
   onDeleteThread: (workspaceId: string, threadId: string) => void;
   onSyncThread: (workspaceId: string, threadId: string) => void;
@@ -67,9 +69,24 @@ type SidebarMenuHandlers = {
   onAddCloneAgent: (workspace: WorkspaceInfo) => void;
 };
 
+function resolveEngineDisplayName(engineType: EngineType): string {
+  switch (engineType) {
+    case "codex":
+      return "Codex CLI";
+    case "gemini":
+      return "Gemini CLI";
+    case "opencode":
+      return "OpenCode";
+    case "claude":
+    default:
+      return "Claude Code";
+  }
+}
+
 export function useSidebarMenus({
   onAddAgent,
   engineOptions = [],
+  onRefreshEngineOptions,
   onAddSharedAgent,
   onDeleteThread,
   onSyncThread,
@@ -99,6 +116,11 @@ export function useSidebarMenus({
   >({});
   const workspaceOpenCodeLoginRequestIdRef = useRef<Record<string, number>>({});
   const workspaceEngineRefreshRequestIdRef = useRef<Record<string, number>>({});
+  const latestEngineOptionsRef = useRef(engineOptions);
+
+  useEffect(() => {
+    latestEngineOptionsRef.current = engineOptions;
+  }, [engineOptions]);
 
   const closeWorkspaceMenu = useCallback(() => {
     setWorkspaceMenuState(null);
@@ -213,81 +235,50 @@ export function useSidebarMenus({
           availabilityLabelKey: "workspace.engineStatusLoading",
         },
       }));
+      pushGlobalRuntimeNotice({
+        severity: "info",
+        category: "diagnostic",
+        messageKey: "runtimeNotice.engine.checking",
+        messageParams: {
+          engine:
+            fallbackEngineInfo?.displayName ??
+            resolveEngineDisplayName(engineType),
+        },
+        dedupeKey: `engine:${engineType}:checking`,
+      });
 
       try {
-        const detectedStatuses = await detectEngines();
-        if (workspaceEngineRefreshRequestIdRef.current[workspaceEngineKey] !== requestId) {
-          return;
+        await onRefreshEngineOptions?.();
+        const refreshedEngineInfo =
+          latestEngineOptionsRef.current.find((entry) => entry.type === engineType) ?? null;
+        if (
+          engineType === "opencode" &&
+          workspace.connected &&
+          refreshedEngineInfo?.installed
+        ) {
+          await primeWorkspaceOpenCodeLoginState(workspace, { force: true });
         }
-        const matchedStatus = detectedStatuses.find((entry) => entry.engineType === engineType) ?? null;
-        let nextEngineInfo: EngineDisplayInfo = {
-          type: engineType,
-          displayName: fallbackEngineInfo?.displayName ?? engineType,
-          shortName: fallbackEngineInfo?.shortName ?? engineType,
-          installed: matchedStatus?.installed ?? false,
-          version: matchedStatus?.installed ? (matchedStatus?.version ?? null) : null,
-          error: matchedStatus?.error ?? null,
-          availabilityState: matchedStatus?.installed ? "ready" : "unavailable",
-          availabilityLabelKey: matchedStatus?.installed ? null : "sidebar.cliNotInstalled",
-        };
-
-        if (engineType === "opencode") {
-          if (matchedStatus?.installed && workspace.connected) {
-            const providerHealth = await getOpenCodeProviderHealth(workspace.id, null);
-            if (workspaceEngineRefreshRequestIdRef.current[workspaceEngineKey] !== requestId) {
-              return;
-            }
-            setWorkspaceOpenCodeLoginState((prev) => ({
-              ...prev,
-              [workspace.id]: providerHealth.connected ? "ready" : "requires-login",
-            }));
-            if (!providerHealth.connected) {
-              nextEngineInfo = {
-                ...nextEngineInfo,
-                availabilityState: "requires-login",
-                availabilityLabelKey: "workspace.engineStatusRequiresLogin",
-              };
-            }
-          } else {
-            setWorkspaceOpenCodeLoginState((prev) => {
-              const next = { ...prev };
-              delete next[workspace.id];
-              return next;
-            });
-          }
-        }
-
-        setWorkspaceEngineOverrides((prev) => ({
-          ...prev,
-          [workspaceEngineKey]: nextEngineInfo,
-        }));
-      } catch {
-        if (workspaceEngineRefreshRequestIdRef.current[workspaceEngineKey] !== requestId) {
-          return;
-        }
-        setWorkspaceEngineOverrides((prev) => ({
-          ...prev,
-          [workspaceEngineKey]: {
-            type: engineType,
-            displayName: fallbackEngineInfo?.displayName ?? engineType,
-            shortName: fallbackEngineInfo?.shortName ?? engineType,
-            installed: false,
-            version: null,
-            error: null,
-            availabilityState: "unavailable",
-            availabilityLabelKey: "sidebar.cliNotInstalled",
-          },
-        }));
       } finally {
         if (workspaceEngineRefreshRequestIdRef.current[workspaceEngineKey] === requestId) {
           setWorkspaceEngineRefreshing((prev) => ({
             ...prev,
             [workspaceEngineKey]: false,
           }));
+          setWorkspaceEngineOverrides((prev) => {
+            const next = { ...prev };
+            delete next[workspaceEngineKey];
+            return next;
+          });
         }
       }
     },
-    [engineOptions, getWorkspaceEngineKey, workspaceEngineOverrides],
+    [
+      engineOptions,
+      getWorkspaceEngineKey,
+      onRefreshEngineOptions,
+      primeWorkspaceOpenCodeLoginState,
+      workspaceEngineOverrides,
+    ],
   );
 
   const resolveEngineActionMeta = useCallback(

@@ -9,6 +9,7 @@ import {
   openNewWindow,
   pickWorkspacePath,
 } from "../../../services/tauri";
+import { pushGlobalRuntimeNotice } from "../../../services/globalRuntimeNotices";
 import { pushErrorToast } from "../../../services/toasts";
 
 vi.mock("react-i18next", () => ({
@@ -54,6 +55,10 @@ vi.mock("../../../services/tauri", () => ({
 
 vi.mock("../../../services/toasts", () => ({
   pushErrorToast: vi.fn(),
+}));
+
+vi.mock("../../../services/globalRuntimeNotices", () => ({
+  pushGlobalRuntimeNotice: vi.fn(),
 }));
 
 const baseWorkspace: WorkspaceInfo = {
@@ -267,6 +272,14 @@ describe("useWorkspaceActions", () => {
         ],
       }),
     );
+    expect(pushGlobalRuntimeNotice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageKey: "runtimeNotice.error.createSessionRecoveryRequired",
+        messageParams: {
+          workspace: "Workspace",
+        },
+      }),
+    );
     expect(options.onDebug).toHaveBeenCalledWith(
       expect.objectContaining({
         label: "workspace/create-session recovery toast",
@@ -344,6 +357,25 @@ describe("useWorkspaceActions", () => {
 
     await expect(retryAction?.run()).rejects.toThrow(
       "errors.failedToCreateSessionNoThreadId",
+    );
+  });
+
+  it("localizes Windows CLI-not-found create-session failures", async () => {
+    const options = makeOptions({
+      startThreadForWorkspace: vi.fn(async () => {
+        throw new Error(
+          "Failed to execute codex: The system cannot find the file specified. (os error 2)",
+        );
+      }),
+    });
+    const { result } = renderHook(() => useWorkspaceActions(options));
+
+    await act(async () => {
+      await result.current.handleAddAgent(baseWorkspace, "codex");
+    });
+
+    expect(window.alert).toHaveBeenCalledWith(
+      "errors.failedToCreateSession\n\nerrors.cliNotFound\n\nerrors.cliNotFoundHint",
     );
   });
 });

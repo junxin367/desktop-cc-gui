@@ -5,6 +5,7 @@ type PhoneLayoutProps = {
   approvalToastsNode: ReactNode;
   updateToastNode: ReactNode;
   errorToastsNode: ReactNode;
+  globalRuntimeNoticeDockNode: ReactNode;
   tabBarNode: ReactNode;
   sidebarNode: ReactNode;
   showGitHistory: boolean;
@@ -30,6 +31,7 @@ export function PhoneLayout({
   approvalToastsNode,
   updateToastNode,
   errorToastsNode,
+  globalRuntimeNoticeDockNode,
   tabBarNode,
   sidebarNode,
   showGitHistory,
@@ -55,6 +57,7 @@ export function PhoneLayout({
       {approvalToastsNode}
       {updateToastNode}
       {errorToastsNode}
+      {globalRuntimeNoticeDockNode}
       {!settingsOpen && showGitHistory && <div className="compact-panel">{gitHistoryNode}</div>}
       {settingsOpen && <div className="compact-panel">{settingsNode}</div>}
       {!settingsOpen && !showGitHistory && activeTab === "projects" && <div className="compact-panel">{sidebarNode}</div>}

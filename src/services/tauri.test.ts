@@ -880,6 +880,8 @@ describe("tauri invoke wrappers", () => {
       accessMode: "full-access",
       images: ["image.png"],
       preferredLanguage: null,
+      resumeSource: null,
+      resumeTurnId: null,
     });
   });
 
@@ -900,6 +902,8 @@ describe("tauri invoke wrappers", () => {
       accessMode: "read-only",
       images: null,
       preferredLanguage: null,
+      resumeSource: null,
+      resumeTurnId: null,
     });
   });
 
@@ -920,6 +924,8 @@ describe("tauri invoke wrappers", () => {
       accessMode: null,
       images: null,
       preferredLanguage: null,
+      resumeSource: null,
+      resumeTurnId: null,
       customSpecRoot: "/tmp/external-openspec",
     });
   });

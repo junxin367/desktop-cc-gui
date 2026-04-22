@@ -69,7 +69,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     planByThread, planPanelHeight, pointerId, prefillDraft, prevFiles, previous, previousAgentTimestamp, previousDurationMs,
     previousThreadIdRef, previousTracker, prompts, pushError, pushLoading, queueGitStatusRefresh, queueMessage, queueSaveSettings,
     rafId, rateLimitsByWorkspace, reasoningOptions, reasoningSupported, recentThreads, reduceTransparency, refreshAccountInfo, refreshAccountRateLimits,
-    refreshFiles, refreshGitDiffs, refreshGitLog, refreshGitStatus, refreshThread, refreshWorkspaces, releaseNotesActiveIndex, releaseNotesEntries,
+    refreshEngines, refreshFiles, refreshGitDiffs, refreshGitLog, refreshGitStatus, refreshThread, refreshWorkspaces, releaseNotesActiveIndex, releaseNotesEntries,
     releaseNotesError, releaseNotesLoading, releaseNotesOpen, reloadSelectedAgent, removeImage, removeImagesForThread, removeThread, removeWorkspace,
     removeWorktree, renamePrompt, renameThread, renameWorkspaceGroup, renameWorktree, renameWorktreeNotice, renameWorktreePrompt, renameWorktreeUpstream,
     renameWorktreeUpstreamPrompt, requestId, requestThreadId, resetGitHubPanelState, resetPullRequestSelection, resetSoloSplitToHalf, resetWorkspaceThreads, resolveCloneProjectContext,
@@ -143,6 +143,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     approvalToastsNode,
     updateToastNode,
     errorToastsNode,
+    globalRuntimeNoticeDockNode,
     homeNode,
     mainHeaderNode,
     desktopTopbarLeftNode,
@@ -265,6 +266,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     },
     onAddAgent: handleAddAgent,
     engineOptions: availableEngines,
+    onRefreshEngineOptions: refreshEngines,
     onAddSharedAgent: handleStartSharedConversation,
     onAddWorktreeAgent: handleAddWorktreeAgent,
     onAddCloneAgent: handleAddCloneAgent,
@@ -784,7 +786,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
 
 
   return {
-    sidebarNode, messagesNode, composerNode, approvalToastsNode, updateToastNode, errorToastsNode, homeNode, mainHeaderNode,
+    sidebarNode, messagesNode, composerNode, approvalToastsNode, updateToastNode, errorToastsNode, globalRuntimeNoticeDockNode, homeNode, mainHeaderNode,
     desktopTopbarLeftNode, tabletNavNode, tabBarNode, rightPanelToolbarNode, gitDiffPanelNode, gitDiffViewerNode, fileViewPanelNode, planPanelNode,
     debugPanelNode, debugPanelFullNode, terminalDockNode, compactEmptyCodexNode, compactEmptySpecNode, compactEmptyGitNode, compactGitBackNode,
   };
