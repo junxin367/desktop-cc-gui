@@ -1803,3 +1803,60 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 134: 收敛 app-shell-parts exhaustive-deps 告警
+
+**Date**: 2026-04-23
+**Task**: 收敛 app-shell-parts exhaustive-deps 告警
+**Branch**: `feature/v-0.4.8`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：处理 `app-shell-parts` 剩余的 `react-hooks/exhaustive-deps` 热点，收敛 `useAppShellSearchAndComposerSection.ts` 与 `useAppShellSections.ts` 中的 9 条 warning，并为这轮治理建立 OpenSpec/Trellis 追踪。
+
+主要改动：
+- 新建 OpenSpec change `stabilize-app-shell-parts-exhaustive-deps-hotspot` 与对应 Trellis PRD，定义 `P0 search/transition` 与 `P1 scheduler` 两批治理边界。
+- 在 `useAppShellSearchAndComposerSection.ts` 中补齐 search palette 开关、selection、filter 和结果选择回调的 setter 依赖。
+- 在 `useAppShellSections.ts` 中补齐 kanban panel 打开、home/workspace 过渡回调，以及 recurring scheduler effect 的 `kanbanCreateTask` 依赖。
+- 更新 change tasks，将两批任务全部标记完成。
+
+涉及模块：
+- `src/app-shell-parts/useAppShellSearchAndComposerSection.ts`
+- `src/app-shell-parts/useAppShellSections.ts`
+- `openspec/changes/stabilize-app-shell-parts-exhaustive-deps-hotspot/**`
+- `.trellis/tasks/04-23-stabilize-app-shell-parts-exhaustive-deps-hotspot/prd.md`
+
+验证结果：
+- `app-shell-parts` 两个目标文件 warning：`9 -> 0`
+- 仓库 `react-hooks/exhaustive-deps` warning：`25 -> 16`
+- `npx vitest run src/app-shell-parts/useAppShellSections.kanban-text.test.ts src/features/search/components/SearchPalette.test.tsx src/features/workspaces/components/WorkspaceHome.test.tsx` 通过（28 tests）
+- `npm run lint` 通过（0 errors, 16 warnings）
+- `npm run typecheck` 通过
+
+后续事项：
+- `stabilize-app-shell-parts-exhaustive-deps-hotspot` 已满足归档条件，可直接执行 OpenSpec archive。
+- 下一批热点建议转向 `threads` 域的剩余 10 条 warning。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d1278a25` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
