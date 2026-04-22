@@ -1,65 +1,11 @@
 {
-  "generatedAt": "2026-04-22T17:01:09.313Z",
+  "generatedAt": "2026-04-22T17:37:49.728Z",
   "scope": "fail",
   "policyVersion": "2026-04-22.policy-v2",
   "entries": [
     {
-      "path": "src/styles/settings.part1.css",
-      "lines": 2993,
-      "type": "css",
-      "policyId": "styles",
-      "priority": "P1",
-      "warnThreshold": 2200,
-      "failThreshold": 2800
-    },
-    {
       "path": "src-tauri/src/engine/commands.rs",
       "lines": 2976,
-      "type": "rust",
-      "policyId": "bridge-runtime-critical",
-      "priority": "P0",
-      "warnThreshold": 2200,
-      "failThreshold": 2600
-    },
-    {
-      "path": "src/styles/composer.part1.css",
-      "lines": 2941,
-      "type": "css",
-      "policyId": "styles",
-      "priority": "P1",
-      "warnThreshold": 2200,
-      "failThreshold": 2800
-    },
-    {
-      "path": "src/styles/settings.part2.css",
-      "lines": 2860,
-      "type": "css",
-      "policyId": "styles",
-      "priority": "P1",
-      "warnThreshold": 2200,
-      "failThreshold": 2800
-    },
-    {
-      "path": "src/styles/git-history.part1.css",
-      "lines": 2818,
-      "type": "css",
-      "policyId": "styles",
-      "priority": "P1",
-      "warnThreshold": 2200,
-      "failThreshold": 2800
-    },
-    {
-      "path": "src-tauri/src/runtime/mod.rs",
-      "lines": 2655,
-      "type": "rust",
-      "policyId": "bridge-runtime-critical",
-      "priority": "P0",
-      "warnThreshold": 2200,
-      "failThreshold": 2600
-    },
-    {
-      "path": "src-tauri/src/git/commands.rs",
-      "lines": 2619,
       "type": "rust",
       "policyId": "bridge-runtime-critical",
       "priority": "P0",
