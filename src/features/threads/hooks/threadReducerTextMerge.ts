@@ -1,4 +1,8 @@
 import type { ConversationItem } from "../../../types";
+import {
+  collapseNearDuplicateParagraphRepeats,
+  mergeNearDuplicateParagraphVariants,
+} from "../../../utils/assistantDuplicateParagraphs";
 import { getMarkdownInlineCodeInfo } from "../../../utils/markdownCodeRegions";
 
 function isUserMessageItem(
@@ -829,6 +833,14 @@ export function mergeCompletedAgentText(existing: string, completed: string) {
     return chooseReadableText(existing, normalizedCompleted);
   }
 
+  const nearDuplicateParagraphMerge = mergeNearDuplicateParagraphVariants(
+    existing,
+    normalizedCompleted,
+  );
+  if (nearDuplicateParagraphMerge) {
+    return nearDuplicateParagraphMerge;
+  }
+
   const comparableExisting = compactComparableStreamingText(existing);
   const comparableCompleted = compactComparableStreamingText(normalizedCompleted);
   if (comparableExisting && comparableCompleted) {
@@ -874,6 +886,11 @@ export function mergeCompletedAgentText(existing: string, completed: string) {
 
 function normalizeCompletedAssistantText(value: string) {
   const cleanedValue = stripClaudeApprovalResumeArtifacts(value);
+  const collapsedRawParagraphBlocks =
+    collapseNearDuplicateParagraphRepeats(cleanedValue);
+  if (collapsedRawParagraphBlocks !== cleanedValue) {
+    return collapsedRawParagraphBlocks;
+  }
   const normalizedMessage = normalizeItem({
     id: "__completed-assistant-normalization__",
     kind: "message",
@@ -883,7 +900,7 @@ function normalizeCompletedAssistantText(value: string) {
   const normalizedByItem =
     normalizedMessage.kind === "message" ? normalizedMessage.text : cleanedValue;
   if (normalizedByItem && normalizedByItem !== value) {
-    return normalizedByItem;
+    return collapseNearDuplicateParagraphRepeats(normalizedByItem);
   }
 
   const trimmed = cleanedValue.trim();
@@ -900,7 +917,7 @@ function normalizeCompletedAssistantText(value: string) {
     }
   }
 
-  return cleanedValue;
+  return collapseNearDuplicateParagraphRepeats(cleanedValue);
 }
 
 export function addSummaryBoundary(existing: string) {
