@@ -118,37 +118,30 @@ Any client-side realtime CPU optimization MUST preserve conversation lifecycle s
 
 ### Requirement: Foreground Turn MUST Exit Pseudo-Processing When Recovery Progress Stalls
 
-在统一会话生命周期契约下，任何已经进入 foreground processing 的 turn，只要其恢复链无法继续推进，就 MUST 以可恢复的 degraded 方式离开伪处理中间态，而不是无限保持 loading。
+在统一会话生命周期契约下，queue fusion 发起的 continuation 若未真正接续成功，也 MUST 以有界、可恢复的方式离开 pseudo-processing。
 
-#### Scenario: waiting-first-event does not block lifecycle forever
+#### Scenario: missing continuation evidence after fusion still settles lifecycle
 
-- **WHEN** 前端已将线程标记为 processing
-- **AND** turn 在受限窗口内未收到启动后的首个可推进事件
-- **THEN** 生命周期 MUST 转入可诊断的 stalled/degraded 子状态
-- **AND** 线程 MUST 不再表现为无法解释的永久 loading
-
-#### Scenario: missing terminal event after user input still settles lifecycle
-
-- **WHEN** 用户提交 `requestUserInput` 后 turn 恢复执行
-- **AND** 生命周期在受限窗口内没有收到新的进度事件或终态事件
-- **THEN** 系统 MUST 以 recoverable degraded 结果结算当前恢复阶段
+- **WHEN** 前端已为当前线程发起 fusion continuation
+- **AND** 生命周期在受限窗口内没有收到新的 continuation 证据或终态事件
+- **THEN** 当前线程 MUST 结算为 recoverable degraded / stalled
 - **AND** 线程 MUST 重新进入可交互状态
+
+#### Scenario: late terminal settlement clears pending fusion continuation
+
+- **WHEN** 一条处于待确认状态的 fusion continuation 后续收到了 completed、error、runtime-ended 或 recoverable abort
+- **THEN** 生命周期 MUST 清理对应的待确认 continuation 状态
+- **AND** 线程 MUST 不再残留伪 processing 或假继续生成文案
 
 ### Requirement: Cross-Surface Lifecycle State MUST Remain Non-Contradictory
 
-生命周期展示面之间 MUST 避免对同一条 turn 给出互相矛盾的主状态结论。
+生命周期展示面之间 MUST 避免对同一条 fusion stalled chain 给出互相矛盾的主状态结论。
 
-#### Scenario: runtime pool cannot report unexplained idle during foreground stall
+#### Scenario: fusion stalled thread cannot coexist with unexplained busy continuation copy
 
-- **WHEN** 线程仍处于 foreground stalled 或 resume-pending 状态
-- **THEN** runtime pool、thread canvas 与 diagnostics surface MUST 共享“仍有前台未结算工作”的事实
-- **AND** runtime pool MUST NOT 在无附加解释的情况下仅显示 `idle`
-
-#### Scenario: settled turn removes foreground stalled contract
-
-- **WHEN** turn 收到 completed、error 或 recoverable abort 等终态
-- **THEN** 前台 stalled 标记 MUST 被清理
-- **AND** 各展示面 MUST 收敛到一致的 settled 生命周期结果
+- **WHEN** 当前线程的 fusion continuation 仍处于待确认或 stalled 状态
+- **THEN** 用户可见文案 MUST 表达“正在切换 / 等待接续 / 已停滞”等待确认语义
+- **AND** 系统 MUST NOT 在无 continuation 证据时直接宣称“内容正在继续生成”
 
 ### Requirement: Cross-Engine Lifecycle Parity Under Optimization
 

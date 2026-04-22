@@ -33,49 +33,42 @@ TBD - created by archiving change codex-queued-followup-fusion. Update Purpose a
 
 ### Requirement: Queued Follow-up Fusion SHALL Prefer Existing In-Run Follow-up Semantics
 
-系统 MUST 优先复用当前引擎已存在的运行中 follow-up / steer 语义来完成融合，而不是默认执行显式中断。
+系统 MUST 在 queue fusion 真正收到 continuation 证据前，将该动作视为“待确认接续”，而不是直接向用户宣称回复已经继续生成。
 
-#### Scenario: supported runtime uses same-run continuation as primary fusion path
+#### Scenario: same-run fusion remains pending until new continuation evidence arrives
+
 - **GIVEN** 当前线程正在运行
 - **AND** 当前引擎支持同轮 follow-up / steer
 - **WHEN** 用户点击某条排队消息的 `融合`
-- **THEN** 系统 MUST 通过现有的同轮 follow-up 路径发送该消息
-- **AND** 系统 MUST NOT 把显式 interrupt 作为主路径
+- **THEN** 系统 MAY 先进入待确认接续状态
+- **AND** 在收到新的 `turn/started`、stream delta、execution item 或等效 continuation 证据前 MUST NOT 直接宣称“内容正在继续生成”
 
-#### Scenario: safe cutover is used only when same-run continuation is unavailable
+#### Scenario: cutover fusion remains pending until successor run actually starts
+
 - **GIVEN** 当前线程正在运行
 - **AND** 当前引擎不支持同轮 follow-up / steer
 - **AND** 当前引擎支持安全 cutover
 - **WHEN** 用户点击某条排队消息的 `融合`
-- **THEN** 系统 MUST 使用该引擎支持的安全 cutover 路径使该消息立即生效
-- **AND** 系统 MUST NOT 伪装成“仍然是同轮追加”
+- **THEN** 系统 MUST 先等待 successor run 的真实启动证据
+- **AND** 在 successor run 未被确认前 MUST NOT 把 cutover 视作已经成功继续
 
 ### Requirement: Queued Follow-up Fusion SHALL Preserve Queue Order Integrity
 
-系统 MUST 在执行单条队列项融合时保持剩余队列顺序稳定，并在失败时恢复被选中的队列项。
+系统 MUST 在 fusion continuation 未接上的情况下有界结算当前融合动作，避免留下永久锁死的 fusion 状态。
 
-#### Scenario: successful fusion removes selected item and preserves remaining order
-- **WHEN** 用户对某一条排队消息执行融合
-- **AND** 融合流程成功
-- **THEN** 系统 MUST 从队列中移除被选中的消息
-- **AND** 剩余队列项 MUST 保持点击前的相对顺序
+#### Scenario: stalled continuation releases fusion lock and returns thread to recoverable state
 
-#### Scenario: failed fusion restores original queue position
-- **WHEN** 用户对某一条排队消息执行融合
-- **AND** 融合流程失败
-- **THEN** 系统 MUST 将该消息恢复到原来的队列位置
-- **AND** 用户 MUST 能看到明确失败反馈
+- **WHEN** 用户对某一条队列项执行融合
+- **AND** 在受限窗口内未收到新的 continuation 证据或终态事件
+- **THEN** 系统 MUST 将该融合动作结算为 recoverable stalled / degraded
+- **AND** 系统 MUST 清理该线程的 fusion lock
+- **AND** 用户 MUST 能继续操作当前线程与后续排队消息
 
-#### Scenario: fusion pauses same-thread auto-drain until resolved
-- **GIVEN** 当前线程存在进行中的融合动作
-- **WHEN** 队列自动出队调度评估该线程的待发送消息
-- **THEN** 系统 MUST 暂停该线程的自动出队
-- **AND** 在融合成功或失败前 MUST NOT 派发下一条排队消息
+#### Scenario: terminal settlement clears unresolved fusion continuation
 
-#### Scenario: active thread isolation prevents cross-thread queue leakage
-- **WHEN** 不同线程各自拥有排队消息
-- **THEN** 当前 composer 只 MUST 展示活动线程对应的排队区域
-- **AND** 对某线程队列项执行融合或删除 MUST NOT 影响其他线程的队列
+- **WHEN** 融合动作对应的恢复链最终收到了 completed、error、runtime-ended 或等效终态
+- **THEN** 系统 MUST 清理该融合动作的待确认状态
+- **AND** 剩余队列项 MUST 不再被已结束的 fusion continuation 阻塞
 
 ### Requirement: Queued Follow-up Fusion SHALL Preserve Original Message Payload
 

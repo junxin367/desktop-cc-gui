@@ -12,11 +12,12 @@
 
 问题已从“局部 bug”演变为“架构债务”，需要一次受控重构，而不是继续补丁式修复。
 
-## 代码核对状态（2026-04-21）
+## 代码核对状态（2026-04-22）
 
-- 当前代码仍是 V1 主路径：前端 bridge 与 facade 仍保留 `hardDelete` 删除参数，Project Memory 面板仍直接调用 V1 list/update/delete 形态。
-- 未发现 V2 核心符号落地：`ProjectMemoryItemV2`、`MemoryListProjection`、`MemoryDetailPayload`、`OperationTrailEntry`、`project_memory_list_v2`、`project_memory_get_v2` 暂未进入代码。
-- 本提案继续保持“待实施”状态；后续应先完成 Batch A 的 DTO / command / whitelist / IPC contract freeze，再进入存储与 UI 批次。
+- 当前代码仍是 V1 主路径：前端 bridge 与 facade 仍保留 `hardDelete` 删除参数，`src/services/tauri.ts` 仍调用 `project_memory_delete(memoryId, workspaceId, hardDelete)`，Project Memory 面板仍直接消费 V1 list/get/update/delete 形态。
+- repo 内仍未发现 V2 核心符号落地：`ProjectMemoryItemV2`、`MemoryListProjection`、`MemoryDetailPayload`、`OperationTrailEntry`、`project_memory_list_v2`、`project_memory_get_v2` 暂未进入代码。
+- 这意味着提案里 Batch A 的 DTO / command / whitelist / IPC contract freeze 还没真正开始，V2 存储、融合、详情展示与删除语义也还未进入可验证实现。
+- 本提案继续保持“待实施”状态；后续应先完成 Batch A 的契约冻结，再进入存储与 UI 批次，不具备归档条件。
 
 ## 目标与边界
 

@@ -3,49 +3,54 @@
 ## Purpose
 
 Define display-only sticky anchoring for the latest ordinary user question during active realtime conversation processing.
-
 ## Requirements
+### Requirement: Rendered User Sections SHALL Pin During Realtime Processing
 
-### Requirement: Latest User Question SHALL Pin During Realtime Processing
+The conversation canvas SHALL use the same condensed sticky header and physical handoff model as history browsing while the active turn is processing.
 
-The conversation canvas SHALL keep the latest ordinary user question visible as a sticky top anchor while the active turn is processing.
-
-#### Scenario: latest user question pins after reaching top during realtime processing
+#### Scenario: rendered user sections hand off sticky ownership during realtime processing
 - **WHEN** a conversation is processing in realtime
-- **AND** the latest ordinary user question bubble scrolls to the top of the message viewport
-- **THEN** the system SHALL keep that user question bubble fixed at the top of the message viewport
+- **AND** multiple ordinary user question sections are present in the rendered message window
+- **AND** one of those sections becomes the most recent section whose source row has reached the top boundary of the message viewport
+- **THEN** the system SHALL pin that section using the same condensed sticky header model used for history browsing
 - **AND** subsequent realtime content SHALL continue scrolling underneath it
 
-#### Scenario: earlier user questions remain normal scroll content
+#### Scenario: users can scroll back to earlier rendered sections during realtime processing
 - **WHEN** a conversation is processing in realtime
-- **AND** the canvas contains multiple user question bubbles
-- **THEN** only the latest ordinary user question bubble SHALL enter the sticky top behavior
-- **AND** earlier user question bubbles SHALL remain normal scroll content
+- **AND** the user scrolls upward to review an earlier rendered ordinary user question section
+- **THEN** the sticky header SHALL hand off to that earlier rendered section using physical scroll position
+- **AND** it SHALL NOT switch early before that section reaches the top boundary
+
+#### Scenario: realtime window trimming still preserves the latest current-turn source row
+- **WHEN** the latest ordinary user question would otherwise be trimmed out of the live render window
+- **THEN** the system SHALL keep that user row renderable enough for sticky-boundary calculation
+- **AND** the realtime sticky header SHALL still be able to hand off to that latest question once its source row reaches the top boundary
 
 ### Requirement: User Question Pinning SHALL Recover To Normal Scrolling Outside Realtime
 
-The conversation canvas SHALL remove latest-user-question pinning whenever the view is no longer the active realtime turn.
+The conversation canvas SHALL stop using realtime-only sticky guarantees whenever the view is no longer the active realtime turn.
 
-#### Scenario: pinning is removed after processing completes
+#### Scenario: history sticky contract takes over after processing completes
 - **WHEN** the active conversation turn stops processing
-- **THEN** the latest user question bubble SHALL return to normal scroll behavior
+- **THEN** the realtime-specific sticky contract SHALL stop applying
+- **AND** any remaining sticky behavior SHALL be governed by the history sticky contract
 - **AND** the message order and payload SHALL remain unchanged
 
-#### Scenario: history restore does not pin user questions
+#### Scenario: restored history defers to history sticky behavior
 - **WHEN** the user opens or queries a restored conversation history view
-- **THEN** user question bubbles SHALL render as normal scroll content
-- **AND** no restored user question bubble SHALL be sticky solely because it is the latest user message
+- **THEN** realtime latest-user-question pinning SHALL NOT render its own separate sticky wrapper or header
+- **AND** any visible sticky behavior SHALL be governed by the history sticky contract
 
 ### Requirement: User Question Pinning SHALL Be Display-Only
 
-The pinning behavior SHALL be a presentation-layer state and SHALL NOT mutate conversation data, copy text, or runtime contracts.
+The pinning behavior SHALL remain a presentation-layer state and SHALL NOT mutate conversation data, copy text, or runtime contracts.
 
 #### Scenario: copy remains bound to original user message display text
-- **WHEN** the latest user question bubble is sticky
-- **AND** the user copies that message
+- **WHEN** the latest user question is represented by the realtime sticky header
+- **AND** the user copies that message from its original row
 - **THEN** the copy action SHALL use the existing user message display text
 - **AND** the sticky presentation SHALL NOT alter the copied content
 
 #### Scenario: runtime and history contracts remain unchanged
-- **WHEN** latest-user-question pinning is active
+- **WHEN** realtime latest-user-question pinning is active
 - **THEN** the system SHALL NOT require new Tauri commands, storage fields, runtime events, or history loader payload fields

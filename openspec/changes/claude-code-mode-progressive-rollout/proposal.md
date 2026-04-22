@@ -4,6 +4,13 @@
 
 如果继续保留旧提案里“approval bridge 尚未接入”“default 仍停留 preview 占位”的表述，会导致 OpenSpec 与代码事实脱节，后续验证、回归和继续开放 `acceptEdits` 都会失去可靠基线。因此本次需要基于现有实现回写 proposal，把“已完成能力”“剩余边界”“下一阶段待办”明确下来。
 
+## 代码核对状态（2026-04-22）
+
+- `plan` / `default` / `full-access` 已进入真实 runtime 映射：当前 `src-tauri/src/engine/claude.rs` 已分别透传 `--permission-mode plan`、`--permission-mode default` 与 `--dangerously-skip-permissions`。
+- `default` 的 synthetic approval 主链与 `modeBlocked` 诊断已在代码中可见：历史回放 `File changes` 卡片、`--resume` 续跑、命令执行 denial 的恢复建议都已有实现落点。
+- `acceptEdits` 仍未对 Claude 正式开放：mode selector 仍保持 disabled，对应 proposal 中的 `E.3` 与 `V.4` 仍未闭环。
+- 因此本提案当前状态应视为“主体实现已落地、尾项收口未完成”，暂不应归档；后续重点是非文件工具 bridge 评估、`acceptEdits` 开放决策与手测补齐。
+
 ## 目标与边界
 
 ### 目标

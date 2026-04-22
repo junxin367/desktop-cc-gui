@@ -62,28 +62,21 @@ When conversation work depends on a managed runtime, the system MUST first prote
 
 ### Requirement: Codex Runtime Silence MUST Surface Bounded Liveness Diagnostics
 
-对于 `Codex` 受管 runtime，系统 MUST 将“启动后长时间无首包”与“runtime 存活但协议静默”视为受限 liveness 状态，而不是直接坍缩成普通 idle。
+对于 Codex fusion continuation，系统 MUST 将“切换后无新 continuation 证据”的静默窗口视为受限 liveness 状态，而不是仅留下模糊的 busy / retained 表象。
 
-#### Scenario: startup-pending is distinct from idle retention
+#### Scenario: fusion continuation silence is not treated as confirmed resumed work
 
-- **WHEN** `Codex` runtime 已成功创建或 reacquire
-- **AND** 前台 turn 已开始等待首个生命周期事件
-- **AND** 该窗口尚未完成终态结算
-- **THEN** 系统 MUST 将 runtime 标记为 `startup-pending`、`waiting-first-event` 或等效 liveness 状态
-- **AND** 该状态 MUST NOT 被归类为普通 warm idle
+- **WHEN** Codex queue fusion 已向 runtime 发出 continuation 请求
+- **AND** runtime 进程仍存活
+- **AND** 受限窗口内没有新的 continuation 证据
+- **THEN** 系统 MUST 将该状态视为 `resume-pending`、`silent-busy` 或等效 liveness 状态
+- **AND** 该状态 MUST NOT 被当作已经确认 resumed 的正常 active work
 
-#### Scenario: silent-busy remains protected until bounded settlement
+#### Scenario: bounded fusion silence timeout settles to structured degraded outcome
 
-- **WHEN** `Codex` turn 已经获得前台处理权
-- **AND** runtime 进程仍存活但在受限窗口内没有新的协议事件
-- **THEN** 系统 MUST 将该 runtime 视为 `silent-busy`、`resume-pending` 或等效 active-work protection 状态
-- **AND** 自动清理与池化策略 MUST NOT 仅因 lease 缺失就把该状态视为可随意回收的 idle
-
-#### Scenario: bounded liveness timeout settles to structured degraded outcome
-
-- **WHEN** `startup-pending` 或 `silent-busy` 超出配置的受限窗口
+- **WHEN** Codex fusion continuation silence 超出配置的 bounded window
 - **THEN** 系统 MUST 产出结构化 degraded diagnostic
-- **AND** 诊断 MUST 指明该条链路是在首包等待阶段还是恢复等待阶段超时
+- **AND** 诊断 MUST 能区分普通 user-input resume timeout 与 fusion continuation timeout
 
 ### Requirement: Last-Good Continuity MUST Survive Partial Runtime-Dependent Read Failures
 
@@ -115,7 +108,7 @@ Conversation list, reopen, and history surfaces MUST preserve the last successfu
 
 ### Requirement: New Runtime-Required Actions MUST Start From A Fresh Guarded Attempt
 
-When the user initiates a new runtime-required action after a prior runtime failure, the system MUST ensure that the new attempt does not inherit an unbounded retry loop or stale in-flight recovery state.
+When the user initiates a new runtime-required action after a prior runtime failure, or while the previously bound managed runtime has already entered a stopping/manual-shutdown lifecycle, the system MUST ensure that the new attempt does not inherit an unbounded retry loop, stale in-flight recovery state, or a runtime instance that is already on its way out.
 
 #### Scenario: new thread after prior failure starts a fresh acquisition cycle
 
@@ -128,6 +121,18 @@ When the user initiates a new runtime-required action after a prior runtime fail
 - **WHEN** a `workspace + engine` pair is currently quarantined and the user explicitly retries or reconnects
 - **THEN** the system MUST allow a fresh guarded recovery cycle to start
 - **AND** the system MUST keep the retry sequence bounded by the same recovery contract
+
+#### Scenario: create session ignores stopping runtime marked for manual shutdown
+
+- **WHEN** the user starts a new thread or creates a new session while the currently registered managed runtime has already been marked `manual shutdown`, `runtime ended`, or equivalent stopping lifecycle
+- **THEN** the system MUST reject that runtime as a reusable foreground execution target
+- **AND** the create-session path MUST start or await a fresh guarded runtime attempt instead of surfacing the stale stopping-runtime binding as the first execution target
+
+#### Scenario: create session gets one bounded fresh retry after stopping-runtime race
+
+- **WHEN** a user-initiated create-session request reaches `thread/start` and the bound runtime still ends due to the same stopping/manual-shutdown race before the new turn is created
+- **THEN** the system MUST perform one bounded fresh reacquire or equivalent guarded retry for that user action
+- **AND** the flow MUST settle as either a successful new session or a recoverable failure without requiring an unbounded reconnect loop
 
 ### Requirement: Stability Evidence MUST Be Correlatable Across Existing Diagnostics Surfaces
 
@@ -150,3 +155,31 @@ Runtime failures covered by this capability MUST leave enough correlated evidenc
 - **WHEN** the frontend records thread/session or renderer diagnostics for the same failure chain
 - **THEN** those diagnostics MUST preserve matching correlation dimensions such as workspace, thread, action identity, or guarded degraded source when available
 - **AND** operators MUST be able to relate frontend and runtime evidence without inventing a second incident storage system
+
+### Requirement: Recoverable Create-Session Failures MUST Expose A Direct Recovery Action
+
+当系统已经能够判断某次 create-session failure 属于 stopping-runtime / runtime-recovering 这类可恢复错误时，前端 MUST 提供显性的恢复动作，而不是只留下纯文本错误结论。
+
+#### Scenario: recoverable create-session failure shows reconnect-and-retry action
+
+- **WHEN** 用户创建会话时收到 `[SESSION_CREATE_RUNTIME_RECOVERING]` 或等价的 recoverable create-session failure
+- **THEN** 前端 MUST 展示一个显性的恢复入口
+- **AND** 该入口 MUST 明确表达“重连并重试创建”而不是普通 dismiss
+
+#### Scenario: recovery action reuses runtime-ready contract
+
+- **WHEN** 用户点击 recoverable create-session failure 上的恢复动作
+- **THEN** 系统 MUST 先执行 `ensureRuntimeReady` 或等价 runtime reconnect contract
+- **AND** 随后 MUST 重试同一次 create-session intent
+
+#### Scenario: recovery action reports pending and inline failure
+
+- **WHEN** recoverable create-session toast 正在执行恢复动作
+- **THEN** UI MUST 给出进行中状态，避免按钮无反馈
+- **AND** 如果恢复动作失败，toast MUST 能在原位置展示失败 detail，而不是静默消失
+
+#### Scenario: recovery action confirms runtime recovery before retry completes
+
+- **WHEN** recoverable create-session toast 的恢复动作已经成功完成 runtime reconnect
+- **THEN** UI MUST 给出一个短暂、显性的恢复中提示
+- **AND** 该提示 MUST 明确表达 runtime 已恢复且系统正在重新创建会话
