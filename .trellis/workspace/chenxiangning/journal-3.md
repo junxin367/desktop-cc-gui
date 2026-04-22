@@ -1859,3 +1859,56 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 100: 修正空闲态最小化提示图标语义
+
+**Date**: 2026-04-22
+**Task**: 修正空闲态最小化提示图标语义
+**Branch**: `feature/v-0.4.7`
+
+### Summary
+
+修复运行时提示框在空闲态仍显示叹号的问题，并补充最小化图标状态测试。
+
+### Main Changes
+
+任务目标
+- 修正运行时提示框在头部状态已回到空闲时，外部最小化气泡仍显示叹号的状态错位问题。
+
+主要改动
+- 调整 GlobalRuntimeNoticeDock 最小化气泡状态映射逻辑。
+- 修复 status 为 idle 时仍因历史 notice 存在而显示叹号的问题。
+- 保持 streaming 与 has-error 场景继续显示叹号提醒。
+- 补充组件测试，覆盖 idle 且存在历史 notice 时应显示绿点。
+- 补充错误态最小化图标测试，防止后续状态回归。
+
+涉及模块
+- src/features/notifications/components/GlobalRuntimeNoticeDock.tsx
+- src/features/notifications/components/GlobalRuntimeNoticeDock.test.tsx
+
+验证结果
+- 通过：npx vitest run src/features/notifications/components/GlobalRuntimeNoticeDock.test.tsx
+- 通过：npm run typecheck
+
+后续事项
+- 本次提交未包含 CHANGELOG.md、.trellis/tasks 新目录与其他未跟踪文件。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6373bd82c7111a6614d56c938ebb150f360e6ebc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
