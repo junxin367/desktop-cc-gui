@@ -1125,3 +1125,56 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 156: 归档 Linux AppImage Wayland 启动修复提案
+
+**Date**: 2026-04-23
+**Task**: 归档 Linux AppImage Wayland 启动修复提案
+**Branch**: `feature/v-0.4.8`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 将已完成的 OpenSpec change fix-linux-appimage-wayland-startup 归档，并把 delta spec 同步为主 spec。
+
+主要改动:
+- 新增主 spec openspec/specs/linux-appimage-startup-compatibility/spec.md，沉淀 Linux AppImage Wayland 启动兼容守卫的长期行为契约。
+- 将 openspec/changes/fix-linux-appimage-wayland-startup 移动到 openspec/changes/archive/2026-04-23-fix-linux-appimage-wayland-startup。
+- 保留归档目录中的 proposal、design、tasks 与 delta spec 原始上下文。
+
+涉及模块:
+- openspec/specs/linux-appimage-startup-compatibility/spec.md
+- openspec/changes/archive/2026-04-23-fix-linux-appimage-wayland-startup/**
+
+验证结果:
+- openspec status --change "fix-linux-appimage-wayland-startup" --json 返回 isComplete: true
+- openspec validate fix-linux-appimage-wayland-startup --strict 通过
+- openspec validate linux-appimage-startup-compatibility --type spec --strict 通过
+- openspec list --json 已不再包含 fix-linux-appimage-wayland-startup
+
+后续事项:
+- 仍等待真实 Linux + Wayland + AppImage 用户反馈验证运行效果。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e684bfe7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

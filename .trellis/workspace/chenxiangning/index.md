@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-5.md`
-- **Total Sessions**: 155
+- **Total Sessions**: 156
 - **Last Active**: 2026-04-23
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-5.md` | ~1127 | Active |
+| `journal-5.md` | ~1180 | Active |
 | `journal-4.md` | ~1975 | Archived |
 | `journal-3.md` | ~1972 | Archived |
 | `journal-2.md` | ~1960 | Archived |
@@ -33,6 +33,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 156 | 2026-04-23 | 归档 Linux AppImage Wayland 启动修复提案 | `e684bfe7` | `feature/v-0.4.8` |
 | 155 | 2026-04-23 | Computer Use 官方 parent handoff 只读发现 | `e34808e9` | `feature/v-0.4.8` |
 | 154 | 2026-04-23 | Computer Use 宿主契约诊断链路 | `599eb605` | `feature/v-0.4.8` |
 | 153 | 2026-04-23 | 归档 Computer Use 阶段2并创建宿主契约调查提案 | `039d8b2d` | `feature/v-0.4.8` |
