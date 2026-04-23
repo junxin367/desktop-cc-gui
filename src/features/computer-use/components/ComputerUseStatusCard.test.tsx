@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ComputerUseOfficialParentHandoffDiscovery } from "../../../types";
 import { ComputerUseStatusCard } from "./ComputerUseStatusCard";
 
 const useComputerUseBridgeStatusMock = vi.fn();
@@ -60,8 +61,17 @@ function blockedMacStatus() {
   };
 }
 
-function officialParentHandoff() {
-  return {
+type OfficialParentHandoffOverrides = Omit<
+  Partial<ComputerUseOfficialParentHandoffDiscovery>,
+  "evidence"
+> & {
+  evidence?: Partial<ComputerUseOfficialParentHandoffDiscovery["evidence"]>;
+};
+
+function officialParentHandoff(
+  overrides: OfficialParentHandoffOverrides = {},
+): ComputerUseOfficialParentHandoffDiscovery {
+  const base: ComputerUseOfficialParentHandoffDiscovery = {
     kind: "requires_official_parent" as const,
     methods: [],
     durationMs: 3,
@@ -86,6 +96,15 @@ function officialParentHandoff() {
       durationMs: 3,
       stdoutSnippet: null,
       stderrSnippet: null,
+    },
+  };
+
+  return {
+    ...base,
+    ...overrides,
+    evidence: {
+      ...base.evidence,
+      ...overrides.evidence,
     },
   };
 }
@@ -383,6 +402,102 @@ describe("ComputerUseStatusCard", () => {
         "settings.computerUse.hostContract.diagnosticOnlyNotice",
       ),
     ).toBeTruthy();
+    expect(
+      screen.getByText("settings.computerUse.parentContractVerdict.title"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "settings.computerUse.parentContractVerdict.kind.requires_official_parent",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("settings.computerUse.parentContractVerdict.notPermission"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", {
+        name: "settings.computerUse.hostContract.run",
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps candidate handoff methods as evidence only", () => {
+    useComputerUseBridgeStatusMock.mockReturnValue({
+      status: blockedMacStatus(),
+      isLoading: false,
+      error: null,
+      refresh: vi.fn(),
+    });
+    useComputerUseActivationMock.mockReturnValue({
+      result: {
+        outcome: "failed",
+        failureKind: "host_incompatible",
+        bridgeStatus: blockedMacStatus(),
+        durationMs: 1,
+        diagnosticMessage: "direct exec skipped",
+        stderrSnippet: null,
+        exitCode: null,
+      },
+      isRunning: false,
+      error: null,
+      activate: vi.fn(),
+      reset: vi.fn(),
+    });
+    useComputerUseHostContractDiagnosticsMock.mockReturnValue({
+      result: {
+        kind: "unknown",
+        bridgeStatus: blockedMacStatus(),
+        durationMs: 4,
+        diagnosticMessage: "Candidate handoff needs separate validation.",
+        evidence: {
+          helperPath: blockedMacStatus().helperPath,
+          helperDescriptorPath: blockedMacStatus().helperDescriptorPath,
+          currentHostPath:
+            "/Applications/ThirdPartyHost.app/Contents/MacOS/third-party-host",
+          handoffMethod: "metadata_candidate",
+          codesignSummary: null,
+          spctlSummary: null,
+          durationMs: 4,
+          stdoutSnippet: null,
+          stderrSnippet: null,
+          officialParentHandoff: officialParentHandoff({
+            kind: "handoff_candidate_found",
+            methods: [
+              {
+                method: "launch_services_url_scheme",
+                sourcePath: "/Applications/Codex.app/Contents/Info.plist",
+                identifier: "codex",
+                confidence: "low",
+                notes: "Generic Codex URL scheme, not Computer Use runtime.",
+              },
+            ],
+            diagnosticMessage: "Candidate metadata found.",
+          }),
+        },
+      },
+      isRunning: false,
+      error: null,
+      diagnose: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    render(<ComputerUseStatusCard />);
+
+    expect(
+      screen.getByText(
+        "settings.computerUse.hostContract.officialParent.kind.handoff_candidate_found",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "settings.computerUse.hostContract.officialParent.candidateEvidenceOnly",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("launch_services_url_scheme / codex / low"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("settings.computerUse.parentContractVerdict.title"),
+    ).toBeNull();
   });
 
   it("clears stale activation result before manual status refresh", () => {

@@ -164,6 +164,13 @@ export type ComputerUseOfficialParentHandoffDiscovery = {
 - `host_incompatible` 后 SHOULD 隐藏重复 activation CTA，并引导用户进入 host-contract diagnostics；diagnostics 不得自动链式运行。
 - host-contract diagnostics result MUST 明确展示 diagnostic-only notice，不得暗示 conversation runtime 已启用。
 - host-contract diagnostics result MUST 展示 official parent handoff discovery evidence；`handoff_candidate_found` 只能表达候选证据，不得渲染为 runtime enabled。
+- host-contract diagnostics result 返回 `requires_official_parent` 或 official parent handoff 返回 `handoff_unavailable` / `requires_official_parent` 时，status card MUST 渲染 parent contract verdict：
+  - 表达 macOS 侧 Codex / plugin / helper evidence 已可读；
+  - 表达当前宿主不是官方 Codex parent，不能 direct run official helper；
+  - 表达重复 activation、继续授权权限或重跑 diagnostics 不是 remediation；
+  - 保持 `blocked`，不得渲染为 `ready` 或 runtime enabled。
+- parent contract verdict 已出现后，host-contract diagnostics CTA MUST 不再作为主行动展示；仅保留普通 refresh 作为环境变化后的重新读取入口。
+- `handoff_candidate_found` MUST 只展示为 evidence-only，并且 MUST NOT 渲染 parent contract final verdict 或重新触发 activation。
 - Phase 1 文案 MUST 明确说明：
   - 这是 `status-only`
   - 不调用官方 helper
@@ -191,6 +198,7 @@ export type ComputerUseOfficialParentHandoffDiscovery = {
 | `host_incompatible` activation result | 展示 host-contract diagnostics CTA，隐藏重复 activation CTA |
 | official parent handoff `requires_official_parent` | 展示 parent team / application group / bundle id，并保持 blocked |
 | official parent handoff `handoff_candidate_found` | 展示 candidate methods，但不展示 ready 或 runtime enabled |
+| parent contract final verdict | 展示 diagnostics-only stop condition，并隐藏重复 host-contract diagnostics 主按钮 |
 
 ## Good / Base / Bad Cases
 
@@ -224,6 +232,9 @@ export type ComputerUseOfficialParentHandoffDiscovery = {
   - activation CTA gating、result rendering、refresh reset
   - host-contract CTA gating、evidence rendering、refresh reset
   - official parent handoff discovery evidence rendering
+  - parent contract final verdict rendering
+  - parent contract final verdict hides repeated host diagnostics action
+  - candidate handoff method remains evidence-only
   - activation duplicate trigger guard
   - host-contract duplicate trigger guard
   - status stale response guard

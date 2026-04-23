@@ -358,6 +358,21 @@ const zhPart1 = {
       phaseOneNotice: "Phase 1 仅提供状态诊断，不会调用官方 helper。",
       phaseTwoNotice:
         "Phase 2 只验证当前宿主能否安全桥接官方 helper。本阶段仍不会自动确认权限或 approval 阻塞。",
+      parentContractVerdict: {
+        title: "Mac 检查已通过，但官方 parent contract 仍阻止运行时接入",
+        body:
+          "Codex App、官方插件、helper metadata 与签名证据都可读，但当前宿主不是 helper 要求的官方 Codex parent。",
+        macEvidence: "macOS 侧 Codex / plugin / helper 证据已可读。",
+        hostBoundary: "当前宿主不能直接运行官方 Computer Use helper。",
+        notPermission:
+          "重复 activation 或继续授权更多权限不会改变这个 parent-contract 结论。",
+        stopCondition:
+          "在 OpenAI 暴露官方 handoff 或 API 前，保持 diagnostics-only。",
+        kind: {
+          requires_official_parent: "需要官方 Codex parent process。",
+          handoff_unavailable: "未发现受支持的官方 handoff。",
+        },
+      },
       activation: {
         verify: "验证 helper bridge",
         running: "验证中…",
@@ -417,6 +432,8 @@ const zhPart1 = {
           kindLabel: "Handoff discovery 分类",
           duration: "Discovery 耗时",
           message: "Discovery 消息",
+          candidateEvidenceOnly:
+            "候选入口只是证据，不代表 Computer Use runtime 已启用；是否可用必须另开提案验证。",
           parentTeam: "Parent team identifier",
           applicationGroups: "Application groups",
           codexUrlSchemes: "Codex URL schemes",

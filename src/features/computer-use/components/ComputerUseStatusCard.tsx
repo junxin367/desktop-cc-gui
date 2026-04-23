@@ -15,6 +15,7 @@ import type {
   ComputerUseBlockedReason,
   ComputerUseBridgeStatus,
   ComputerUseGuidanceCode,
+  ComputerUseHostContractDiagnosticsResult,
   ComputerUseHostContractDiagnosticsKind,
   ComputerUseOfficialParentHandoffKind,
 } from "../../../types";
@@ -54,6 +55,14 @@ function officialParentHandoffKindKey(kind: ComputerUseOfficialParentHandoffKind
   return `settings.computerUse.hostContract.officialParent.kind.${kind}`;
 }
 
+type ParentContractVerdictKind =
+  | "requires_official_parent"
+  | "handoff_unavailable";
+
+function parentContractVerdictKey(kind: ParentContractVerdictKind) {
+  return `settings.computerUse.parentContractVerdict.kind.${kind}`;
+}
+
 function booleanLabel(value: boolean, t: (key: string) => string) {
   return value ? t("settings.computerUse.value.yes") : t("settings.computerUse.value.no");
 }
@@ -72,6 +81,35 @@ function renderCodeRow(label: string, value: string | null | undefined) {
       <code className="block break-all rounded bg-muted px-2 py-1 text-xs">{value}</code>
     </div>
   );
+}
+
+function getParentContractVerdictKind(
+  result: ComputerUseHostContractDiagnosticsResult | null,
+): ParentContractVerdictKind | null {
+  if (!result) {
+    return null;
+  }
+
+  const handoffKind = result.evidence.officialParentHandoff.kind;
+  if (handoffKind === "handoff_candidate_found") {
+    return null;
+  }
+
+  if (
+    result.kind === "requires_official_parent" ||
+    handoffKind === "requires_official_parent"
+  ) {
+    return "requires_official_parent";
+  }
+
+  if (
+    result.kind === "handoff_unavailable" ||
+    handoffKind === "handoff_unavailable"
+  ) {
+    return "handoff_unavailable";
+  }
+
+  return null;
 }
 
 function shouldShowActivationAction(
@@ -101,8 +139,14 @@ function shouldShowActivationAction(
 function shouldShowHostContractDiagnosticsAction(
   status: ComputerUseBridgeStatus | null,
   activationResult: ComputerUseActivationResult | null,
+  parentContractVerdictKind: ParentContractVerdictKind | null,
 ) {
-  if (!ENABLE_COMPUTER_USE_BRIDGE_ACTIVATION || !status || !activationResult) {
+  if (
+    !ENABLE_COMPUTER_USE_BRIDGE_ACTIVATION ||
+    !status ||
+    !activationResult ||
+    parentContractVerdictKind
+  ) {
     return false;
   }
 
@@ -146,6 +190,8 @@ export function ComputerUseStatusCard() {
 
   const effectiveStatus =
     hostContractResult?.bridgeStatus ?? activationResult?.bridgeStatus ?? status;
+  const parentContractVerdictKind =
+    getParentContractVerdictKind(hostContractResult);
   const showActivationAction = shouldShowActivationAction(
     effectiveStatus,
     activationResult,
@@ -153,6 +199,7 @@ export function ComputerUseStatusCard() {
   const showHostContractDiagnosticsAction = shouldShowHostContractDiagnosticsAction(
     effectiveStatus,
     activationResult,
+    parentContractVerdictKind,
   );
 
   const detailRows = useMemo(() => {
@@ -279,6 +326,28 @@ export function ComputerUseStatusCard() {
                 </div>
               ))}
             </div>
+
+            {parentContractVerdictKind ? (
+              <div className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-3">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">
+                    {t("settings.computerUse.parentContractVerdict.title")}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {t(parentContractVerdictKey(parentContractVerdictKind))}
+                  </div>
+                </div>
+                <div className="text-sm">
+                  {t("settings.computerUse.parentContractVerdict.body")}
+                </div>
+                <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                  <li>{t("settings.computerUse.parentContractVerdict.macEvidence")}</li>
+                  <li>{t("settings.computerUse.parentContractVerdict.hostBoundary")}</li>
+                  <li>{t("settings.computerUse.parentContractVerdict.notPermission")}</li>
+                  <li>{t("settings.computerUse.parentContractVerdict.stopCondition")}</li>
+                </ul>
+              </div>
+            ) : null}
 
             {activationResult ? (
               <div className="space-y-3 rounded-md border px-3 py-3">
@@ -443,6 +512,15 @@ export function ComputerUseStatusCard() {
                     t("settings.computerUse.hostContract.officialParent.message"),
                     hostContractResult.evidence.officialParentHandoff.diagnosticMessage,
                   )}
+
+                  {hostContractResult.evidence.officialParentHandoff.kind ===
+                  "handoff_candidate_found" ? (
+                    <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
+                      {t(
+                        "settings.computerUse.hostContract.officialParent.candidateEvidenceOnly",
+                      )}
+                    </div>
+                  ) : null}
 
                   <div className="grid gap-3 md:grid-cols-2">
                     {renderCodeRow(

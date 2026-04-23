@@ -343,6 +343,21 @@ const enPart1 = {
         "Phase 1 is status-only. This surface diagnoses availability and does not invoke the official helper.",
       phaseTwoNotice:
         "Phase 2 only verifies that the host can safely bridge the official helper. Permission and approval blockers remain guidance-only in this phase.",
+      parentContractVerdict: {
+        title: "Mac checks passed; official parent contract still blocks runtime",
+        body:
+          "Codex app, official plugin, helper metadata and signature evidence are readable, but this host is not the official Codex parent required by the helper.",
+        macEvidence: "Mac-side Codex / plugin / helper evidence is readable.",
+        hostBoundary: "The current host cannot directly run the official Computer Use helper.",
+        notPermission:
+          "Repeating activation or granting more permissions will not change this parent-contract result.",
+        stopCondition:
+          "Keep this diagnostics-only until OpenAI exposes an official handoff or API.",
+        kind: {
+          requires_official_parent: "Requires the official Codex parent process.",
+          handoff_unavailable: "No supported official handoff was found.",
+        },
+      },
       activation: {
         verify: "Verify helper bridge",
         running: "Verifying…",
@@ -402,6 +417,8 @@ const enPart1 = {
           kindLabel: "Handoff discovery classification",
           duration: "Discovery duration",
           message: "Discovery message",
+          candidateEvidenceOnly:
+            "Candidate entries are evidence only. They do not enable Computer Use runtime and must be validated in a separate proposal.",
           parentTeam: "Parent team identifier",
           applicationGroups: "Application groups",
           codexUrlSchemes: "Codex URL schemes",
