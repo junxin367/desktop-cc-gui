@@ -38,6 +38,7 @@ type MarkdownProps = {
   codexLeadMarkerConfig?: CodexLeadMarkerConfig;
   onOpenFileLink?: (path: string) => void;
   onOpenFileLinkMenu?: (event: React.MouseEvent, path: string) => void;
+  onRenderedValueChange?: (value: string) => void;
 };
 
 type CodeBlockProps = {
@@ -89,7 +90,8 @@ function areMarkdownPropsEqual(prev: MarkdownProps, next: MarkdownProps) {
     prev.preserveFormatting === next.preserveFormatting &&
     prev.codexLeadMarkerConfig === next.codexLeadMarkerConfig &&
     prev.onOpenFileLink === next.onOpenFileLink &&
-    prev.onOpenFileLinkMenu === next.onOpenFileLinkMenu
+    prev.onOpenFileLinkMenu === next.onOpenFileLinkMenu &&
+    prev.onRenderedValueChange === next.onRenderedValueChange
   );
 }
 
@@ -1605,6 +1607,7 @@ export const Markdown = memo(function Markdown({
   codexLeadMarkerConfig,
   onOpenFileLink,
   onOpenFileLinkMenu,
+  onRenderedValueChange,
 }: MarkdownProps) {
   // Throttle rapid value changes during streaming to reduce expensive
   // ReactMarkdown re-parses that block the main thread and cause input lag.
@@ -1679,6 +1682,10 @@ export const Markdown = memo(function Markdown({
   }, []);
 
   const renderValue = throttledValue;
+
+  useEffect(() => {
+    onRenderedValueChange?.(renderValue);
+  }, [onRenderedValueChange, renderValue]);
 
   // Memoize heavy text normalization to avoid re-running on every render
   const content = useMemo(() => {

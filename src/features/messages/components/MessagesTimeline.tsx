@@ -88,6 +88,10 @@ type MessagesTimelineProps = {
     threadId: string,
     message: Pick<QueuedMessage, "text" | "images">,
   ) => Promise<string | null | void> | string | null | void;
+  onAssistantVisibleTextRender?: (payload: {
+    itemId: string;
+    visibleText: string;
+  }) => void;
   onShowAllHistoryItems: () => void;
   openFileLink?: (path: string) => void;
   presentationProfile: PresentationProfile | null;
@@ -146,6 +150,7 @@ export function MessagesTimeline({
   onOpenDiffPath,
   onRecoverThreadRuntime,
   onRecoverThreadRuntimeAndResend,
+  onAssistantVisibleTextRender,
   onShowAllHistoryItems,
   openFileLink,
   presentationProfile,
@@ -256,6 +261,7 @@ export function MessagesTimeline({
               onOpenFileLink={openFileLink}
               onOpenFileLinkMenu={showFileLinkMenu}
               streamMitigationProfile={streamMitigationProfile}
+              onAssistantVisibleTextRender={onAssistantVisibleTextRender}
             />
           </div>
           {shouldRenderFinalBoundary && (

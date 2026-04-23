@@ -26,6 +26,7 @@ import { ApprovalToasts } from "../../app/components/ApprovalToasts";
 import { RequestUserInputMessage } from "../../app/components/RequestUserInputMessage";
 import { useStreamActivityPhase } from "../../threads/hooks/useStreamActivityPhase";
 import {
+  noteThreadVisibleTextRendered,
   noteThreadVisibleRender,
   resolveActiveThreadStreamMitigation,
   useThreadStreamLatencySnapshot,
@@ -1313,6 +1314,19 @@ export const Messages = memo(function Messages({
     });
   }, [activeEngine, isThinking, renderedItems, threadId]);
 
+  const handleAssistantVisibleTextRender = useCallback(
+    (payload: { itemId: string; visibleText: string }) => {
+      if (activeEngine !== "claude" || !isThinking || !threadId) {
+        return;
+      }
+      noteThreadVisibleTextRendered(threadId, {
+        itemId: payload.itemId,
+        visibleTextLength: payload.visibleText.length,
+      });
+    },
+    [activeEngine, isThinking, threadId],
+  );
+
   useEffect(() => clearTransientUiState, [clearTransientUiState]);
 
   useEffect(() => {
@@ -1631,6 +1645,7 @@ export const Messages = memo(function Messages({
           onOpenDiffPath={onOpenDiffPath}
           onRecoverThreadRuntime={onRecoverThreadRuntime}
           onRecoverThreadRuntimeAndResend={onRecoverThreadRuntimeAndResend}
+          onAssistantVisibleTextRender={handleAssistantVisibleTextRender}
           onShowAllHistoryItems={handleShowAllHistoryItems}
           openFileLink={openFileLink}
           presentationProfile={presentationProfile}
