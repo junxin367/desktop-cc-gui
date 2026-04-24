@@ -10,7 +10,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
   const {
     GitHubPanelData, RECENT_THREAD_LIMIT, SettingsView, accessMode, accountByWorkspace, accountSwitching, activeAccount, activeDiffError,
     activeDiffLoading, activeDiffs, activeDraft, activeEditorFilePath, activeEditorLineRange, activeEngine, activeFusingMessageId, activeGitRoot, activeImages,
-    activeItems, activeParentWorkspace, activePath, activePlan, activeQueue, activeRateLimits, activeRenamePrompt, activeTab, agentTaskScrollRequest,
+    activeItems, activeParentWorkspace, activePath, activePlan, activeQueue, activeQueuedHandoffBubble, activeRateLimits, activeRenamePrompt, activeTab, agentTaskScrollRequest,
     activeTerminalId, activeThreadId, activeThreadIdForModeRef, activeThreadIdRef, activeTokenUsage, activeWorkspace, activeWorkspaceId, activeWorkspaceIdRef,
     activeWorkspaceKanbanTasks, activeWorkspaceRef, activeWorkspaceThreads, addCloneAgent, addDebugEntry, addWorkspace, addWorkspaceFromPath, addWorktreeAgent,
     agent, alertError, appClassName, appMode, appRoot, appRootRef, appSettings, appSettingsLoading,
@@ -183,6 +183,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     systemProxyEnabled: appSettings.systemProxyEnabled,
     systemProxyUrl: appSettings.systemProxyUrl,
     activeItems,
+    activeQueuedHandoffBubble,
     threadItemsByThread,
     sessionRadarRunningSessions,
     sessionRadarRecentCompletedSessions,

@@ -90,6 +90,10 @@ import type {
 } from "../../threads/contracts/conversationCurtainContracts";
 import { resolveDiffPathFromWorkspacePath } from "../../../utils/workspacePaths";
 import { resolvePresentationProfile } from "../../messages/presentation/presentationProfile";
+import {
+  appendQueuedHandoffBubbleIfNeeded,
+  type QueuedHandoffBubble,
+} from "../../threads/utils/queuedHandoffBubble";
 import { useWorkspaceSessionActivity } from "../../session-activity/hooks/useWorkspaceSessionActivity";
 import type { SessionRadarEntry } from "../../session-activity/hooks/useSessionRadarFeed";
 import {
@@ -178,6 +182,7 @@ type LayoutNodesOptions = {
   systemProxyEnabled?: boolean;
   systemProxyUrl?: string | null;
   activeItems: ConversationItem[];
+  activeQueuedHandoffBubble: QueuedHandoffBubble | null;
   threadItemsByThread: Record<string, ConversationItem[]>;
   sessionRadarRunningSessions: SessionRadarEntry[];
   sessionRadarRecentCompletedSessions: SessionRadarEntry[];
@@ -437,9 +442,9 @@ type LayoutNodesOptions = {
     language?: "zh" | "en",
     engine?: "codex" | "claude" | "gemini" | "opencode",
   ) => void | Promise<void>;
-  onCommit?: () => void | Promise<void>;
-  onCommitAndPush?: () => void | Promise<void>;
-  onCommitAndSync?: () => void | Promise<void>;
+  onCommit?: (selectedPaths?: string[]) => void | Promise<void>;
+  onCommitAndPush?: (selectedPaths?: string[]) => void | Promise<void>;
+  onCommitAndSync?: (selectedPaths?: string[]) => void | Promise<void>;
   onPush?: () => void | Promise<void>;
   onSync?: () => void | Promise<void>;
   commitLoading?: boolean;
@@ -704,10 +709,18 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   // which receives it as a separate prop via Messages.
   const heartbeatPulseRef = useRef(activeThreadStatus?.heartbeatPulse ?? null);
   heartbeatPulseRef.current = activeThreadStatus?.heartbeatPulse ?? null;
+  const conversationItems = useMemo(
+    () =>
+      appendQueuedHandoffBubbleIfNeeded(
+        options.activeItems,
+        options.activeQueuedHandoffBubble,
+      ),
+    [options.activeItems, options.activeQueuedHandoffBubble],
+  );
 
   const conversationState = useMemo<ConversationState>(
     () => ({
-      items: options.activeItems,
+      items: conversationItems,
       plan: options.plan,
       userInputQueue: options.userInputRequests,
       meta: {
@@ -721,7 +734,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       },
     }),
     [
-      options.activeItems,
+      conversationItems,
       options.plan,
       options.userInputRequests,
       options.activeWorkspace?.id,

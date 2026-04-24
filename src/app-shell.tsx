@@ -1942,6 +1942,7 @@ export function AppShell() {
     clearActiveImages,
     removeImagesForThread,
     activeQueue,
+    activeQueuedHandoffBubble,
     handleSend,
     queueMessage,
     prefillDraft,
@@ -2382,7 +2383,7 @@ export function AppShell() {
   const appShellContext = {
     GitHubPanelData, RECENT_THREAD_LIMIT, SettingsView, accessMode, accountByWorkspace, accountSwitching, activeAccount, activeDiffError,
     activeDiffLoading, activeDiffs, activeDraft, activeEditorFilePath, activeEditorLineRange, activeEngine, activeGitRoot, activeImages,
-    activeFusingMessageId, activeItems, activeParentWorkspace, activePath, activePlan, activeQueue, activeRateLimits, activeRenamePrompt, activeTab, agentTaskScrollRequest,
+    activeFusingMessageId, activeItems, activeParentWorkspace, activePath, activePlan, activeQueue, activeQueuedHandoffBubble, activeRateLimits, activeRenamePrompt, activeTab, agentTaskScrollRequest,
     activeTerminalId, activeThreadId, activeThreadIdForModeRef, activeThreadIdRef, activeTokenUsage, activeWorkspace, activeWorkspaceId, activeWorkspaceIdRef,
     activeWorkspaceKanbanTasks, activeWorkspaceRef, activeWorkspaceThreads, addCloneAgent, addDebugEntry, addWorkspace, addWorkspaceFromPath, addWorktreeAgent,
     agent, alertError, appMode, appRoot, appRootRef, appSettings, appSettingsLoading, applySelectedCollaborationMode,

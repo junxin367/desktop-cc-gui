@@ -48,6 +48,7 @@ import {
   syncSharedSessionSnapshot as syncSharedSessionSnapshotService,
 } from "../../shared-session/services/sharedSessions";
 import { normalizeSharedSessionEngine } from "../../shared-session/utils/sharedSessionEngines";
+import { hasPendingOptimisticUserBubble } from "../utils/queuedHandoffBubble";
 
 const AUTO_TITLE_REQUEST_TIMEOUT_MS = 8_000;
 const AUTO_TITLE_MAX_ATTEMPTS = 2;
@@ -569,6 +570,7 @@ export function useThreads({
   );
   const loadedThreadsRef = useRef<Record<string, boolean>>({});
   const threadStatusByIdRef = useRef(state.threadStatusById);
+  const itemsByThreadRef = useRef(state.itemsByThread);
   const loadedThreadLastRefreshAtRef = useRef<Record<string, number>>({});
   const lazyResumeTimerByWorkspaceRef = useRef<
     Record<string, ReturnType<typeof setTimeout> | null>
@@ -697,6 +699,10 @@ export function useThreads({
   useEffect(() => {
     threadStatusByIdRef.current = state.threadStatusById;
   }, [state.threadStatusById]);
+
+  useEffect(() => {
+    itemsByThreadRef.current = state.itemsByThread;
+  }, [state.itemsByThread]);
 
   useEffect(() => {
     return () => {
@@ -1044,6 +1050,20 @@ export function useThreads({
           delete codexRealtimeReconcileTimerByThreadRef.current[reconciliationThreadKey];
           const status = threadStatusByIdRef.current[canonicalThreadId];
           if (status?.isProcessing && attempt === 0) {
+            scheduleCodexRealtimeHistoryReconcile(
+              workspaceId,
+              canonicalThreadId,
+              reconciliationTurnId,
+              attempt + 1,
+            );
+            return;
+          }
+          if (
+            attempt === 0 &&
+            hasPendingOptimisticUserBubble(
+              itemsByThreadRef.current[canonicalThreadId] ?? [],
+            )
+          ) {
             scheduleCodexRealtimeHistoryReconcile(
               workspaceId,
               canonicalThreadId,
