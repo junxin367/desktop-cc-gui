@@ -169,9 +169,19 @@ type ThreadEventHandlersOptions = {
     oldThreadId: string,
     newThreadId: string,
   ) => Promise<void>;
+  resolveClaudeContinuationThreadId?: (
+    workspaceId: string,
+    threadId: string,
+    turnId?: string | null,
+  ) => string | null;
   resolvePendingThreadForSession?: (
     workspaceId: string,
     engine: "claude" | "gemini" | "opencode",
+  ) => string | null;
+  resolvePendingThreadForTurn?: (
+    workspaceId: string,
+    engine: "claude" | "gemini" | "opencode",
+    turnId: string | null | undefined,
   ) => string | null;
   getActiveTurnIdForThread?: (threadId: string) => string | null;
   renamePendingMemoryCaptureKey: (
@@ -256,7 +266,9 @@ export function useThreadEventHandlers({
   renameCustomNameKey,
   renameAutoTitlePendingKey,
   renameThreadTitleMapping,
+  resolveClaudeContinuationThreadId,
   resolvePendingThreadForSession,
+  resolvePendingThreadForTurn,
   getActiveTurnIdForThread,
   renamePendingMemoryCaptureKey,
   onAgentMessageCompletedExternal,
@@ -621,12 +633,21 @@ export function useThreadEventHandlers({
     approvalAllowlistRef,
     markProcessing: markProcessingTracked,
     setActiveTurnId: setActiveTurnIdTracked,
+    resolveClaudeContinuationThreadId,
   });
-  const enqueueUserInputRequest = useThreadUserInputEvents({ dispatch });
+  const enqueueUserInputRequest = useThreadUserInputEvents({
+    dispatch,
+    resolveClaudeContinuationThreadId,
+  });
   const onRequestUserInput = useCallback(
     (request: RequestUserInputRequest) => {
       enqueueUserInputRequest(request);
-      const threadId = request.params.thread_id;
+      const threadId =
+        resolveClaudeContinuationThreadId?.(
+          request.workspace_id,
+          request.params.thread_id,
+          request.params.turn_id,
+        ) ?? request.params.thread_id;
       if (!threadId) {
         return;
       }
@@ -640,7 +661,13 @@ export function useThreadEventHandlers({
         targetStatus: "pending",
       });
     },
-    [dispatch, enqueueUserInputRequest, markProcessingTracked, setActiveTurnIdTracked],
+    [
+      dispatch,
+      enqueueUserInputRequest,
+      markProcessingTracked,
+      resolveClaudeContinuationThreadId,
+      setActiveTurnIdTracked,
+    ],
   );
   const onModeBlocked = useCallback(
     (event: CollaborationModeBlockedRequest) => {
@@ -707,6 +734,7 @@ export function useThreadEventHandlers({
     onCommandOutputDelta,
     onTerminalInteraction,
     onFileChangeOutputDelta,
+    clearOptimisticGeneratedImageKeys,
   } = useThreadItemEvents({
     activeThreadId,
     dispatch,
@@ -754,8 +782,10 @@ export function useThreadEventHandlers({
     renameAutoTitlePendingKey,
     renameThreadTitleMapping,
     resolvePendingThreadForSession,
+    resolvePendingThreadForTurn,
     getActiveTurnIdForThread,
     renamePendingMemoryCaptureKey,
+    clearOptimisticGeneratedImageKeys,
     onDebug,
   });
 

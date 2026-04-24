@@ -203,7 +203,7 @@ type LayoutNodesOptions = {
   userInputRequests: RequestUserInputRequest[];
   handleApprovalDecision: (
     request: ApprovalRequest,
-    decision: "accept" | "decline",
+    decision: "accept" | "decline" | "dismiss",
   ) => void;
   handleApprovalBatchAccept: (requests: ApprovalRequest[]) => void;
   handleApprovalRemember: (

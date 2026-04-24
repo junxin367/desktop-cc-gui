@@ -255,15 +255,40 @@ export function useThreadActions({
   const reconcileMissingClaudeThread = useCallback(
     (workspaceId: string, threadId: string) => {
       loadedThreadsRef.current[threadId] = false;
-      removeThreadFromCachedSummaries(workspaceId, threadId);
       dispatch({
         type: "clearUserInputRequestsForThread",
         workspaceId,
         threadId,
       });
+      const isSelectedThread =
+        activeThreadIdByWorkspace[workspaceId] === threadId;
+      const hasReadableItems = (itemsByThread[threadId]?.length ?? 0) > 0;
+      if (isSelectedThread && hasReadableItems) {
+        onDebug?.({
+          id: `${Date.now()}-claude-history-preserve-readable-surface`,
+          timestamp: Date.now(),
+          source: "client",
+          label: "thread/claude history preserve readable surface",
+          payload: {
+            workspaceId,
+            threadId,
+            reason: "selected-readable-surface",
+          },
+        });
+        return true;
+      }
+      removeThreadFromCachedSummaries(workspaceId, threadId);
       dispatch({ type: "removeThread", workspaceId, threadId });
+      return false;
     },
-    [dispatch, loadedThreadsRef, removeThreadFromCachedSummaries],
+    [
+      activeThreadIdByWorkspace,
+      dispatch,
+      itemsByThread,
+      loadedThreadsRef,
+      onDebug,
+      removeThreadFromCachedSummaries,
+    ],
   );
 
   const loadArchivedSessionMap = useCallback(
@@ -983,8 +1008,11 @@ export function useThreadActions({
               },
             });
             if (isThreadResumeNotFoundError(error)) {
-              reconcileMissingClaudeThread(workspaceId, threadId);
-              return null;
+              const preservedReadableSurface = reconcileMissingClaudeThread(
+                workspaceId,
+                threadId,
+              );
+              return preservedReadableSurface ? threadId : null;
             }
             return threadId;
           }

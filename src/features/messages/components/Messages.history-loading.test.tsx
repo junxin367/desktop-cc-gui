@@ -45,6 +45,26 @@ describe("Messages history loading", () => {
     expect(screen.queryByText("messages.emptyThread")).toBeNull();
   });
 
+  it("shows the same restoring surface for Claude history loading", () => {
+    render(
+      <Messages
+        items={[]}
+        threadId="claude:session-history-loading"
+        workspaceId="ws-1"
+        isThinking={false}
+        isHistoryLoading
+        activeEngine="claude"
+        onUserInputSubmit={vi.fn()}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(screen.getByText("messages.restoringHistory")).toBeTruthy();
+    expect(screen.queryByText("messages.emptyThread")).toBeNull();
+  });
+
   it("keeps the empty thread placeholder when history is not loading", () => {
     render(
       <Messages

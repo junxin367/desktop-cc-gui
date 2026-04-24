@@ -2,7 +2,12 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceInfo } from "../../../types";
-import { deleteCodexSessions, listThreads, resumeThread } from "../../../services/tauri";
+import {
+  deleteCodexSessions,
+  listThreads,
+  loadClaudeSession,
+  resumeThread,
+} from "../../../services/tauri";
 import { writeClientStoreData, writeClientStoreValue } from "../../../services/clientStorage";
 import type { useAppServerEvents } from "../../app/hooks/useAppServerEvents";
 import { useThreads } from "./useThreads";
@@ -38,6 +43,7 @@ vi.mock("../../../services/tauri", () => ({
   startReview: vi.fn(),
   startThread: vi.fn(),
   listThreads: vi.fn(),
+  loadClaudeSession: vi.fn(),
   resumeThread: vi.fn(),
   archiveThread: vi.fn(),
   deleteCodexSessions: vi.fn(),
@@ -92,6 +98,7 @@ describe("useThreads sidebar cache", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     writeClientStoreData("threads", {});
+    vi.mocked(loadClaudeSession).mockResolvedValue({ messages: [] });
   });
 
   it("hydrates cached thread summaries before live thread list resolves", () => {
@@ -206,6 +213,62 @@ describe("useThreads sidebar cache", () => {
       });
 
       expect(result.current.historyLoadingByThreadId["thread-history"]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("tracks Claude history loading while selecting an unloaded session", async () => {
+    vi.useFakeTimers();
+    vi.mocked(listThreads).mockResolvedValue({
+      result: { data: [], nextCursor: null },
+    } as never);
+    let resolveLoad: ((value: { messages: unknown[] }) => void) | null = null;
+    vi.mocked(loadClaudeSession).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }) as never,
+    );
+
+    try {
+      const { result } = renderHook(() =>
+        useThreads({
+          activeWorkspace: workspace,
+          onWorkspaceConnected: vi.fn(),
+        }),
+      );
+
+      await act(async () => {
+        await result.current.listThreadsForWorkspace(workspace);
+      });
+
+      act(() => {
+        result.current.setActiveThreadId("claude:session-history");
+      });
+
+      expect(result.current.historyLoadingByThreadId["claude:session-history"]).toBe(
+        true,
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(50);
+      });
+
+      expect(vi.mocked(loadClaudeSession)).toHaveBeenCalledWith(
+        "/tmp/codex",
+        "session-history",
+      );
+      expect(result.current.historyLoadingByThreadId["claude:session-history"]).toBe(
+        true,
+      );
+
+      await act(async () => {
+        resolveLoad?.({ messages: [] });
+        await Promise.resolve();
+      });
+
+      expect(result.current.historyLoadingByThreadId["claude:session-history"]).toBeUndefined();
     } finally {
       vi.useRealTimers();
     }

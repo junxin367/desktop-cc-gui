@@ -43,6 +43,7 @@ type AppServerEventHandlers = {
     threadId: string,
     sessionId: string,
     engine?: "claude" | "opencode" | "codex" | "gemini" | null,
+    turnId?: string | null,
   ) => void;
   onBackgroundThreadAction?: (
     workspaceId: string,
@@ -381,6 +382,48 @@ function inferGeminiReasoningHintFromThreadId(threadId: string): "gemini" | null
   return isGeminiThreadId(threadId) ? "gemini" : null;
 }
 
+function inferRawMethodEngine(
+  method: string,
+): "claude" | "codex" | "gemini" | "opencode" | undefined {
+  switch (method) {
+    case "claude/raw":
+      return "claude";
+    case "codex/raw":
+      return "codex";
+    case "gemini/raw":
+      return "gemini";
+    case "opencode/raw":
+      return "opencode";
+    default:
+      return undefined;
+  }
+}
+
+function isCodexRawGeneratedImageEvent(
+  method: string,
+  params: Record<string, unknown>,
+): boolean {
+  if (method !== "codex/raw") {
+    return false;
+  }
+  const rawEntryType = asString(params.type ?? "").trim().toLowerCase();
+  if (rawEntryType !== "event_msg" && rawEntryType !== "response_item") {
+    return false;
+  }
+  const payload =
+    params.payload && typeof params.payload === "object"
+      ? (params.payload as Record<string, unknown>)
+      : null;
+  if (!payload) {
+    return false;
+  }
+  const payloadType = asString(payload.type ?? "").trim().toLowerCase();
+  return (
+    payloadType === "image_generation_call" ||
+    payloadType === "image_generation_end"
+  );
+}
+
 function shouldRebindSharedNativeThreadOnStartedEvent(
   engine: "claude" | "opencode" | "codex" | "gemini",
 ): boolean {
@@ -669,27 +712,31 @@ function tryRouteNormalizedRealtimeEvent({
 }): boolean {
   const params = (message.params as Record<string, unknown> | undefined) ?? {};
   const turn = (params.turn as Record<string, unknown> | undefined) ?? {};
-  const threadId = asString(
+  const rawThreadId = asString(
     params.threadId ??
       params.thread_id ??
       turn.threadId ??
       turn.thread_id ??
       "",
   );
-  if (!threadId) {
+  const effectiveThreadId = threadIdOverride || rawThreadId;
+  if (!effectiveThreadId) {
     return false;
   }
-  const engine = engineOverride ?? inferRealtimeAdapterEngine(threadId);
+  const engine = engineOverride ?? inferRealtimeAdapterEngine(effectiveThreadId);
   const adapter = getRealtimeAdapterByEngine(engine);
+  const shouldInjectThreadId = Boolean(threadIdOverride);
   const normalized = adapter.mapEvent({
     workspaceId,
-    message: threadIdOverride ? cloneMessageWithThreadId(message, threadIdOverride) : message,
+    message: shouldInjectThreadId
+      ? cloneMessageWithThreadId(message, effectiveThreadId)
+      : message,
   });
   if (!normalized) {
     return false;
   }
-  if (threadIdOverride) {
-    normalized.threadId = threadIdOverride;
+  if (shouldInjectThreadId) {
+    normalized.threadId = effectiveThreadId;
     normalized.item = {
       ...normalized.item,
       engineSource: engine,
@@ -731,6 +778,11 @@ export function useAppServerEvents(
 
       const params = (message.params as Record<string, unknown>) ?? {};
       const rawThreadId = extractThreadIdFromParams(params);
+      const rawMethodEngine = inferRawMethodEngine(method);
+      const shouldForceNormalizedRealtimeRoute = isCodexRawGeneratedImageEvent(
+        method,
+        params,
+      );
       let sharedBridge = rawThreadId
         ? resolveSharedSessionBindingByNativeThread(workspace_id, rawThreadId)
         : null;
@@ -886,7 +938,7 @@ export function useAppServerEvents(
       }
 
       if (
-        useNormalizedRealtimeAdapters &&
+        (useNormalizedRealtimeAdapters || shouldForceNormalizedRealtimeRoute) &&
         tryRouteNormalizedRealtimeEvent({
           handlers,
           workspaceId: workspace_id,
@@ -896,7 +948,9 @@ export function useAppServerEvents(
                 engineOverride: sharedBridge.engine,
                 threadIdOverride: sharedBridge.sharedThreadId,
               }
-            : {}),
+            : rawMethodEngine
+              ? { engineOverride: rawMethodEngine }
+              : {}),
           threadAgentDeltaSeenRef,
           threadAgentCompletedSeenRef,
         })
@@ -938,6 +992,7 @@ export function useAppServerEvents(
         const thread = (params.thread as Record<string, unknown> | undefined) ?? null;
         const threadId = String(thread?.id ?? params.threadId ?? params.thread_id ?? "");
         const sessionId = String(params.sessionId ?? params.session_id ?? "");
+        const turnId = String(params.turnId ?? params.turn_id ?? "").trim();
         const rawEngine = String(params.engine ?? "").toLowerCase();
         const eventEngine =
           rawEngine === "claude" ||
@@ -1016,6 +1071,7 @@ export function useAppServerEvents(
             threadId,
             sessionId,
             eventEngine,
+            turnId || null,
           );
         }
 

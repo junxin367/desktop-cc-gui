@@ -623,6 +623,7 @@ impl ClaudeSession {
                 workspace_id: self.workspace_id.clone(),
                 session_id: "pending".to_string(),
                 engine: EngineType::Claude,
+                turn_id: Some(turn_id.to_string()),
             },
         );
 
@@ -744,6 +745,7 @@ impl ClaudeSession {
                                     workspace_id: self.workspace_id.clone(),
                                     session_id: sid.to_string(),
                                     engine: EngineType::Claude,
+                                    turn_id: Some(turn_id.to_string()),
                                 },
                             );
                         }

@@ -1255,6 +1255,7 @@ const enPart2 = {
     none: "None",
     noExtraDetails: "No extra details.",
     decline: "Decline",
+    close: "Close",
     approveTurnBatch: "Approve all in this batch ({{count}})",
     allowCommandsStartWith: "Allow commands that start with {{prefix}}",
     alwaysAllow: "Always allow",

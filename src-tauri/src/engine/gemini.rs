@@ -910,6 +910,7 @@ impl GeminiSession {
                 workspace_id: self.workspace_id.clone(),
                 session_id: "pending".to_string(),
                 engine: EngineType::Gemini,
+                turn_id: Some(turn_id.to_string()),
             },
         );
         self.emit_turn_event(
@@ -986,6 +987,7 @@ impl GeminiSession {
                                     workspace_id: self.workspace_id.clone(),
                                     session_id,
                                     engine: EngineType::Gemini,
+                                    turn_id: Some(turn_id.to_string()),
                                 },
                             );
                         }

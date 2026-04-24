@@ -1227,6 +1227,7 @@ const zhPart2 = {
     none: "无",
     noExtraDetails: "无额外详情。",
     decline: "拒绝",
+    close: "关闭",
     approveTurnBatch: "批准本次全部操作 ({{count}} 项)",
     allowCommandsStartWith: "允许以 {{prefix}} 开头的命令",
     alwaysAllow: "始终允许",
