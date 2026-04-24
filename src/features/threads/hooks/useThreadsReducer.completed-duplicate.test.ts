@@ -138,6 +138,58 @@ describe("threadReducer completed duplicate collapse", () => {
     ].join("\n"));
   });
 
+  it("collapses markdown completed payloads when the final snapshot replays the streamed prefix", () => {
+    const itemId = "assistant-markdown-prefix-replay-1";
+    const finalReport = [
+      "---",
+      "",
+      "## 📊 项目分析报告",
+      "",
+      "### 1. 基本信息",
+      "",
+      "| 维度 | 内容 |",
+      "|------|------|",
+      "| 项目名 | springboot-demo |",
+      "| Java | 11 |",
+      "",
+      "### 2. 技术栈",
+      "",
+      "- Spring Boot 2.7.18",
+      "- Spring Security + JWT",
+      "- Spring Data JPA + H2",
+      "",
+      "### 3. 结论",
+      "",
+      "这是一个结构清晰的多端统一认证演示项目。",
+    ].join("\n");
+    const streamedPrefix = finalReport.slice(0, Math.floor(finalReport.length * 0.5));
+    const completedPayload = `${streamedPrefix}\n\n${finalReport}`;
+
+    const withDelta = threadReducer(initialState, {
+      type: "appendAgentDelta",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+      itemId,
+      delta: streamedPrefix,
+      hasCustomName: false,
+    });
+    const completed = threadReducer(withDelta, {
+      type: "completeAgentMessage",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+      itemId,
+      text: completedPayload,
+      hasCustomName: false,
+    });
+
+    const messages = (completed.itemsByThread["thread-1"] ?? []).filter(
+      (item): item is Extract<ConversationItem, { kind: "message" }> =>
+        item.kind === "message" && item.role === "assistant" && item.id === itemId,
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.text).toBe(finalReport);
+  });
+
   it("keeps the existing long markdown when completed snapshot is already contained inside it", () => {
     const itemId = "assistant-markdown-contained-completed-1";
     const completed = [

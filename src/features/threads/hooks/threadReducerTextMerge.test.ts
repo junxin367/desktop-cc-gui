@@ -100,6 +100,39 @@ describe("threadReducerTextMerge", () => {
     ].join("\n"));
   });
 
+  it("collapses markdown completed payloads when the final snapshot replays the streamed prefix", () => {
+    const finalReport = [
+      "---",
+      "",
+      "## 📊 项目分析报告",
+      "",
+      "### 1. 基本信息",
+      "",
+      "| 维度 | 内容 |",
+      "|------|------|",
+      "| 项目名 | springboot-demo |",
+      "| Java | 11 |",
+      "",
+      "### 2. 技术栈",
+      "",
+      "- Spring Boot 2.7.18",
+      "- Spring Security + JWT",
+      "- Spring Data JPA + H2",
+      "",
+      "### 3. 结论",
+      "",
+      "这是一个结构清晰的多端统一认证演示项目。",
+    ].join("\n");
+    const streamedPrefix = finalReport.slice(0, Math.floor(finalReport.length * 0.5));
+
+    expect(
+      mergeCompletedAgentText(
+        streamedPrefix,
+        `${streamedPrefix}\n\n${finalReport}`,
+      ),
+    ).toBe(finalReport);
+  });
+
   it("collapses trailing repeated Computer Use permission guidance blocks", () => {
     const firstPass = [
       "Computer Use 这边还没真正拿到系统自动化权限，调用返回：",

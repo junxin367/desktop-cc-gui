@@ -206,6 +206,40 @@ export function useThreadActions({
     [threadsByWorkspace],
   );
 
+  const removeThreadFromCachedSummaries = useCallback(
+    (workspaceId: string, threadId: string) => {
+      const filterOutThread = (
+        source: Record<string, ThreadSummary[] | undefined>,
+      ): ThreadSummary[] => {
+        const current = source[workspaceId] ?? [];
+        return current.filter((entry) => entry.id !== threadId);
+      };
+      latestThreadsByWorkspaceRef.current = {
+        ...latestThreadsByWorkspaceRef.current,
+        [workspaceId]: filterOutThread(latestThreadsByWorkspaceRef.current),
+      };
+      previousThreadsByWorkspaceRef.current = {
+        ...previousThreadsByWorkspaceRef.current,
+        [workspaceId]: filterOutThread(previousThreadsByWorkspaceRef.current),
+      };
+    },
+    [],
+  );
+
+  const reconcileMissingClaudeThread = useCallback(
+    (workspaceId: string, threadId: string) => {
+      loadedThreadsRef.current[threadId] = false;
+      removeThreadFromCachedSummaries(workspaceId, threadId);
+      dispatch({
+        type: "clearUserInputRequestsForThread",
+        workspaceId,
+        threadId,
+      });
+      dispatch({ type: "removeThread", workspaceId, threadId });
+    },
+    [dispatch, loadedThreadsRef, removeThreadFromCachedSummaries],
+  );
+
   const loadArchivedSessionMap = useCallback(
     async (workspaceId: string): Promise<Map<string, number> | null> => {
       if (!canListWorkspaceSessions) {
@@ -854,7 +888,11 @@ export function useThreadActions({
       const workspacePath = workspacePathsByIdRef.current[workspaceId];
       if (threadId.startsWith("claude:")) {
         dispatch({ type: "ensureThread", workspaceId, threadId, engine: "claude" });
-        if (workspacePath && (force || !loadedThreadsRef.current[threadId])) {
+        if (!workspacePath) {
+          loadedThreadsRef.current[threadId] = false;
+          return threadId;
+        }
+        if (force || !loadedThreadsRef.current[threadId]) {
           const realSessionId = threadId.slice("claude:".length);
           try {
             const result = await loadClaudeSessionService(
@@ -900,8 +938,29 @@ export function useThreadActions({
                 },
               });
             }
-          } catch {
-            // Failed to load Claude session history — not fatal
+          } catch (error) {
+            loadedThreadsRef.current[threadId] = false;
+            const diagnostic =
+              error instanceof Error
+                ? resolveThreadStabilityDiagnostic(error.message)
+                : resolveThreadStabilityDiagnostic(String(error));
+            onDebug?.({
+              id: `${Date.now()}-claude-history-load-error`,
+              timestamp: Date.now(),
+              source: "error",
+              label: "thread/claude history load error",
+              payload: {
+                workspaceId,
+                threadId,
+                error: error instanceof Error ? error.message : String(error),
+                diagnosticCategory: diagnostic?.category ?? "partial_history",
+              },
+            });
+            if (isThreadResumeNotFoundError(error)) {
+              reconcileMissingClaudeThread(workspaceId, threadId);
+              return null;
+            }
+            return threadId;
           }
         }
         loadedThreadsRef.current[threadId] = true;
@@ -1061,6 +1120,7 @@ export function useThreadActions({
       onDebug,
       rememberThreadAlias,
       replaceOnResumeRef,
+      reconcileMissingClaudeThread,
       threadActivityRef,
       threadStatusById,
       threadsByWorkspace,

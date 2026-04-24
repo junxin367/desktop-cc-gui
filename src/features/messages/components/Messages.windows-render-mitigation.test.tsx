@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationItem } from "../../../types";
 import type { ConversationState } from "../../threads/contracts/conversationCurtainContracts";
@@ -7,11 +7,22 @@ import type { ConversationState } from "../../threads/contracts/conversationCurt
 const mocks = vi.hoisted(() => ({
   isMacPlatform: vi.fn(),
   isWindowsPlatform: vi.fn(),
+  noteThreadVisibleRender: vi.fn(),
+  noteThreadVisibleTextRendered: vi.fn(),
+  resolveActiveThreadStreamMitigation: vi.fn(),
+  useThreadStreamLatencySnapshot: vi.fn(),
 }));
 
 vi.mock("../../../utils/platform", () => ({
   isMacPlatform: mocks.isMacPlatform,
   isWindowsPlatform: mocks.isWindowsPlatform,
+}));
+
+vi.mock("../../threads/utils/streamLatencyDiagnostics", () => ({
+  noteThreadVisibleRender: mocks.noteThreadVisibleRender,
+  noteThreadVisibleTextRendered: mocks.noteThreadVisibleTextRendered,
+  resolveActiveThreadStreamMitigation: mocks.resolveActiveThreadStreamMitigation,
+  useThreadStreamLatencySnapshot: mocks.useThreadStreamLatencySnapshot,
 }));
 
 import { Messages } from "./Messages";
@@ -59,8 +70,28 @@ describe("Messages desktop render-safe mode", () => {
   beforeEach(() => {
     mocks.isMacPlatform.mockReset();
     mocks.isWindowsPlatform.mockReset();
+    mocks.noteThreadVisibleRender.mockReset();
+    mocks.noteThreadVisibleTextRendered.mockReset();
+    mocks.resolveActiveThreadStreamMitigation.mockReset();
+    mocks.useThreadStreamLatencySnapshot.mockReset();
     mocks.isMacPlatform.mockReturnValue(false);
     mocks.isWindowsPlatform.mockReturnValue(false);
+    mocks.useThreadStreamLatencySnapshot.mockReturnValue(null);
+    mocks.resolveActiveThreadStreamMitigation.mockImplementation((snapshot) => {
+      const mitigationProfile =
+        snapshot && typeof snapshot === "object" && "mitigationProfile" in snapshot
+          ? snapshot.mitigationProfile
+          : null;
+      if (!mitigationProfile) {
+        return null;
+      }
+      return {
+        id: mitigationProfile,
+        messageStreamingThrottleMs: 48,
+        reasoningStreamingThrottleMs: 180,
+        renderPlainTextWhileStreaming: true,
+      };
+    });
   });
 
   afterEach(() => {
@@ -185,5 +216,49 @@ describe("Messages desktop render-safe mode", () => {
     });
 
     expect(container.firstElementChild?.className).not.toContain("claude-render-safe");
+  });
+
+  it("preserves the last readable curtain when Claude enters repeat-turn blanking", () => {
+    mocks.useThreadStreamLatencySnapshot.mockReturnValue({
+      latencyCategory: "repeat-turn-blanking",
+      mitigationProfile: "claude-markdown-stream-recovery",
+    });
+
+    const { rerender } = renderMessages();
+
+    expect(screen.queryAllByText("继续").length).toBeGreaterThan(0);
+    expect(screen.getByText("正在处理")).toBeTruthy();
+
+    rerender(
+      <Messages
+        items={[]}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking
+        activeEngine="claude"
+        conversationState={null}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(screen.queryAllByText("继续").length).toBeGreaterThan(0);
+    expect(screen.getByText("正在处理")).toBeTruthy();
+
+    rerender(
+      <Messages
+        items={[]}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        activeEngine="claude"
+        conversationState={null}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(screen.queryAllByText("继续")).toHaveLength(0);
+    expect(screen.queryByText("正在处理")).toBeNull();
   });
 });

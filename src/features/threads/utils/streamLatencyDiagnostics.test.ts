@@ -258,6 +258,92 @@ describe("streamLatencyDiagnostics", () => {
     );
   });
 
+  it("classifies repeat-turn blanking only for Claude after a non-empty surface disappears", async () => {
+    mocks.isWindowsPlatform.mockReturnValue(false);
+    mocks.isMacPlatform.mockReturnValue(true);
+    mocks.getCurrentClaudeConfig.mockResolvedValue({
+      apiKey: "",
+      baseUrl: "https://api.anthropic.test",
+      providerId: "anthropic",
+      providerName: "Anthropic",
+    });
+
+    await primeThreadStreamLatencyContext({
+      workspaceId: "ws-1",
+      threadId: "thread-repeat-blanking",
+      engine: "claude",
+      model: "claude-sonnet-4.5",
+    });
+
+    noteThreadTurnStarted({
+      workspaceId: "ws-1",
+      threadId: "thread-repeat-blanking",
+      turnId: "turn-repeat-blanking",
+      startedAt: 5_000,
+    });
+    noteThreadDeltaReceived("thread-repeat-blanking", 5_050);
+    noteThreadVisibleRender("thread-repeat-blanking", {
+      visibleItemCount: 2,
+      renderAt: 5_080,
+    });
+    noteThreadVisibleRender("thread-repeat-blanking", {
+      visibleItemCount: 0,
+      renderAt: 5_160,
+    });
+
+    const snapshot = getThreadStreamLatencySnapshot("thread-repeat-blanking");
+    const mitigation = resolveActiveThreadStreamMitigation(snapshot);
+
+    expect(snapshot?.latencyCategory).toBe("repeat-turn-blanking");
+    expect(snapshot?.repeatTurnBlankingReported).toBe(true);
+    expect(snapshot?.lastNonEmptyVisibleItemCount).toBe(2);
+    expect(snapshot?.mitigationProfile).toBe("claude-markdown-stream-recovery");
+    expect(mitigation?.id).toBe("claude-markdown-stream-recovery");
+    expect(mocks.appendRendererDiagnostic).toHaveBeenCalledWith(
+      "stream-latency/repeat-turn-blanking",
+      expect.objectContaining({
+        threadId: "thread-repeat-blanking",
+        platform: "macos",
+        latencyCategory: "repeat-turn-blanking",
+        blankingDurationMs: 80,
+        lastNonEmptyVisibleItemCount: 2,
+      }),
+    );
+  });
+
+  it("does not classify repeat-turn blanking for non-Claude engines or without prior visible output", async () => {
+    mocks.isWindowsPlatform.mockReturnValue(false);
+    mocks.isMacPlatform.mockReturnValue(true);
+
+    await primeThreadStreamLatencyContext({
+      workspaceId: "ws-1",
+      threadId: "thread-repeat-blanking-guard",
+      engine: "codex",
+      model: "gpt-5.4",
+    });
+
+    noteThreadTurnStarted({
+      workspaceId: "ws-1",
+      threadId: "thread-repeat-blanking-guard",
+      turnId: "turn-repeat-blanking-guard",
+      startedAt: 6_000,
+    });
+    noteThreadDeltaReceived("thread-repeat-blanking-guard", 6_020);
+    noteThreadVisibleRender("thread-repeat-blanking-guard", {
+      visibleItemCount: 0,
+      renderAt: 6_040,
+    });
+
+    const snapshot = getThreadStreamLatencySnapshot("thread-repeat-blanking-guard");
+
+    expect(snapshot?.latencyCategory).toBeNull();
+    expect(snapshot?.repeatTurnBlankingReported).toBe(false);
+    expect(mocks.appendRendererDiagnostic).not.toHaveBeenCalledWith(
+      "stream-latency/repeat-turn-blanking",
+      expect.anything(),
+    );
+  });
+
   it("tracks visible text growth per assistant item instead of comparing global length", async () => {
     mocks.isWindowsPlatform.mockReturnValue(true);
     mocks.getCurrentClaudeConfig.mockResolvedValue({

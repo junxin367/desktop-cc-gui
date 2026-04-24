@@ -2117,15 +2117,26 @@ export function useThreads({
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const code = mapDeleteErrorCode(message);
+        if (threadId.startsWith("claude:") && code === "SESSION_NOT_FOUND") {
+          loadedThreadsRef.current[threadId] = false;
+          unpinThread(workspaceId, threadId);
+          dispatch({
+            type: "clearUserInputRequestsForThread",
+            workspaceId,
+            threadId,
+          });
+          dispatch({ type: "removeThread", workspaceId, threadId });
+        }
         return {
           threadId,
           success: false,
-          code: mapDeleteErrorCode(message),
+          code,
           message,
         };
       }
     },
-    [deleteThreadForWorkspace, getThreadKind, unpinThread],
+    [deleteThreadForWorkspace, dispatch, getThreadKind, loadedThreadsRef, unpinThread],
   );
 
   const removeThreads = useCallback(

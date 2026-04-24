@@ -643,6 +643,44 @@ function collapseMergedAssistantRepeats(value: string) {
   return collapseNearDuplicateParagraphRepeats(value);
 }
 
+function collapseLeadingCompletedSnapshotEcho(value: string) {
+  const comparableValue = compactComparableStreamingText(value);
+  if (comparableValue.length < 48) {
+    return value;
+  }
+  const anchorLength = Math.min(24, Math.floor(comparableValue.length / 2));
+  if (anchorLength < 12) {
+    return value;
+  }
+  const leadingAnchor = comparableValue.slice(0, anchorLength);
+  if (!leadingAnchor) {
+    return value;
+  }
+
+  let echoStartIndex = comparableValue.indexOf(leadingAnchor, anchorLength);
+  while (echoStartIndex >= 0) {
+    if (echoStartIndex >= 24) {
+      const leadingComparablePrefix = comparableValue.slice(0, echoStartIndex);
+      const comparableRemainder = comparableValue.slice(echoStartIndex);
+      if (
+        comparableRemainder.length > leadingComparablePrefix.length &&
+        comparableRemainder.startsWith(leadingComparablePrefix)
+      ) {
+        const readableRemainder = sliceByCompactStreamingLength(
+          value,
+          echoStartIndex,
+        ).trimStart();
+        if (readableRemainder) {
+          return readableRemainder;
+        }
+      }
+    }
+    echoStartIndex = comparableValue.indexOf(leadingAnchor, echoStartIndex + 1);
+  }
+
+  return value;
+}
+
 export function mergeAgentMessageText(existing: string, delta: string) {
   const snapshotCandidate = stripLeadingEchoFromSnapshot(
     existing,
@@ -903,7 +941,9 @@ export function mergeCompletedAgentText(existing: string, completed: string) {
 }
 
 function normalizeCompletedAssistantText(value: string) {
-  const cleanedValue = stripClaudeApprovalResumeArtifacts(value);
+  const cleanedValue = collapseLeadingCompletedSnapshotEcho(
+    stripClaudeApprovalResumeArtifacts(value),
+  );
   const collapsedRawParagraphBlocks =
     collapseNearDuplicateParagraphRepeats(cleanedValue);
   if (collapsedRawParagraphBlocks !== cleanedValue) {

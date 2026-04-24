@@ -8,7 +8,8 @@ export type StreamPlatform = "windows" | "macos" | "linux" | "unknown";
 export type StreamLatencyCategory =
   | "upstream-pending"
   | "render-amplification"
-  | "visible-output-stall-after-first-delta";
+  | "visible-output-stall-after-first-delta"
+  | "repeat-turn-blanking";
 export type StreamMitigationProfileId =
   | "claude-qwen-windows-render-safe"
   | "claude-windows-visible-stream"
@@ -41,6 +42,8 @@ export type ThreadStreamLatencySnapshot = {
   firstVisibleRenderAfterDeltaMs: number | null;
   firstVisibleTextRenderAt: number | null;
   firstVisibleTextAfterDeltaMs: number | null;
+  lastNonEmptyVisibleRenderAt: number | null;
+  lastNonEmptyVisibleItemCount: number;
   lastVisibleTextRenderAt: number | null;
   lastVisibleTextAfterDeltaMs: number | null;
   lastVisibleTextItemId: string | null;
@@ -56,6 +59,7 @@ export type ThreadStreamLatencySnapshot = {
   upstreamPendingReported: boolean;
   renderAmplificationReported: boolean;
   visibleOutputStallReported: boolean;
+  repeatTurnBlankingReported: boolean;
 };
 
 const CADENCE_SAMPLE_LIMIT = 12;
@@ -128,6 +132,8 @@ function createInitialSnapshot(threadId: string): ThreadStreamLatencySnapshot {
     firstVisibleRenderAfterDeltaMs: null,
     firstVisibleTextRenderAt: null,
     firstVisibleTextAfterDeltaMs: null,
+    lastNonEmptyVisibleRenderAt: null,
+    lastNonEmptyVisibleItemCount: 0,
     lastVisibleTextRenderAt: null,
     lastVisibleTextAfterDeltaMs: null,
     lastVisibleTextItemId: null,
@@ -143,6 +149,7 @@ function createInitialSnapshot(threadId: string): ThreadStreamLatencySnapshot {
     upstreamPendingReported: false,
     renderAmplificationReported: false,
     visibleOutputStallReported: false,
+    repeatTurnBlankingReported: false,
   };
 }
 
@@ -392,6 +399,11 @@ function buildCorrelationPayload(
         ? Math.max(0, snapshot.firstVisibleTextRenderAt - snapshot.startedAt)
         : null,
     firstVisibleTextAfterDeltaMs: snapshot.firstVisibleTextAfterDeltaMs,
+    lastNonEmptyVisibleRenderAtMs:
+      snapshot.startedAt !== null && snapshot.lastNonEmptyVisibleRenderAt !== null
+        ? Math.max(0, snapshot.lastNonEmptyVisibleRenderAt - snapshot.startedAt)
+        : null,
+    lastNonEmptyVisibleItemCount: snapshot.lastNonEmptyVisibleItemCount,
     lastVisibleTextRenderAtMs:
       snapshot.startedAt !== null && snapshot.lastVisibleTextRenderAt !== null
         ? Math.max(0, snapshot.lastVisibleTextRenderAt - snapshot.startedAt)
@@ -542,6 +554,8 @@ export function noteThreadTurnStarted(input: {
     firstVisibleRenderAfterDeltaMs: null,
     firstVisibleTextRenderAt: null,
     firstVisibleTextAfterDeltaMs: null,
+    lastNonEmptyVisibleRenderAt: null,
+    lastNonEmptyVisibleItemCount: 0,
     lastVisibleTextRenderAt: null,
     lastVisibleTextAfterDeltaMs: null,
     lastVisibleTextItemId: null,
@@ -557,6 +571,7 @@ export function noteThreadTurnStarted(input: {
     upstreamPendingReported: false,
     renderAmplificationReported: false,
     visibleOutputStallReported: false,
+    repeatTurnBlankingReported: false,
   }));
 }
 
@@ -607,16 +622,65 @@ export function noteThreadVisibleRender(
 ) {
   const renderAt = input.renderAt ?? Date.now();
   updateThreadSnapshot(threadId, (current) => {
+    if (current.startedAt === null) {
+      return current;
+    }
+
+    let nextSnapshot: ThreadStreamLatencySnapshot =
+      input.visibleItemCount > 0
+        ? {
+            ...current,
+            lastNonEmptyVisibleRenderAt: renderAt,
+            lastNonEmptyVisibleItemCount: input.visibleItemCount,
+          }
+        : current;
+
     if (
-      current.startedAt === null ||
+      isClaudeStream(current) &&
+      input.visibleItemCount === 0 &&
+      current.firstDeltaAt !== null &&
+      current.lastNonEmptyVisibleRenderAt !== null &&
+      !current.repeatTurnBlankingReported
+    ) {
+      const blankingDurationMs = Math.max(
+        0,
+        renderAt - current.lastNonEmptyVisibleRenderAt,
+      );
+      nextSnapshot = {
+        ...nextSnapshot,
+        latencyCategory: "repeat-turn-blanking",
+        pendingRenderSinceDeltaAt: null,
+        repeatTurnBlankingReported: true,
+      };
+      nextSnapshot = maybeActivateClaudeVisibleStallMitigation(
+        nextSnapshot,
+        "repeat-turn-blanking",
+        {
+          blankingDurationMs,
+          visibleItemCount: input.visibleItemCount,
+          lastNonEmptyVisibleItemCount: current.lastNonEmptyVisibleItemCount,
+        },
+      );
+      appendRendererDiagnostic(
+        "stream-latency/repeat-turn-blanking",
+        buildCorrelationPayload(nextSnapshot, {
+          blankingDurationMs,
+          visibleItemCount: input.visibleItemCount,
+          lastNonEmptyVisibleItemCount: current.lastNonEmptyVisibleItemCount,
+        }),
+      );
+      return nextSnapshot;
+    }
+
+    if (
       current.pendingRenderSinceDeltaAt === null ||
       current.firstDeltaAt === null
     ) {
-      return current;
+      return nextSnapshot;
     }
     const renderLagMs = Math.max(0, renderAt - current.pendingRenderSinceDeltaAt);
-    let nextSnapshot: ThreadStreamLatencySnapshot = {
-      ...current,
+    nextSnapshot = {
+      ...nextSnapshot,
       firstVisibleRenderAt: current.firstVisibleRenderAt ?? renderAt,
       firstVisibleRenderAfterDeltaMs:
         current.firstVisibleRenderAfterDeltaMs ?? renderLagMs,
@@ -806,6 +870,8 @@ export function completeThreadStreamTurn(threadId: string) {
     firstVisibleRenderAfterDeltaMs: null,
     firstVisibleTextRenderAt: null,
     firstVisibleTextAfterDeltaMs: null,
+    lastNonEmptyVisibleRenderAt: null,
+    lastNonEmptyVisibleItemCount: 0,
     lastVisibleTextRenderAt: null,
     lastVisibleTextAfterDeltaMs: null,
     lastVisibleTextItemId: null,
@@ -821,6 +887,7 @@ export function completeThreadStreamTurn(threadId: string) {
     upstreamPendingReported: false,
     renderAmplificationReported: false,
     visibleOutputStallReported: false,
+    repeatTurnBlankingReported: false,
   }));
 }
 

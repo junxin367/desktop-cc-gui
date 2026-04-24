@@ -227,4 +227,117 @@ describe("useThreadActions Claude history refresh", () => {
       items: expect.any(Array),
     });
   });
+
+  it("reconciles missing claude history entries instead of marking them loaded", async () => {
+    vi.mocked(listThreads).mockResolvedValue({
+      result: { data: [], nextCursor: null },
+    });
+    vi.mocked(listClaudeSessions).mockResolvedValue([]);
+    vi.mocked(loadClaudeSession).mockRejectedValue(
+      new Error("[SESSION_NOT_FOUND] Session file not found: session-missing"),
+    );
+
+    const { result, dispatch, loadedThreadsRef } = renderActions({
+      threadsByWorkspace: {
+        "ws-1": [
+          {
+            id: "claude:session-missing",
+            name: "Missing Claude",
+            updatedAt: 1_730_000_000_000,
+            engineSource: "claude",
+            threadKind: "native",
+          },
+        ],
+      },
+      activeThreadIdByWorkspace: {
+        "ws-1": "claude:session-missing",
+      },
+      userInputRequests: [
+        {
+          workspace_id: "ws-1",
+          request_id: "user-input-1",
+          params: {
+            thread_id: "claude:session-missing",
+            turn_id: "turn-1",
+            item_id: "item-1",
+            questions: [],
+          },
+        },
+      ],
+    });
+
+    let resumed: string | null = null;
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace, {
+        preserveState: true,
+      });
+    });
+
+    await act(async () => {
+      resumed = await result.current.resumeThreadForWorkspace(
+        "ws-1",
+        "claude:session-missing",
+      );
+    });
+
+    expect(resumed).toBeNull();
+    expect(loadedThreadsRef.current["claude:session-missing"]).toBe(false);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "clearUserInputRequestsForThread",
+      workspaceId: "ws-1",
+      threadId: "claude:session-missing",
+    });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "removeThread",
+      workspaceId: "ws-1",
+      threadId: "claude:session-missing",
+    });
+  });
+
+  it("keeps claude thread retryable when history load fails without not-found", async () => {
+    vi.mocked(listThreads).mockResolvedValue({
+      result: { data: [], nextCursor: null },
+    });
+    vi.mocked(listClaudeSessions).mockResolvedValue([]);
+    vi.mocked(loadClaudeSession).mockRejectedValue(
+      new Error("failed to parse claude history"),
+    );
+
+    const { result, dispatch, loadedThreadsRef } = renderActions({
+      threadsByWorkspace: {
+        "ws-1": [
+          {
+            id: "claude:session-1",
+            name: "Claude Session",
+            updatedAt: 1_730_000_000_000,
+            engineSource: "claude",
+            threadKind: "native",
+          },
+        ],
+      },
+    });
+
+    let resumed: string | null = null;
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace, {
+        preserveState: true,
+      });
+    });
+
+    await act(async () => {
+      resumed = await result.current.resumeThreadForWorkspace(
+        "ws-1",
+        "claude:session-1",
+      );
+    });
+
+    expect(resumed).toBe("claude:session-1");
+    expect(loadedThreadsRef.current["claude:session-1"]).toBe(false);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "removeThread",
+        threadId: "claude:session-1",
+      }),
+    );
+  });
 });
