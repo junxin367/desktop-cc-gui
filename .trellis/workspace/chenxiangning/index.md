@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-5.md`
-- **Total Sessions**: 166
+- **Total Sessions**: 167
 - **Last Active**: 2026-04-24
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-5.md` | ~1714 | Active |
+| `journal-5.md` | ~1774 | Active |
 | `journal-4.md` | ~1975 | Archived |
 | `journal-3.md` | ~1972 | Archived |
 | `journal-2.md` | ~1960 | Archived |
@@ -33,6 +33,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 167 | 2026-04-24 | 修复 Claude 汇总长文实时流误路由 | `490ec5f973e729f81594f8afff82586317555aae` | `feature/v-0.4.8` |
 | 166 | 2026-04-24 | 修复 Claude 长文实时渲染与门禁回归 | `1571d17c` | `feature/v-0.4.8` |
 | 165 | 2026-04-24 | 修复 Claude Windows 实时输出卡顿 | `58676abee55f6b570fb6a1822216b0e0cb49b061` | `feature/v-0.4.8` |
 | 164 | 2026-04-24 | 归档 Codex 实时画布去重提案 | `dc88b4b2875f2bb81d0a74464deef6caff7bac24` | `feature/v-0.4.8` |

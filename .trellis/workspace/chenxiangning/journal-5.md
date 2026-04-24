@@ -1712,3 +1712,63 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 167: 修复 Claude 汇总长文实时流误路由
+
+**Date**: 2026-04-24
+**Task**: 修复 Claude 汇总长文实时流误路由
+**Branch**: `feature/v-0.4.8`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 修复 Claude Code 在长任务汇总阶段卡住后一次性整篇输出的问题。
+- 保证最终总结正文进入 assistant 幕布实时流，而不是误落到 tool output。
+
+主要改动:
+- 在 `src-tauri/src/engine/claude.rs` 新增 `clear_tool_block_indices_for_tool` 与 `clear_tool_block_tracking`，按 `tool_id` 清理当前 turn 下全部 stale block 映射。
+- 在 `src-tauri/src/engine/claude/event_conversion.rs` 的 assistant/user/tool_result/stream_event 完成与 blocked 分支统一使用完整映射清理，避免汇总正文复用旧 index 时继续被映射成 `ToolOutputDelta`。
+- 在 `src-tauri/src/engine/claude/tests_core.rs` 增加 `convert_event_clears_stale_tool_block_mapping_after_tool_completion` 回归测试，锁定“工具完成后旧 index 上的后续 text_delta 必须回到 assistant TextDelta”。
+- 同批保留并纳入提交的前端实时桥接修复位于 `src/features/app/hooks/useAppServerEvents.*` 与 `src/features/threads/hooks/useThreadEventHandlers.*`，用于覆盖 Claude snapshot ingress 与实时桥接行为。
+
+涉及模块:
+- Claude backend realtime event conversion
+- Claude tool block lifecycle tracking
+- Thread realtime bridge / diagnostics tests
+
+验证结果:
+- `cargo test --manifest-path src-tauri/Cargo.toml engine::claude::tests_core::convert_ -- --nocapture`
+- `npm run typecheck`
+- `npm run lint`
+- `git diff --check`
+- 本机真实时间线对比验证:
+  - 修复前首个 `# 项目全面分析报告` 先出现在 `item/commandExecution/outputDelta`
+  - 修复后源码版 `cc_gui_daemon` 实跑中，首个报告标题已直接出现在 `item/agentMessage/delta`
+
+后续事项:
+- 当前人工测试已通过。
+- 本次仅完成本地提交与 session record，尚未推送远端。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `490ec5f973e729f81594f8afff82586317555aae` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
