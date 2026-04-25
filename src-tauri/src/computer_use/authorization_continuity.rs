@@ -378,15 +378,58 @@ fn authorization_host_drift_fields(
     if current_host.signing_summary != last_successful_host.signing_summary {
         fields.push("signing_summary".to_string());
     }
-    if current_host.executable_path != last_successful_host.executable_path {
+    if !authorization_host_paths_match(
+        &current_host.executable_path,
+        &last_successful_host.executable_path,
+    ) {
         fields.push("executable_path".to_string());
     }
 
     fields
 }
 
+fn authorization_host_paths_match(current_path: &str, last_successful_path: &str) -> bool {
+    let normalized_current = normalize_authorization_host_path_for_compare(current_path);
+    let normalized_last = normalize_authorization_host_path_for_compare(last_successful_path);
+    if normalized_current == normalized_last {
+        return true;
+    }
+
+    match (
+        canonicalize_authorization_host_path(current_path),
+        canonicalize_authorization_host_path(last_successful_path),
+    ) {
+        (Some(current), Some(last_successful)) => current == last_successful,
+        _ => false,
+    }
+}
+
+fn normalize_authorization_host_path_for_compare(path: &str) -> String {
+    let mut normalized = path.trim().replace('\\', "/");
+    while normalized.len() > 1 && normalized.ends_with('/') {
+        normalized.pop();
+    }
+    if cfg!(target_os = "windows") {
+        normalized.make_ascii_lowercase();
+    }
+    normalized
+}
+
+fn canonicalize_authorization_host_path(path: &str) -> Option<String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let canonical = std::fs::canonicalize(trimmed).ok()?;
+    let canonical_string = path_to_string(canonical)?;
+    Some(normalize_authorization_host_path_for_compare(
+        canonical_string.as_str(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -513,6 +556,49 @@ mod tests {
             authorization_host_drift_fields(&host, &host).is_empty(),
             "matching hosts must not report drift fields"
         );
+    }
+
+    #[test]
+    fn authorization_host_drift_fields_ignore_canonical_equivalent_executable_paths() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "computer-use-host-path-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let executable_dir = temp_root.join("Codex.app").join("Contents").join("MacOS");
+        fs::create_dir_all(&executable_dir).expect("create executable dir");
+        let executable_path = executable_dir.join("Codex");
+        fs::write(&executable_path, "").expect("write executable");
+
+        let canonical_path = executable_path
+            .canonicalize()
+            .expect("canonicalize executable");
+        let equivalent_path = executable_dir.join(".").join("Codex");
+        let current_host = host_snapshot(
+            canonical_path.to_str().expect("canonical path"),
+            ComputerUseAuthorizationBackendMode::Local,
+            ComputerUseAuthorizationHostRole::ForegroundApp,
+            ComputerUseAuthorizationLaunchMode::PackagedApp,
+        );
+        let last_successful_host = host_snapshot(
+            equivalent_path.to_str().expect("equivalent path"),
+            ComputerUseAuthorizationBackendMode::Local,
+            ComputerUseAuthorizationHostRole::ForegroundApp,
+            ComputerUseAuthorizationLaunchMode::PackagedApp,
+        );
+
+        let drift_fields =
+            authorization_host_drift_fields(&current_host, &last_successful_host);
+
+        assert!(
+            !drift_fields.contains(&"executable_path".to_string()),
+            "canonical-equivalent executable paths must not report drift"
+        );
+
+        let _ = fs::remove_file(&executable_path);
+        let _ = fs::remove_dir_all(&temp_root);
     }
 
     #[test]

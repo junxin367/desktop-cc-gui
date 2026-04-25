@@ -24,6 +24,27 @@ function asString(value: unknown) {
   return typeof value === "string" ? value : value ? String(value) : "";
 }
 
+function safeDecodePathToken(token: string) {
+  try {
+    return decodeURIComponent(token);
+  } catch {
+    return token;
+  }
+}
+
+function decodeLocalPathValue(value: string) {
+  return value
+    .split(/([\\/])/)
+    .map((token) =>
+      token === "/" || token === "\\" ? token : safeDecodePathToken(token),
+    )
+    .join("");
+}
+
+function stripSourceSuffix(value: string) {
+  return value.replace(/[?#].*$/, "");
+}
+
 function appendImageSourceCandidate(candidate: string, collector: string[]) {
   const trimmed = candidate.trim();
   if (!trimmed) {
@@ -121,7 +142,7 @@ export function extractGeneratedImagePromptText(
 }
 
 function toImageLocalPath(rawPath: string): string {
-  const decoded = rawPath.trim();
+  const decoded = stripSourceSuffix(decodeLocalPathValue(rawPath.trim()));
   if (!decoded) {
     return "";
   }

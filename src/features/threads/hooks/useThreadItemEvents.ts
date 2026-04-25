@@ -660,6 +660,7 @@ export function useThreadItemEvents({
       logReasoningRoute,
       markProcessing,
       markReviewing,
+      maybeStageOptimisticGeneratedImagePlaceholder,
       onExitPlanModeToolCompleted,
       resolveCollaborationUiMode,
       safeMessageActivity,
@@ -753,7 +754,12 @@ export function useThreadItemEvents({
         textPreview: createDebugPreview(resolvedDelta),
       });
     },
-    [enqueueRealtimeDeltaOperation, interruptedThreadsRef, logClaudeStream],
+    [
+      enqueueRealtimeDeltaOperation,
+      interruptedThreadsRef,
+      logClaudeStream,
+      maybeStageOptimisticGeneratedImagePlaceholder,
+    ],
   );
 
   const onAgentMessageCompleted = useCallback(
