@@ -1283,6 +1283,7 @@ export type EngineFeatures = {
  */
 export type EngineModelInfo = {
   id: string;
+  model?: string;
   displayName: string;
   description: string;
   isDefault: boolean;

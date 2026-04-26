@@ -781,6 +781,9 @@ export const ChatInputBoxAdapter = memo(forwardRef<ChatInputBoxHandle, ChatInput
       if (selectedModelId) {
         return selectedModelId;
       }
+      if (selectedEngine === 'codex') {
+        return '';
+      }
       if (models && models.length > 0) {
         return models[0]?.id ?? '';
       }

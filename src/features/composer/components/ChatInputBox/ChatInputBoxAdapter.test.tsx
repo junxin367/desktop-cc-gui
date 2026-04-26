@@ -1025,6 +1025,33 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
     expect(latest.selectedModel).toBe('');
   });
 
+  it('does not fallback to the first Codex model before persisted selection is ready', async () => {
+    renderAdapter({
+      selectedEngine: 'codex',
+      selectedModelId: null,
+      models: [
+        {
+          id: 'gpt-5.5',
+          displayName: 'gpt-5.5',
+          model: 'gpt-5.5',
+        },
+        {
+          id: 'custom-model',
+          displayName: 'Custom Model',
+          model: 'custom-model',
+        },
+      ],
+    });
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+
+    const latest = mockState.latestProps as {
+      selectedModel?: string;
+    };
+
+    expect(latest.selectedModel).toBe('');
+  });
+
   it('falls back to default claude model when claude has no models yet', async () => {
     renderAdapter({
       selectedEngine: 'claude',
