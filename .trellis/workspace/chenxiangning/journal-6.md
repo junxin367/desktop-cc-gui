@@ -949,3 +949,41 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 187: 完成工作区变更多次提交化与功能拆分
+
+**Date**: 2026-04-27
+**Task**: 完成工作区变更多次提交化与功能拆分
+**Branch**: `feature/v0.4.9`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标: 将当前工作区未提交变更按功能拆分为多次中文 Conventional commits，完成 updater 降级与并发保护、Codex 模型体系重构、线程失败 runtime notice 统一化、AppShell 逻辑拆分，以及 claude passthrough 测试边界补充。
+主要改动: 1) feat(updater): 完善更新检查意图与并发保护（hooks/菜单触发/OpenSpec）；2) feat(models): 重构 Codex 模型目录与选择策略（composer/model hooks/engine 映射）；3) feat(runtime): 统一会话失败运行时告警上报（globalRuntimeNotices + thread hooks）；4) refactor(app-shell): 抽取计划应用与面板锁定逻辑；5) test(engine): 扩展 claude passthrough 模型边界用例。
+涉及模块: features/update, features/models, features/composer, features/threads, services, app-shell, src-tauri/engine tests, openspec.
+验证结果: npm exec vitest run src/features/update/hooks/useUpdater.test.ts src/features/models/hooks/useModels.test.tsx src/features/models/hooks/useEngineController.test.tsx src/features/threads/hooks/useThreadMessaging.test.tsx src/features/threads/hooks/useThreadTurnEvents.test.tsx（通过）；npm run typecheck（通过）。
+后续事项: 如需覆盖历史任务，请与 .trellis/task .trellis/tasks/04-24-show-codex-history-loading-state 对齐。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc74d44b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
