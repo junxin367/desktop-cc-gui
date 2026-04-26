@@ -1141,3 +1141,67 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 191: 记录 v0.4.9 边界审查修复
+
+**Date**: 2026-04-27
+**Task**: 记录 v0.4.9 边界审查修复
+**Branch**: `feature/v0.4.9`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 完成 v0.4.9 全量代码 review 后，修复边界条件、CI 门禁与跨平台兼容相关问题，并按本地中文 Conventional Commit 提交。
+
+主要改动:
+- 将 src-tauri/src/computer_use/ 纳入 large-file P0 bridge-runtime-critical 治理，避免高风险 Computer Use 模块绕过严格阈值。
+- 拆分 src-tauri/src/computer_use/mod.rs 中的插件、descriptor、activation contract 测试到 plugin_contract_tests.rs，使主模块低于 P0 hard gate fail 阈值。
+- 适配 Codex 当前协作工具历史 schema，支持 wait_agent、target、targets，避免历史回放丢失 agent 目标或误归类为普通工具。
+- 补充 Codex history loader 回归测试，覆盖 send_input target 与 wait_agent targets。
+
+涉及模块:
+- scripts/check-large-files.policy.json
+- src-tauri/src/computer_use/mod.rs
+- src-tauri/src/computer_use/plugin_contract_tests.rs
+- src/features/threads/loaders/codexSessionHistory.ts
+- src/features/threads/loaders/historyLoaders.test.ts
+
+验证结果:
+- npm exec vitest run src/features/threads/loaders/historyLoaders.test.ts 通过，44 tests。
+- cargo test --manifest-path src-tauri/Cargo.toml computer_use 通过，43 tests。
+- npm run typecheck 通过。
+- npm run check:large-files:gate 通过，found=0。
+- node --test scripts/check-heavy-test-noise.test.mjs 通过，5 tests。
+- npm run lint 通过。
+- npm run check:runtime-contracts 通过。
+- npm run check:large-files:near-threshold 通过，watch-only 28 items，computer_use/mod.rs 已低于 P0 fail 阈值。
+- npm run test 通过，365 test files。
+- npm run check:heavy-test-noise 通过，368 test files，environment warnings 1，act warnings 0，stdout payload lines 0，stderr payload lines 0。
+
+后续事项:
+- 未跟踪目录 openspec/changes/fix-linux-nix-flake-packaging/ 非本轮改动，未纳入提交。
+- 后续可继续按 P0/P1 watch 清单拆分其他接近阈值的大文件。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3120779f83671228db99e410b0243ae164f3f590` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
