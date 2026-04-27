@@ -60,6 +60,7 @@ import {
   isOrdinaryUserQuestionItem,
   resolveOrdinaryUserStickyText,
   resolveLiveAutoExpandedExploreId,
+  suppressCompletedExploreItemsBetweenLatestUserTurns,
 } from "./messagesLiveWindow";
 import {
   isAssistantMessageConversationItem,
@@ -384,6 +385,7 @@ export const Messages = memo(function Messages({
   );
   const hideClaudeReasoning = activeEngine === "claude" && shouldHideClaudeReasoningModule();
   const [isSelectionFrozen, setIsSelectionFrozen] = useState(false);
+  const enableCollaborationBadge = activeEngine === "codex";
   const copyTimeoutRef = useRef<number | null>(null);
   const planPanelFocusRafRef = useRef<number | null>(null);
   const planPanelFocusTimeoutRef = useRef<number | null>(null);
@@ -959,31 +961,39 @@ export const Messages = memo(function Messages({
     presentationProfile,
     reasoningMetaById,
   ]);
+  const timelineSourceItems = useMemo(() => {
+    if (activeEngine !== "codex" || !isThinking) {
+      return visibleItems;
+    }
+    return suppressCompletedExploreItemsBetweenLatestUserTurns(visibleItems, {
+      enableCollaborationBadge,
+    });
+  }, [activeEngine, enableCollaborationBadge, isThinking, visibleItems]);
   const { timelineItems, collapsedMiddleStepCount } = useMemo(() => {
-    if (!collapseLiveMiddleStepsEnabled || visibleItems.length <= 2) {
-      return { timelineItems: visibleItems, collapsedMiddleStepCount: 0 };
+    if (!collapseLiveMiddleStepsEnabled || timelineSourceItems.length <= 2) {
+      return { timelineItems: timelineSourceItems, collapsedMiddleStepCount: 0 };
     }
     if (!isThinking) {
-      const firstUserIndex = visibleItems.findIndex(
+      const firstUserIndex = timelineSourceItems.findIndex(
         (item) => item.kind === "message" && item.role === "user",
       );
       if (firstUserIndex < 0) {
-        return { timelineItems: visibleItems, collapsedMiddleStepCount: 0 };
+        return { timelineItems: timelineSourceItems, collapsedMiddleStepCount: 0 };
       }
       let lastMessageIndex = -1;
-      for (let index = visibleItems.length - 1; index >= 0; index -= 1) {
-        if (visibleItems[index]?.kind === "message") {
+      for (let index = timelineSourceItems.length - 1; index >= 0; index -= 1) {
+        if (timelineSourceItems[index]?.kind === "message") {
           lastMessageIndex = index;
           break;
         }
       }
       if (lastMessageIndex <= firstUserIndex) {
-        return { timelineItems: visibleItems, collapsedMiddleStepCount: 0 };
+        return { timelineItems: timelineSourceItems, collapsedMiddleStepCount: 0 };
       }
       const nextTimelineItems: ConversationItem[] = [];
       const hiddenItems: ConversationItem[] = [];
-      for (let index = 0; index < visibleItems.length; index += 1) {
-        const item = visibleItems[index];
+      for (let index = 0; index < timelineSourceItems.length; index += 1) {
+        const item = timelineSourceItems[index];
         if (!item) {
           continue;
         }
@@ -996,24 +1006,24 @@ export const Messages = memo(function Messages({
       const collapsedEntryCount = countRenderableCollapsedEntries(hiddenItems, activeEngine);
       return hiddenItems.length > 0
         ? { timelineItems: nextTimelineItems, collapsedMiddleStepCount: collapsedEntryCount }
-        : { timelineItems: visibleItems, collapsedMiddleStepCount: 0 };
+        : { timelineItems: timelineSourceItems, collapsedMiddleStepCount: 0 };
     }
     let lastUserIndex = -1;
-    for (let index = visibleItems.length - 1; index >= 0; index -= 1) {
-      const candidate = visibleItems[index];
+    for (let index = timelineSourceItems.length - 1; index >= 0; index -= 1) {
+      const candidate = timelineSourceItems[index];
       if (isUserMessageConversationItem(candidate)) {
         lastUserIndex = index;
         break;
       }
     }
-    if (lastUserIndex < 0 || lastUserIndex >= visibleItems.length - 2) {
-      return { timelineItems: visibleItems, collapsedMiddleStepCount: 0 };
+    if (lastUserIndex < 0 || lastUserIndex >= timelineSourceItems.length - 2) {
+      return { timelineItems: timelineSourceItems, collapsedMiddleStepCount: 0 };
     }
-    const lastIndex = visibleItems.length - 1;
+    const lastIndex = timelineSourceItems.length - 1;
     const nextTimelineItems: ConversationItem[] = [];
     const hiddenItems: ConversationItem[] = [];
-    for (let index = 0; index < visibleItems.length; index += 1) {
-      const item = visibleItems[index];
+    for (let index = 0; index < timelineSourceItems.length; index += 1) {
+      const item = timelineSourceItems[index];
       if (!item) {
         continue;
       }
@@ -1040,14 +1050,14 @@ export const Messages = memo(function Messages({
     const collapsedEntryCount = countRenderableCollapsedEntries(hiddenItems, activeEngine);
     return hiddenItems.length > 0
       ? { timelineItems: nextTimelineItems, collapsedMiddleStepCount: collapsedEntryCount }
-      : { timelineItems: visibleItems, collapsedMiddleStepCount: 0 };
+      : { timelineItems: timelineSourceItems, collapsedMiddleStepCount: 0 };
   }, [
     activeEngine,
     collapseLiveMiddleStepsEnabled,
     isThinking,
     latestAssistantMessageId,
     latestReasoningId,
-    visibleItems,
+    timelineSourceItems,
   ]);
   const latestReasoningVisibleInTimeline = useMemo(() => {
     if (!latestReasoningId) {
@@ -1101,7 +1111,6 @@ export const Messages = memo(function Messages({
   const collapsedHistoryItemCount = shouldCollapseHistoryItems
     ? timelineItems.length - VISIBLE_MESSAGE_WINDOW
     : 0;
-  const enableCollaborationBadge = activeEngine === "codex";
   const latestLiveStickyUserMessageId = useMemo(
     () =>
       isThinking && !conversationState?.meta.historyRestoredAtMs

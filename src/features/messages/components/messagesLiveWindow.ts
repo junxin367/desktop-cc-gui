@@ -77,6 +77,51 @@ export function findLatestOrdinaryUserQuestionId(
   return null;
 }
 
+function findLatestOrdinaryUserQuestionIndex(
+  items: ConversationItem[],
+  options?: { enableCollaborationBadge?: boolean },
+) {
+  const enableCollaborationBadge = options?.enableCollaborationBadge ?? false;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (isOrdinaryUserQuestionItem(item, enableCollaborationBadge)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+export function suppressCompletedExploreItemsBetweenLatestUserTurns(
+  items: ConversationItem[],
+  options?: { enableCollaborationBadge?: boolean },
+) {
+  const latestUserIndex = findLatestOrdinaryUserQuestionIndex(items, options);
+  if (latestUserIndex <= 0) {
+    return items;
+  }
+  const previousUserIndex = findLatestOrdinaryUserQuestionIndex(
+    items.slice(0, latestUserIndex),
+    options,
+  );
+  if (previousUserIndex < 0) {
+    return items;
+  }
+  let changed = false;
+  const filteredItems = items.filter((item, index) => {
+    if (index <= previousUserIndex || index >= latestUserIndex) {
+      return true;
+    }
+    const shouldSuppress =
+      item.kind === "explore" && item.status === "explored";
+    if (shouldSuppress) {
+      changed = true;
+      return false;
+    }
+    return true;
+  });
+  return changed ? filteredItems : items;
+}
+
 export function buildRenderedItemsWindow(
   timelineItems: ConversationItem[],
   collapsedHistoryItemCount: number,

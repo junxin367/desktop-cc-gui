@@ -238,6 +238,141 @@ describe("Messages explore rows", () => {
     expect(screen.getByText("Continuing with the implementation.")).toBeTruthy();
   });
 
+  it("suppresses completed explored cards that are stranded between live codex user turns", async () => {
+    const items: ConversationItem[] = [
+      {
+        id: "user-before-stale-explore",
+        kind: "message",
+        role: "user",
+        text: "先查一下技能读取链路",
+      },
+      {
+        id: "stale-explore-between-users",
+        kind: "explore",
+        status: "explored",
+        entries: [
+          {
+            kind: "read",
+            label: "SKILL.md",
+            detail: "/Users/demo/project/.agents/skills/before-dev/SKILL.md",
+          },
+        ],
+      },
+      {
+        id: "user-live-follow-up",
+        kind: "message",
+        role: "user",
+        text: "修一下",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking
+        activeEngine="codex"
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(screen.getByText("先查一下技能读取链路")).toBeTruthy();
+    expect(screen.getByText("修一下")).toBeTruthy();
+    expect(container.querySelector(".explore-inline")).toBeNull();
+    expect(screen.queryByText("SKILL.md")).toBeNull();
+  });
+
+  it("keeps the current live codex explored card after the latest user turn", async () => {
+    const items: ConversationItem[] = [
+      {
+        id: "user-before-current-explore",
+        kind: "message",
+        role: "user",
+        text: "先查一下技能读取链路",
+      },
+      {
+        id: "stale-explore-before-latest-user",
+        kind: "explore",
+        status: "explored",
+        entries: [{ kind: "read", label: "stale SKILL.md" }],
+      },
+      {
+        id: "user-current-explore",
+        kind: "message",
+        role: "user",
+        text: "继续查当前链路",
+      },
+      {
+        id: "current-explore-after-latest-user",
+        kind: "explore",
+        status: "explored",
+        entries: [{ kind: "read", label: "current SKILL.md" }],
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking
+        activeEngine="codex"
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".explore-inline").length).toBe(1);
+    });
+    expect(screen.queryByText("stale SKILL.md")).toBeNull();
+    expect(container.querySelector(".explore-inline-label")?.textContent).toBe(
+      "current SKILL.md",
+    );
+  });
+
+  it("keeps completed explored cards between user turns in finished codex history", async () => {
+    const items: ConversationItem[] = [
+      {
+        id: "user-history-before-explore",
+        kind: "message",
+        role: "user",
+        text: "先查一下技能读取链路",
+      },
+      {
+        id: "history-explore-between-users",
+        kind: "explore",
+        status: "explored",
+        entries: [{ kind: "read", label: "history SKILL.md" }],
+      },
+      {
+        id: "user-history-follow-up",
+        kind: "message",
+        role: "user",
+        text: "修一下",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        activeEngine="codex"
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector(".explore-inline")).toBeTruthy();
+    });
+    expect(screen.getByText("history SKILL.md")).toBeTruthy();
+  });
+
   it("renders spec-root explore card as collapsible and toggles details", async () => {
     const items: ConversationItem[] = [
       {
