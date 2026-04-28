@@ -40,6 +40,8 @@ const ALLOWED_NOTIFICATION_SOUND_IDS = new Set([
   "success",
   "custom",
 ]);
+const allowedEmailSenderProviders = new Set(["126", "163", "qq", "custom"]);
+const allowedEmailSenderSecurity = new Set(["ssl_tls", "start_tls", "none"]);
 
 function readLegacyUserMsgColor(): string {
   if (typeof window === "undefined") {
@@ -157,6 +159,17 @@ const defaultSettings: AppSettings = {
   notificationSoundId: "default",
   notificationSoundCustomPath: "",
   systemNotificationEnabled: true,
+  emailSender: {
+    enabled: false,
+    provider: "custom",
+    senderEmail: "",
+    senderName: "",
+    smtpHost: "",
+    smtpPort: 465,
+    security: "ssl_tls",
+    username: "",
+    recipientEmail: "",
+  },
   preloadGitDiffs: true,
   detachedExternalChangeAwarenessEnabled: true,
   detachedExternalChangeWatcherEnabled: true,
@@ -279,6 +292,23 @@ function normalizeAppSettings(
       ? settings.notificationSoundId
       : "default",
     notificationSoundCustomPath: settings.notificationSoundCustomPath?.trim() ?? "",
+    emailSender: {
+      enabled: settings.emailSender?.enabled === true,
+      provider: allowedEmailSenderProviders.has(settings.emailSender?.provider)
+        ? settings.emailSender.provider
+        : "custom",
+      senderEmail: settings.emailSender?.senderEmail?.trim() ?? "",
+      senderName: settings.emailSender?.senderName?.trim() ?? "",
+      smtpHost: settings.emailSender?.smtpHost?.trim() ?? "",
+      smtpPort: Number.isFinite(settings.emailSender?.smtpPort)
+        ? Math.max(1, Math.min(65535, Math.trunc(settings.emailSender.smtpPort)))
+        : 465,
+      security: allowedEmailSenderSecurity.has(settings.emailSender?.security)
+        ? settings.emailSender.security
+        : "ssl_tls",
+      username: settings.emailSender?.username?.trim() ?? "",
+      recipientEmail: settings.emailSender?.recipientEmail?.trim() ?? "",
+    },
     detachedExternalChangeAwarenessEnabled:
       settings.detachedExternalChangeAwarenessEnabled !== false,
     detachedExternalChangeWatcherEnabled:

@@ -29,6 +29,7 @@ mod codex;
 mod command_registry;
 mod computer_use;
 mod dictation;
+mod email;
 mod engine;
 mod event_sink;
 mod files;

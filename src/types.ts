@@ -399,6 +399,65 @@ export type ComputerUseBrokerResult = {
   durationMs: number;
 };
 
+export type EmailSenderProvider = "126" | "163" | "qq" | "custom";
+
+export type EmailSenderSecurity = "ssl_tls" | "start_tls" | "none";
+
+export type EmailSenderSettings = {
+  enabled: boolean;
+  provider: EmailSenderProvider;
+  senderEmail: string;
+  senderName: string;
+  smtpHost: string;
+  smtpPort: number;
+  security: EmailSenderSecurity;
+  username: string;
+  recipientEmail: string;
+};
+
+export type EmailSenderSettingsView = {
+  settings: EmailSenderSettings;
+  secretConfigured: boolean;
+  secret: string | null;
+};
+
+export type UpdateEmailSenderSettingsRequest = {
+  settings: EmailSenderSettings;
+  secret?: string | null;
+  clearSecret?: boolean;
+};
+
+export type SendTestEmailRequest = {
+  recipient?: string | null;
+};
+
+export type EmailSendErrorCode =
+  | "disabled"
+  | "not_configured"
+  | "missing_secret"
+  | "invalid_sender"
+  | "invalid_recipient"
+  | "connect_failed"
+  | "tls_failed"
+  | "authentication_failed"
+  | "send_rejected"
+  | "timeout"
+  | "secret_store_unavailable"
+  | "unknown";
+
+export type EmailSendError = {
+  code: EmailSendErrorCode;
+  retryable: boolean;
+  userMessage: string;
+  detail?: Record<string, string>;
+};
+
+export type EmailSendResult = {
+  provider: EmailSenderProvider;
+  acceptedRecipients: string[];
+  durationMs: number;
+};
+
 export type AppSettings = {
   claudeBin: string | null;
   codexBin: string | null;
@@ -460,6 +519,7 @@ export type AppSettings = {
   notificationSoundId: string;
   notificationSoundCustomPath: string;
   systemNotificationEnabled: boolean;
+  emailSender: EmailSenderSettings;
   preloadGitDiffs: boolean;
   detachedExternalChangeAwarenessEnabled?: boolean;
   detachedExternalChangeWatcherEnabled?: boolean;

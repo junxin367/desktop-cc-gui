@@ -52,6 +52,7 @@ regex = "1"
 sha2 = "0.10"
 chardetng = "0.1"
 encoding_rs = "0.8"
+lettre = { version = "0.11.21", default-features = false, features = ["smtp-transport", "builder", "tokio1-rustls-tls", "hostname"] }
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-updater = "2"
@@ -68,3 +69,10 @@ objc2-app-kit = { version = "0.3", features = ["NSAppearance", "NSResponder", "N
 objc2-foundation = { version = "0.3", features = ["NSString"] }
 objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMediaFormat"] }
 block2 = "0.6"
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
+
+[target."cfg(target_os = \"windows\")".dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
+
+[target."cfg(target_os = \"linux\")".dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["linux-native-sync-persistent", "crypto-rust"] }

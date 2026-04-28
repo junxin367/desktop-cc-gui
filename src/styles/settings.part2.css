@@ -306,6 +306,31 @@
   border: 1px solid color-mix(in srgb, var(--status-success, #2e7d32) 28%, transparent);
 }
 
+.settings-email-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.settings-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 760px) {
+  .settings-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .settings-segmented {
   display: inline-flex;
   border: 1px solid var(--border-muted);

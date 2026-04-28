@@ -47,6 +47,7 @@ import {
   Check,
   Wifi,
   Save,
+  Mail,
 } from "lucide-react";
 import type {
   AppSettings,
@@ -129,6 +130,7 @@ import { SessionManagementSection } from "./settings-view/sections/SessionManage
 import { RuntimePoolSection } from "./settings-view/sections/RuntimePoolSection";
 import { DetachedExternalChangeToggles } from "./settings-view/sections/DetachedExternalChangeToggles";
 import { WebServiceSettings } from "./settings-view/sections/WebServiceSettings";
+import { EmailSenderSettings } from "./settings-view/sections/EmailSenderSettings";
 import { DictationSection } from "./settings-view/sections/DictationSection";
 import {
   buildShortcutDrafts,
@@ -1618,6 +1620,15 @@ export function SettingsView({
               <Globe aria-hidden />
               {!sidebarCollapsed && t("settings.sidebarWebService")}
             </button>
+            <button
+              type="button"
+              className={`settings-nav ${activeSection === "email" ? "active" : ""}`}
+              onClick={() => setActiveSection("email")}
+              title={sidebarCollapsed ? t("settings.sidebarEmail") : ""}
+            >
+              <Mail aria-hidden />
+              {!sidebarCollapsed && t("settings.sidebarEmail")}
+            </button>
             {SHOW_GIT_ENTRY && (
               <button
                 type="button"
@@ -2262,6 +2273,15 @@ export function SettingsView({
             {activeSection === "web-service" && (
               <section className="settings-section">
                 <WebServiceSettings
+                  t={t}
+                  appSettings={appSettings}
+                  onUpdateAppSettings={onUpdateAppSettings}
+                />
+              </section>
+            )}
+            {activeSection === "email" && (
+              <section className="settings-section">
+                <EmailSenderSettings
                   t={t}
                   appSettings={appSettings}
                   onUpdateAppSettings={onUpdateAppSettings}

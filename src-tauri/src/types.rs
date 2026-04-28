@@ -637,6 +637,84 @@ pub(crate) struct CodexUnifiedExecExternalStatus {
     pub(crate) official_default_enabled: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum EmailSenderProvider {
+    #[serde(rename = "126")]
+    Mail126,
+    #[serde(rename = "163")]
+    Mail163,
+    Qq,
+    Custom,
+}
+
+impl Default for EmailSenderProvider {
+    fn default() -> Self {
+        Self::Custom
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum EmailSenderSecurity {
+    SslTls,
+    StartTls,
+    None,
+}
+
+impl Default for EmailSenderSecurity {
+    fn default() -> Self {
+        Self::SslTls
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EmailSenderSettings {
+    #[serde(default)]
+    pub(crate) enabled: bool,
+    #[serde(default)]
+    pub(crate) provider: EmailSenderProvider,
+    #[serde(default, rename = "senderEmail")]
+    pub(crate) sender_email: String,
+    #[serde(default, rename = "senderName")]
+    pub(crate) sender_name: String,
+    #[serde(default, rename = "smtpHost")]
+    pub(crate) smtp_host: String,
+    #[serde(default = "default_email_sender_smtp_port", rename = "smtpPort")]
+    pub(crate) smtp_port: u16,
+    #[serde(default)]
+    pub(crate) security: EmailSenderSecurity,
+    #[serde(default)]
+    pub(crate) username: String,
+    #[serde(default, rename = "recipientEmail")]
+    pub(crate) recipient_email: String,
+}
+
+impl Default for EmailSenderSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: EmailSenderProvider::Custom,
+            sender_email: String::new(),
+            sender_name: String::new(),
+            smtp_host: String::new(),
+            smtp_port: default_email_sender_smtp_port(),
+            security: EmailSenderSecurity::SslTls,
+            username: String::new(),
+            recipient_email: String::new(),
+        }
+    }
+}
+
+fn default_email_sender_settings() -> EmailSenderSettings {
+    EmailSenderSettings::default()
+}
+
+fn default_email_sender_smtp_port() -> u16 {
+    465
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
     #[serde(default, rename = "codexBin")]
@@ -793,6 +871,8 @@ pub(crate) struct AppSettings {
         rename = "systemNotificationEnabled"
     )]
     pub(crate) system_notification_enabled: bool,
+    #[serde(default = "default_email_sender_settings", rename = "emailSender")]
+    pub(crate) email_sender: EmailSenderSettings,
     #[serde(default = "default_preload_git_diffs", rename = "preloadGitDiffs")]
     pub(crate) preload_git_diffs: bool,
     #[serde(
@@ -1351,6 +1431,7 @@ impl Default for AppSettings {
             notification_sound_id: default_notification_sound_id(),
             notification_sound_custom_path: default_notification_sound_custom_path(),
             system_notification_enabled: true,
+            email_sender: EmailSenderSettings::default(),
             preload_git_diffs: default_preload_git_diffs(),
             detached_external_change_awareness_enabled:
                 default_detached_external_change_awareness_enabled(),
@@ -1451,7 +1532,8 @@ pub(crate) struct CodexProviderConfig {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppSettings, BackendMode, WorkspaceEntry, WorkspaceGroup, WorkspaceKind, WorkspaceSettings,
+        AppSettings, BackendMode, EmailSenderProvider, EmailSenderSecurity, WorkspaceEntry,
+        WorkspaceGroup, WorkspaceKind, WorkspaceSettings,
     };
 
     #[test]
@@ -1538,6 +1620,15 @@ mod tests {
         assert_eq!(settings.notification_sound_id, "default");
         assert!(settings.notification_sound_custom_path.is_empty());
         assert!(settings.system_notification_enabled);
+        assert!(!settings.email_sender.enabled);
+        assert_eq!(settings.email_sender.provider, EmailSenderProvider::Custom);
+        assert!(settings.email_sender.sender_email.is_empty());
+        assert!(settings.email_sender.sender_name.is_empty());
+        assert!(settings.email_sender.smtp_host.is_empty());
+        assert_eq!(settings.email_sender.smtp_port, 465);
+        assert_eq!(settings.email_sender.security, EmailSenderSecurity::SslTls);
+        assert!(settings.email_sender.username.is_empty());
+        assert!(settings.email_sender.recipient_email.is_empty());
         assert!(settings.preload_git_diffs);
         assert!(settings.detached_external_change_awareness_enabled);
         assert!(settings.detached_external_change_watcher_enabled);

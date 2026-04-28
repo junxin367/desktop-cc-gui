@@ -17,6 +17,7 @@ export type SettingsSection =
   | "dictation"
   | "shortcuts"
   | "open-apps"
+  | "email"
   | "web-service"
   | "git"
   | "runtime"
