@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { useLayoutNodes } from "../features/layout/hooks/useLayoutNodes";
 import { MainHeaderActions } from "../features/app/components/MainHeaderActions";
+import { useClientUiVisibility } from "../features/client-ui-visibility/hooks/useClientUiVisibility";
 import { normalizeSharedSessionEngine } from "../features/shared-session/utils/sharedSessionEngines";
 import {
   recoverThreadBindingForManualRecovery,
@@ -11,6 +12,7 @@ import {
 import { OPENCODE_VARIANT_OPTIONS } from "./utils";
 
 export function useAppShellLayoutNodesSection(ctx: any) {
+  const clientUiVisibility = useClientUiVisibility();
   const {
     GitHubPanelData, RECENT_THREAD_LIMIT, SettingsView, accessMode, accountByWorkspace, accountSwitching, activeAccount, activeDiffError,
     activeDiffLoading, activeDiffs, activeDraft, activeEditorFilePath, activeEditorLineRange, activeEngine, activeFusingMessageId, activeGitRoot, activeImages,
@@ -139,6 +141,12 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     activeWorkspace &&
       activeEditorFilePath,
   );
+  const mainHeaderSidebarToggleProps = {
+    ...sidebarToggleProps,
+    rightPanelAvailable:
+      sidebarToggleProps.rightPanelAvailable &&
+      clientUiVisibility.isControlVisible("topTool.rightPanel"),
+  };
 
   const {
     sidebarNode,
@@ -481,14 +489,20 @@ export function useAppShellLayoutNodesSection(ctx: any) {
       <MainHeaderActions
         isCompact={isCompact}
         rightPanelCollapsed={rightPanelCollapsed}
-        sidebarToggleProps={sidebarToggleProps}
-        showRuntimeConsoleButton={!isCompact}
+        sidebarToggleProps={mainHeaderSidebarToggleProps}
+        showRuntimeConsoleButton={
+          !isCompact && clientUiVisibility.isControlVisible("topTool.runtimeConsole")
+        }
         isRuntimeConsoleVisible={runtimeRunState.runtimeConsoleVisible}
         onToggleRuntimeConsole={handleToggleRuntimeConsole}
-        showTerminalButton={!isCompact}
+        showTerminalButton={
+          !isCompact && clientUiVisibility.isControlVisible("topTool.terminal")
+        }
         isTerminalOpen={terminalOpen}
         onToggleTerminal={handleToggleTerminalPanel}
-        showSoloButton={soloModeEnabled}
+        showSoloButton={
+          soloModeEnabled && clientUiVisibility.isControlVisible("topTool.focus")
+        }
         isSoloMode={isSoloMode}
         onToggleSoloMode={toggleSoloMode}
       />

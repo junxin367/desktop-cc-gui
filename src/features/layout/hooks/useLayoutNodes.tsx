@@ -24,7 +24,6 @@ import { WorkspaceSessionActivityPanel } from "../../session-activity/components
 import { WorkspaceSessionRadarPanel } from "../../session-activity/components/WorkspaceSessionRadarPanel";
 import { DebugPanel } from "../../debug/components/DebugPanel";
 import { PanelTabs } from "../components/PanelTabs";
-import Construction from "lucide-react/dist/esm/icons/construction";
 import { TabBar } from "../../app/components/TabBar";
 import { TabletNav } from "../../app/components/TabletNav";
 import { TerminalDock } from "../../terminal/components/TerminalDock";
@@ -100,6 +99,7 @@ import {
   type QueuedHandoffBubble,
 } from "../../threads/utils/queuedHandoffBubble";
 import { useWorkspaceSessionActivity } from "../../session-activity/hooks/useWorkspaceSessionActivity";
+import { useClientUiVisibility } from "../../client-ui-visibility/hooks/useClientUiVisibility";
 import type { SessionRadarEntry } from "../../session-activity/hooks/useSessionRadarFeed";
 import {
   getHomeWorkspaceOptions,
@@ -688,6 +688,7 @@ function toTopbarTabKey(workspaceId: string, threadId: string): string {
 
 export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   const { t } = useTranslation();
+  const clientUiVisibility = useClientUiVisibility();
   const onOpenFile = options.onOpenFile;
   const [, forceTopbarSessionRender] = useReducer((value: number) => value + 1, 0);
   const topbarSessionWindowsRef = useRef<TopbarSessionWindows>(
@@ -714,6 +715,38 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   const activeThreadHistoryLoading = options.activeThreadId
     ? options.historyLoadingByThreadId[options.activeThreadId] === true
     : false;
+  const showMessageAnchors =
+    options.showMessageAnchors &&
+    clientUiVisibility.isControlVisible("cornerStatus.messageAnchors");
+  const showStickyUserBubble =
+    clientUiVisibility.isControlVisible("curtain.stickyUserBubble");
+  const showTopSessionTabs =
+    clientUiVisibility.isPanelVisible("topSessionTabs");
+  const showTopRunControls =
+    clientUiVisibility.isControlVisible("topRun.start");
+  const showOpenWorkspaceAppControl =
+    clientUiVisibility.isControlVisible("topTool.openWorkspace");
+  const showRightActivityToolbar =
+    clientUiVisibility.isPanelVisible("rightActivityToolbar");
+  const rightToolbarVisibleTabs = {
+    activity: clientUiVisibility.isControlVisible("rightToolbar.activity"),
+    radar: clientUiVisibility.isControlVisible("rightToolbar.radar"),
+    git: clientUiVisibility.isControlVisible("rightToolbar.git"),
+    files: clientUiVisibility.isControlVisible("rightToolbar.files"),
+    search: clientUiVisibility.isControlVisible("rightToolbar.search"),
+  };
+  const hasVisibleRightToolbarControl =
+    Object.values(rightToolbarVisibleTabs).some(Boolean);
+  const showBottomActivityPanel =
+    clientUiVisibility.isPanelVisible("bottomActivityPanel");
+  const bottomActivityVisibleTabs = {
+    todo: clientUiVisibility.isControlVisible("bottomActivity.tasks"),
+    subagent: clientUiVisibility.isControlVisible("bottomActivity.agents"),
+    files: clientUiVisibility.isControlVisible("bottomActivity.edits"),
+    latestUserMessage: clientUiVisibility.isControlVisible(
+      "bottomActivity.latestConversation",
+    ),
+  };
   const isThreadThinking = activeThreadStatus?.isProcessing ?? false;
   const conversationEngine = useMemo(
     () => toConversationEngine(options.selectedEngine),
@@ -1151,7 +1184,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
     [applyTopbarWindowMutation, t, threadStatusById],
   );
   const sessionTabsNode =
-    !options.isPhone && !options.isTablet ? (
+    !options.isPhone && !options.isTablet && showTopSessionTabs ? (
       <TopbarSessionTabs
         tabs={topbarSessionTabItems}
         ariaLabel={t("threads.topbarSessionTabsAriaLabel")}
@@ -1274,7 +1307,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       workspacePath={options.activeWorkspace?.path ?? null}
       openTargets={options.openAppTargets}
       selectedOpenAppId={options.selectedOpenAppId}
-      showMessageAnchors={options.showMessageAnchors}
+      showMessageAnchors={showMessageAnchors}
+      showStickyUserBubble={showStickyUserBubble}
       codeBlockCopyUseModifier={options.codeBlockCopyUseModifier}
       userInputRequests={options.userInputRequests}
       approvals={options.approvals}
@@ -1315,7 +1349,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
     options.systemProxyUrl,
     options.openAppTargets,
     options.selectedOpenAppId,
-    options.showMessageAnchors,
+    showMessageAnchors,
+    showStickyUserBubble,
     options.codeBlockCopyUseModifier,
     options.userInputRequests,
     options.approvals,
@@ -1386,6 +1421,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
     Boolean(options.plan) ||
     (isStatusPanelCodexEngine && commandTotal > 0);
   const showBottomStatusPanel =
+    showBottomActivityPanel &&
     isStatusPanelEngine &&
     options.bottomStatusPanelExpanded &&
     (hasStatusPanelActivity || options.bottomStatusPanelExpanded);
@@ -1624,6 +1660,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       onLaunchScriptDraftChange={options.onLaunchScriptDraftChange}
       onSaveLaunchScript={options.onSaveLaunchScript}
       launchScriptsState={options.launchScriptsState}
+      showLaunchScriptControls={showTopRunControls}
+      showOpenAppMenu={showOpenWorkspaceAppControl}
       extraActionsNode={options.mainHeaderActionsNode}
       groupedWorkspaces={groupedWorkspacesForHeader}
       activeWorkspaceId={options.activeWorkspaceId}
@@ -1667,7 +1705,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   const sidebarSelectedDiffPath =
     options.centerMode === "diff" ? options.selectedDiffPath : null;
 
-  const rightPanelToolbarNode = (
+  const rightPanelToolbarNode =
+    showRightActivityToolbar && hasVisibleRightToolbarControl ? (
     <div className="right-panel-toolbar">
       <PanelTabs
         active={options.filePanelMode}
@@ -1676,21 +1715,10 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
           activity: workspaceActivity.isProcessing,
           radar: options.sessionRadarRunningSessions.length > 0,
         }}
+        visibleTabs={rightToolbarVisibleTabs}
       />
-      <div className="right-panel-toolbar-actions">
-        <button
-          type="button"
-          className={`ghost icon-button file-tree-toggle file-tree-toggle-runtime${options.runtimeConsoleVisible ? " is-active" : ""}`}
-          onClick={options.onToggleRuntimeConsole}
-          data-tauri-drag-region="false"
-          aria-label={t("files.openRunConsole")}
-          title={t("files.openRunConsole")}
-        >
-          <Construction aria-hidden />
-        </button>
-      </div>
     </div>
-  );
+  ) : null;
 
   let gitDiffPanelNode: ReactNode;
   if (options.filePanelMode === "files" && options.activeWorkspace) {
@@ -1946,6 +1974,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       onOpenDiffPath={handleOpenDiffPath}
       onSelectSubagent={options.onSelectSubagent}
       variant="dock"
+      visibleDockTabs={bottomActivityVisibleTabs}
     />
   ) : null;
 
