@@ -167,7 +167,10 @@ async fn abandoned_codex_turn_release_downgrades_active_work_protection() {
         .find(|item| item.workspace_id == "abandoned-turn-release")
         .expect("runtime row should exist after release request");
     assert!(release_row.evict_candidate);
-    assert_eq!(release_row.eviction_reason.as_deref(), Some("manual-release"));
+    assert_eq!(
+        release_row.eviction_reason.as_deref(),
+        Some("manual-release")
+    );
 }
 
 #[tokio::test]

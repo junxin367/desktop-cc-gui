@@ -1126,18 +1126,13 @@ mod tests {
 
     #[test]
     fn custom_bin_parent_resolution_handles_macos_and_windows_style_paths() {
-        let macos_paths = build_seed_search_paths(
-            Some("/Users/demo/.npm-global/bin/codex"),
-            &[],
-        );
+        let macos_paths = build_seed_search_paths(Some("/Users/demo/.npm-global/bin/codex"), &[]);
         assert!(macos_paths
             .iter()
             .any(|path| path == Path::new("/Users/demo/.npm-global/bin")));
 
-        let windows_paths = build_seed_search_paths(
-            Some("C:/Users/demo/AppData/Roaming/npm/codex.cmd"),
-            &[],
-        );
+        let windows_paths =
+            build_seed_search_paths(Some("C:/Users/demo/AppData/Roaming/npm/codex.cmd"), &[]);
         assert!(windows_paths.iter().any(|path| {
             path.to_string_lossy()
                 .replace('\\', "/")

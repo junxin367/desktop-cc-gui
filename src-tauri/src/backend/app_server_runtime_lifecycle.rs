@@ -555,14 +555,26 @@ mod tests {
     #[test]
     fn runtime_shutdown_source_labels_are_platform_neutral() {
         let labels = [
-            (RuntimeShutdownSource::UserManualShutdown, "user_manual_shutdown"),
+            (
+                RuntimeShutdownSource::UserManualShutdown,
+                "user_manual_shutdown",
+            ),
             (RuntimeShutdownSource::ManualRelease, "manual_release"),
-            (RuntimeShutdownSource::InternalReplacement, "internal_replacement"),
-            (RuntimeShutdownSource::StaleReuseCleanup, "stale_reuse_cleanup"),
+            (
+                RuntimeShutdownSource::InternalReplacement,
+                "internal_replacement",
+            ),
+            (
+                RuntimeShutdownSource::StaleReuseCleanup,
+                "stale_reuse_cleanup",
+            ),
             (RuntimeShutdownSource::SettingsRestart, "settings_restart"),
             (RuntimeShutdownSource::AppExit, "app_exit"),
             (RuntimeShutdownSource::IdleEviction, "idle_eviction"),
-            (RuntimeShutdownSource::CompatibilityManual, "manual_shutdown"),
+            (
+                RuntimeShutdownSource::CompatibilityManual,
+                "manual_shutdown",
+            ),
         ];
 
         for (source, expected) in labels {
