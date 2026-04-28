@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-7.md`
-- **Total Sessions**: 207
+- **Total Sessions**: 208
 - **Last Active**: 2026-04-28
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-7.md` | ~229 | Active |
+| `journal-7.md` | ~292 | Active |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
 | `journal-4.md` | ~1975 | Archived |
@@ -35,6 +35,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 208 | 2026-04-28 | 模型选择器配置刷新入口 | `8f802abb` | `feature/v0.4.11` |
 | 207 | 2026-04-28 | Nix 前端依赖改用 importNpmLock | `aa9d4d6b358d277c742ddd298f6ccdde5bf41ad9` | `feature/v0.4.11` |
 | 206 | 2026-04-28 | 回写 Windows Codex wrapper 启动规范 | `16555e05256b851cc6cd2341a63b27be2ccbdbc5` | `feature/v0.4.11` |
 | 205 | 2026-04-28 | 修复 Windows Codex wrapper 会话启动降级 | `a3d3744b` | `feature/v0.4.11` |

@@ -227,3 +227,66 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 208: 模型选择器配置刷新入口
+
+**Date**: 2026-04-28
+**Task**: 模型选择器配置刷新入口
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：为 composer 模型选择器增加 provider-scoped 的底部双动作，左侧添加模型，右侧刷新配置，覆盖 Codex、Claude Code、Gemini。
+
+主要改动：
+- 新增 OpenSpec change add-model-selector-config-actions，沉淀模型选择器添加/刷新行为契约。
+- ModelSelect 底部改为添加模型与刷新配置两个独立动作，补齐 loading、disabled、失败反馈与 i18n 文案。
+- 贯通 ButtonArea、ChatInputBox、Composer、layout nodes 到 AppShell 的刷新回调和刷新状态。
+- Codex 刷新复用供应商配置页的 reloadCodexRuntimeConfig，再刷新 Codex 模型列表。
+- Claude Code 与 Gemini 通过 get_engine_models(forceRefresh) 刷新当前 provider catalog，并更新 engine status 快照。
+- 补充 refreshCodexModelConfig、ModelSelect、ButtonArea、useEngineController、tauri invoke wrapper 的 focused tests。
+
+涉及模块：
+- openspec/changes/add-model-selector-config-actions
+- src/features/composer/components/ChatInputBox
+- src/features/models/refreshCodexModelConfig.ts
+- src/features/engine/hooks/useEngineController.ts
+- src/services/tauri.ts
+- src-tauri/src/engine/commands.rs
+- src-tauri/src/engine/manager.rs
+
+验证结果：
+- npx vitest run src/features/models/refreshCodexModelConfig.test.ts src/features/composer/components/ChatInputBox/selectors/ModelSelect.test.tsx src/features/composer/components/ChatInputBox/ButtonArea.test.tsx src/features/engine/hooks/useEngineController.test.tsx src/services/tauri.test.ts 通过，5 files / 106 tests。
+- npm run typecheck 通过。
+- npm run check:runtime-contracts 通过。
+- npm run lint 通过。
+- openspec validate add-model-selector-config-actions --type change --strict --no-interactive 通过。
+- git diff --staged --check 通过。
+
+后续事项：
+- 全量 npm run test 此前曾在 batch 22/92 中途退出且无明确断言失败，本次提交以 focused tests 和关键门禁为准。
+- 工作区仍保留快捷键/Nix packaging 等其它未提交改动，未纳入本次业务提交。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8f802abb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
