@@ -690,3 +690,41 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 217: 记录 Rust 格式化提交
+
+**Date**: 2026-04-28
+**Task**: 记录 Rust 格式化提交
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+- 任务目标：提交 cargo fmt 产生的 Rust 测试代码格式化。
+- 主要改动：格式化 app_server_cli、app_server_runtime_lifecycle、runtime tests 中的长断言与参数排版。
+- 涉及模块：src-tauri/src/backend/app_server_cli.rs、src-tauri/src/backend/app_server_runtime_lifecycle.rs、src-tauri/src/runtime/tests.rs。
+- 验证结果：cargo fmt --check 与 cargo test --manifest-path src-tauri/Cargo.toml --lib 已通过。
+- 后续事项：无。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6cb1e4ee` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
