@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-7.md`
-- **Total Sessions**: 231
+- **Total Sessions**: 232
 - **Last Active**: 2026-04-29
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-7.md` | ~1573 | Active |
+| `journal-7.md` | ~1630 | Active |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
 | `journal-4.md` | ~1975 | Archived |
@@ -35,6 +35,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 232 | 2026-04-29 | 归档已验证提案并补全主规范 | `e660880c63dba813197c3b7e0e23bed60806b07b` | `feature/v0.4.11` |
 | 231 | 2026-04-29 | 归档已完成 OpenSpec 提案并同步主规范 | `1d5fef13b206354d9344af0253253bb7c6ede164` | `feature/v0.4.11` |
 | 230 | 2026-04-29 | 合并 PR #448 自定义主题预设 | `bc7f575d03e37b7750b12753ce069e5c5044fbd8` | `integrate/pr-448-theme-presets` |
 | 229 | 2026-04-29 | 修复历史恢复幕布渲染回归 | `d938e025` | `feature/v0.4.11` |

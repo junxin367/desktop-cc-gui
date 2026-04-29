@@ -1571,3 +1571,60 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 232: 归档已验证提案并补全主规范
+
+**Date**: 2026-04-29
+**Task**: 归档已验证提案并补全主规范
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：按 OpenSpec 流程归档已经完成验证并满足归档门禁的 active changes，同时将未同步的 delta specs 正式写入主 openspec/specs。
+
+主要改动：
+- 识别并验证 8 个 completed active changes，逐个执行 openspec validate，确认均通过。
+- 对尚未回写主 spec 的 change 直接使用标准 openspec archive 流程，在归档时同步主 specs，并将变更目录迁移到 openspec/changes/archive/2026-04-29-*。
+- 新增 canonical capability specs：conversation-completion-email-notification、settings-custom-theme-presets、app-shortcuts、composer-linux-ime-compatibility、nix-flake-build-reproducibility、codex-chat-canvas-hidden-default-controls。
+- 补充既有主 specs：claude-context-compaction-recovery、conversation-realtime-cpu-stability、conversation-render-surface-stability、runtime-orchestrator、runtime-pool-console。
+- 在 AGENTS.md 固化 OpenSpec 归档偏好：已验证且满足归档门禁的提案默认直接归档；若主 specs 已提前同步，则默认使用 --skip-specs。
+
+涉及模块：
+- AGENTS.md
+- openspec/changes/archive/**
+- openspec/specs/**
+
+验证结果：
+- 已执行 openspec validate，对以下 8 个 change 均返回 valid：
+  add-conversation-email-notification、add-settings-custom-theme-presets、expand-configurable-app-shortcuts、fix-claude-long-thread-render-amplification、fix-linux-ime-composer-compatibility、fix-linux-nix-flake-packaging、fix-windows-runtime-pool-initial-load、hide-codex-streaming-thinking-config-toggles。
+- 已执行 openspec archive，对上述 8 个 change 全部归档成功，并完成主 spec 同步。
+- 已复查 openspec list --json，确认 active changes 已收缩为 6 个未归档项。
+- 未运行业务代码 lint/typecheck/test；本次提交仅涉及 AGENTS 规则与 OpenSpec 文档/归档结构。
+
+后续事项：
+- 工作区仍有未提交的业务代码改动（src/**、src-tauri/**）以及 openspec/changes/allow-branch-update-without-checkout/ 草稿目录，未纳入本次提交。
+- 剩余 active changes 仍需等待 tasks 完成或补齐 artifacts 后再进入归档门禁。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e660880c63dba813197c3b7e0e23bed60806b07b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
