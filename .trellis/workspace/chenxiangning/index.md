@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-7.md`
-- **Total Sessions**: 225
+- **Total Sessions**: 226
 - **Last Active**: 2026-04-29
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-7.md` | ~1211 | Active |
+| `journal-7.md` | ~1274 | Active |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
 | `journal-4.md` | ~1975 | Archived |
@@ -35,6 +35,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 226 | 2026-04-29 | 支持管理运行时提示悬浮球显隐 | `beb5239fdf557a3458dc1c3b1069b56f8fb0ad61` | `feature/v0.4.11` |
 | 225 | 2026-04-29 | 实现 modeBlocked 与 Codex resume settlement 对齐 | `d84148b1` | `feature/v0.4.11` |
 | 224 | 2026-04-29 | 修复 CI sentry 抖动与 Actions 升级 | `5a04ad5d` | `feature/v0.4.11` |
 | 223 | 2026-04-29 | 收紧对话完成邮件正文内容 | `2d744bb9fb07099b5425fdb24c6d7c74c67add4a` | `feature/v0.4.11` |

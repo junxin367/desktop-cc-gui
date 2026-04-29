@@ -1209,3 +1209,66 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 226: 支持管理运行时提示悬浮球显隐
+
+**Date**: 2026-04-29
+**Task**: 支持管理运行时提示悬浮球显隐
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 任务目标
+- 将界面隐藏显示方案扩展到全局右下角运行时提示悬浮球。
+- 保持隐藏仅影响展示层，不中断 notice 收集、运行时轮询和 dock 展开/收起状态。
+- 为本次行为变更补齐 OpenSpec proposal、design、tasks 与 spec delta。
+
+## OpenSpec 关联
+- Change: `add-global-runtime-notice-dock-visibility-control`
+
+## 主要改动
+- 在 `clientUiVisibility` panel registry 中新增 `globalRuntimeNoticeDock`，纳入统一可见性管理。
+- 在设置页基础外观区域新增“运行时提示悬浮球”开关，并补齐 icon 映射与中英文文案。
+- 在 `useLayoutNodes` 中按可见性偏好控制 `GlobalRuntimeNoticeDock` 是否渲染。
+- 保持 `useGlobalRuntimeNoticeDock()` 常驻运行，确保隐藏时仍继续收集 runtime notice，不重置 dock 状态。
+- 补充 `client-ui-visibility`、`settings`、`layout` 与 runtime notice dock 相关回归测试。
+
+## 涉及模块
+- `src/features/client-ui-visibility/**`
+- `src/features/layout/hooks/useLayoutNodes*`
+- `src/features/settings/components/**`
+- `src/i18n/locales/*`
+- `openspec/changes/add-global-runtime-notice-dock-visibility-control/**`
+
+## 验证结果
+- `npx vitest run src/features/client-ui-visibility/utils/clientUiVisibility.test.ts src/features/settings/components/SettingsView.test.tsx src/features/layout/hooks/useLayoutNodes.client-ui-visibility.test.tsx src/features/notifications/hooks/useGlobalRuntimeNoticeDock.test.tsx` 通过（43/43）。
+- `npm run typecheck` 通过。
+- `npm run lint` 通过。
+
+## 后续事项
+- 当前仅提交 change artifacts，若需要落到主 spec，还需执行 OpenSpec archive/sync 流程。
+- 工作区仍存在与本次提交无关的 composer/IME 相关脏改动，未纳入本次提交与 record。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `beb5239fdf557a3458dc1c3b1069b56f8fb0ad61` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
