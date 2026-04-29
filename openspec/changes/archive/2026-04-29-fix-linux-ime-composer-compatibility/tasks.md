@@ -17,4 +17,4 @@
 
 - [x] 4.1 [P0][depends:3.2][I: 相关 ChatInputBox / hook 测试套件][O: 自动化回归结果][V: `npm run test -- ChatInputBox` 或等价定向测试通过]
 - [x] 4.2 [P0][depends:4.1][I: 仓库前端质量门禁][O: lint/typecheck/test 通过记录][V: `npm run lint`、`npm run typecheck`、`npm run test` 全部通过]
-- [ ] 4.3 [P1][depends:4.1][I: Linux Mint + RIME 与 mac/win 最小手测矩阵][O: 手测验收记录][V: Linux 可中英文切换并输入中文；mac/win 发送、补全、撤销/重做无回归]
+- [x] 4.3 [P1][depends:4.1][I: Linux Mint + RIME 与 mac/win 最小手测矩阵][O: 手测验收记录][V: Linux 可中英文切换并输入中文；mac/win 发送、补全、撤销/重做无回归]

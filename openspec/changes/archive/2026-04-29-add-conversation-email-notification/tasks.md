@@ -42,4 +42,4 @@
 - [x] 7.1 P0 / deps: 1-6 / output: run targeted frontend tests for composer, intent state, body assembly, and completion integration; validation: relevant `npm run test -- ...` or equivalent Vitest commands pass.
 - [x] 7.2 P0 / deps: 1-6 / output: run backend email tests; validation: `cargo test --manifest-path src-tauri/Cargo.toml email` passes.
 - [x] 7.3 P1 / deps: 1-6 / output: run static gates; validation: `npm run lint`, `npm run typecheck`, and relevant `npm run check:runtime-contracts` pass or failures are documented.
-- [ ] 7.4 P1 / deps: 1-6 / output: manually verify thread isolation: arm thread A, switch to B, return to A, complete once, confirm auto-clear; validation: record observed result in implementation notes.
+- [x] 7.4 P1 / deps: 1-6 / output: manually verify thread isolation: arm thread A, switch to B, return to A, complete once, confirm auto-clear; validation: record observed result in implementation notes.

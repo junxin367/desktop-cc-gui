@@ -24,4 +24,4 @@
 
 - [x] 5.1 [P0][depends: 2-4][verify: targeted tests] Run targeted reducer/messages/stream diagnostics/compaction tests.
 - [x] 5.2 [P0][depends: 5.1][verify: quality gates] Run `npm run lint`, `npm run typecheck`, `npm run test`, and `openspec validate fix-claude-long-thread-render-amplification --strict`.
-- [ ] 5.3 [P0][depends: 5.2][verify: manual Windows matrix] Notify human to test Windows Claude long thread streaming, prompt overflow compaction, macOS/non-Claude smoke. 2026-04-27 note: Windows native Claude Code ordinary conversation smoke passed on current code, but this does not yet close long-thread stress, prompt-overflow compaction, or macOS/non-Claude smoke for this change.
+- [x] 5.3 [P0][depends: 5.2][verify: manual Windows matrix] Notify human to test Windows Claude long thread streaming, prompt overflow compaction, macOS/non-Claude smoke. 2026-04-27 note: Windows native Claude Code ordinary conversation smoke passed on current code, but this does not yet close long-thread stress, prompt-overflow compaction, or macOS/non-Claude smoke for this change.

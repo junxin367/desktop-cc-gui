@@ -1516,3 +1516,194 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 231: 归档已完成 OpenSpec 提案并同步主规范
+
+**Date**: 2026-04-29
+**Task**: 归档已完成 OpenSpec 提案并同步主规范
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：回写活跃 OpenSpec 提案的主 specs，并将已完成且满足归档条件的 change 执行正式归档。
+
+主要改动：
+- 盘点活跃 change，确认 9 个已完成提案满足 tasks 完成、delta 已回写、validate 通过的归档门禁。
+- 回写主 specs，补全 client-ui-visibility-controls、global-runtime-notice-dock、codex-chat-canvas-user-input-elicitation、codex-context-auto-compaction、codex-stalled-recovery-contract、conversation-lifecycle-contract、runtime-pool-console 等 capability 的 canonical requirement/scenario。
+- 修正 add-global-runtime-notice-dock-visibility-control 的 delta requirement 文案，使 change 本身通过 openspec validate。
+- 归档 9 个 completed change 到 openspec/changes/archive/2026-04-29-*，归档时使用 --skip-specs 避免重复同步。
+
+涉及模块：
+- openspec/specs/**
+- openspec/changes/archive/**
+- openspec/changes/*（对应 9 个已归档 change 的原目录移动）
+
+验证结果：
+- 已执行 openspec validate，对 9 个完成态 change 均返回 valid。
+- 已执行 openspec archive -y --skip-specs，对 9 个 change 全部归档成功。
+- 已复查 openspec list --json，确认上述 9 个 change 不再出现在 active changes 中。
+- 未运行业务代码 lint/typecheck/test；本次仅涉及 OpenSpec 文档与归档结构调整。
+
+后续事项：
+- 当前仍有未提交的 openspec/changes/allow-branch-update-without-checkout/ 草稿目录，未纳入本次提交。
+- 剩余 active changes 仍需按 tasks 完成度与 spec 回写状态继续筛选后续归档批次。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1d5fef13b206354d9344af0253253bb7c6ede164` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 232: 归档已验证提案并补全主规范
+
+**Date**: 2026-04-29
+**Task**: 归档已验证提案并补全主规范
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：按 OpenSpec 流程归档已经完成验证并满足归档门禁的 active changes，同时将未同步的 delta specs 正式写入主 openspec/specs。
+
+主要改动：
+- 识别并验证 8 个 completed active changes，逐个执行 openspec validate，确认均通过。
+- 对尚未回写主 spec 的 change 直接使用标准 openspec archive 流程，在归档时同步主 specs，并将变更目录迁移到 openspec/changes/archive/2026-04-29-*。
+- 新增 canonical capability specs：conversation-completion-email-notification、settings-custom-theme-presets、app-shortcuts、composer-linux-ime-compatibility、nix-flake-build-reproducibility、codex-chat-canvas-hidden-default-controls。
+- 补充既有主 specs：claude-context-compaction-recovery、conversation-realtime-cpu-stability、conversation-render-surface-stability、runtime-orchestrator、runtime-pool-console。
+- 在 AGENTS.md 固化 OpenSpec 归档偏好：已验证且满足归档门禁的提案默认直接归档；若主 specs 已提前同步，则默认使用 --skip-specs。
+
+涉及模块：
+- AGENTS.md
+- openspec/changes/archive/**
+- openspec/specs/**
+
+验证结果：
+- 已执行 openspec validate，对以下 8 个 change 均返回 valid：
+  add-conversation-email-notification、add-settings-custom-theme-presets、expand-configurable-app-shortcuts、fix-claude-long-thread-render-amplification、fix-linux-ime-composer-compatibility、fix-linux-nix-flake-packaging、fix-windows-runtime-pool-initial-load、hide-codex-streaming-thinking-config-toggles。
+- 已执行 openspec archive，对上述 8 个 change 全部归档成功，并完成主 spec 同步。
+- 已复查 openspec list --json，确认 active changes 已收缩为 6 个未归档项。
+- 未运行业务代码 lint/typecheck/test；本次提交仅涉及 AGENTS 规则与 OpenSpec 文档/归档结构。
+
+后续事项：
+- 工作区仍有未提交的业务代码改动（src/**、src-tauri/**）以及 openspec/changes/allow-branch-update-without-checkout/ 草稿目录，未纳入本次提交。
+- 剩余 active changes 仍需等待 tasks 完成或补齐 artifacts 后再进入归档门禁。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e660880c63dba813197c3b7e0e23bed60806b07b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 233: 支持不切换分支直接更新本地分支
+
+**Date**: 2026-04-30
+**Task**: 支持不切换分支直接更新本地分支
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 支持 GitHub 面板分支区域对非当前本地 tracked branch 直接执行 Update，无需 checkout 到目标分支。
+- 保持当前分支现有 update 能力与项目上下文不受影响。
+- 为该行为变更补齐 OpenSpec proposal/design/spec/tasks 与自动化回归覆盖。
+
+主要改动:
+- 后端新增 update_git_branch command，并同步注册到 Tauri command registry 与 cc_gui_daemon。
+- current branch 继续走 pull 路径；non-current tracked branch 改为 fetch -> ahead/behind -> fast-forward only -> update-ref。
+- 补齐 blocked/no-op/success/failed 结构化 outcome 与 reason，覆盖 no_upstream、diverged、occupied_worktree、stale_ref 等 guardrail。
+- 前端分支右键菜单放开非当前 tracked branch 的 Update 可用性，并按 current/non-current/remote 分流不同执行器。
+- 更新中英文 i18n 文案、刷新链路与相关 runtime contract 类型。
+- 新增 OpenSpec change：allow-branch-update-without-checkout，补齐 proposal、design、delta specs、tasks。
+- 为 large-file governance 将部分 locale menu 文案分段迁移到 part2，保持行为不变。
+
+涉及模块:
+- src-tauri/src/git/commands_branch.rs
+- src-tauri/src/bin/cc_gui_daemon.rs
+- src-tauri/src/bin/cc_gui_daemon/git.rs
+- src-tauri/src/command_registry.rs
+- src-tauri/src/git/mod.rs
+- src-tauri/src/types.rs
+- src/services/tauri.ts
+- src/services/tauri.test.ts
+- src/types.ts
+- src/features/git-history/components/git-history-panel/hooks/useGitHistoryPanelInteractions.tsx
+- src/features/git-history/components/git-history-panel/components/GitHistoryPanelImpl.tsx
+- src/features/git-history/components/GitHistoryPanel.test.tsx
+- src/i18n/locales/en.part1.ts
+- src/i18n/locales/en.part2.ts
+- src/i18n/locales/zh.part1.ts
+- src/i18n/locales/zh.part2.ts
+- openspec/changes/allow-branch-update-without-checkout/**
+
+验证结果:
+- npm run lint 通过
+- npm run typecheck 通过
+- npm run test 通过
+- npm run check:runtime-contracts 通过
+- npm run check:heavy-test-noise 通过
+- npm run check:large-files:near-threshold 通过
+- npm run check:large-files:gate 通过
+- cargo test --manifest-path src-tauri/Cargo.toml 通过
+
+后续事项:
+- 补齐 stale_ref blocked 的稳定行为级 Rust 测试 fixture，尽量只加测试 seam，不污染生产逻辑。
+- 在桌面端真实仓库场景执行手工验收并补回滚预案核对记录。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f5c183a5d8afe3197dcd6b055f87f101d224d265` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -13,4 +13,4 @@
 
 - [x] 3.1 [P0][depends:2.3][I: 受影响 frontend 模块][O: 前端验证结果][V: `npm run typecheck`、`npm run lint`、`npx vitest run src/features/theme/utils/themePreset.test.ts src/features/settings/hooks/useAppSettings.test.ts src/features/settings/components/SettingsView.test.tsx` 通过] 运行 targeted frontend checks。
 - [x] 3.2 [P0][depends:3.1][I: runtime / Rust settings 模块][O: contract 验证结果][V: `npm run check:runtime-contracts` 与 `cargo test --manifest-path src-tauri/Cargo.toml settings_core` 通过] 运行跨层 contract checks。
-- [ ] 3.3 [P1][depends:3.2][I: OpenSpec change artifacts][O: 严格校验记录][V: `openspec validate add-settings-custom-theme-presets --type change --strict --no-interactive` 通过] 当前环境未安装 `openspec` CLI，待具备工具后补跑。
+- [x] 3.3 [P1][depends:3.2][I: OpenSpec change artifacts][O: 严格校验记录][V: `openspec validate add-settings-custom-theme-presets --type change --strict --no-interactive` 通过] 当前环境未安装 `openspec` CLI，待具备工具后补跑。

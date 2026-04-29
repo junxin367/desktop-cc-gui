@@ -28,7 +28,7 @@
 ## 5. Validation and Documentation
 
 - [x] 5.1 Run frontend and Rust quality gates. `[P0][依赖: 2.x, 3.x][输入: implemented package/flake changes][输出: validation results][验证: npm run typecheck && npm run build && cargo test --manifest-path src-tauri/Cargo.toml]`
-- [ ] 5.2 Run Nix packaging validation on a Nix-capable host. `[P0][依赖: 3.x][输入: implemented flake.nix and lockfile][输出: Nix validation results][验证: nix build .# --no-link --print-build-logs && nix flake check --no-build && nix run .#]`
+- [x] 5.2 Run Nix packaging validation on a Nix-capable host. `[P0][依赖: 3.x][输入: implemented flake.nix and lockfile][输出: Nix validation results][验证: nix build .# --no-link --print-build-logs && nix flake check --no-build && nix run .#]`
 - [x] 5.3 Document any environment-specific validation blocker. `[P1][依赖: 5.1, 5.2][输入: validation output][输出: implementation notes if Nix is unavailable locally or a check must be deferred][验证: blocker includes exact missing command/environment and replacement evidence]`
 - [x] 5.4 Run OpenSpec validation. `[P0][依赖: all artifacts][输入: completed artifacts and implementation notes][输出: validated OpenSpec change][验证: openspec validate fix-linux-nix-flake-packaging --type change --strict --no-interactive]`
 
