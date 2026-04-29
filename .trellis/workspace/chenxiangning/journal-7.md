@@ -1272,3 +1272,72 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 227: Linux IME 兼容边界修复与回归测试
+
+**Date**: 2026-04-29
+**Task**: Linux IME 兼容边界修复与回归测试
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 任务目标
+- 修复 ChatInputBox 在 Linux 下的 IME 组合输入兼容问题
+- 严格限定 Linux-only compatibility guard，避免回伤 macOS/Windows 既有输入链路
+- 补一条 Linux IME idle 边界回归，确认非 229 且 composition settle 后普通 Enter 仍可发送
+
+## 主要改动
+- 新增 `src/features/composer/components/ChatInputBox/utils/imeCompatibility.ts`
+  - 抽离 Linux 平台判定、composition settle guard、keyCode 229 composing 判定、Space file-tag render guard
+- 更新 `ChatInputBox.tsx`
+  - 统一计算 `linuxImeCompatibilityMode`
+  - Linux 下跳过 React `beforeinput(insertParagraph)` submit fallback
+  - 在 composition 活跃或刚结束窗口内抑制 Space 触发的 file-tag DOM rewrite
+- 更新 `useNativeEventCapture.ts`
+  - Linux 兼容模式下禁用 native keydown/keyup/beforeinput 的激进提交拦截
+- 更新 `useKeyboardHandler.ts`
+  - Linux 路径下用更保守的 composing 判定与 keyup 消费边界，避免 recent composition 阶段误消费 Enter
+- 更新测试
+  - 覆盖 Linux keyCode 229 不误发
+  - 覆盖 recent composition 阶段 keyup 不误消费
+  - 覆盖 plain Linux Enter 在 settle 后仍可正常发送
+  - 覆盖 finalized IME text 仅提交一次
+- 新增 OpenSpec 变更目录 `openspec/changes/fix-linux-ime-composer-compatibility/`
+
+## 涉及模块
+- `src/features/composer/components/ChatInputBox/`
+- `openspec/changes/fix-linux-ime-composer-compatibility/`
+
+## 验证结果
+- `npx vitest run src/features/composer/components/ChatInputBox/hooks/useKeyboardHandler.test.tsx src/features/composer/components/ChatInputBox/hooks/useNativeEventCapture.test.tsx src/features/composer/components/ChatInputBox/ChatInputBox.incrementalUndoRedo.smoke.test.tsx src/features/composer/components/ChatInputBox/utils/imeCompatibility.test.ts` 通过
+- `npm run lint` 通过
+- `npm run typecheck -- --pretty false` 通过
+- `npm run test` 通过
+
+## 后续事项
+- OpenSpec `4.3 Linux Mint + RIME 与 mac/win 最小手测矩阵` 仍待人工完成
+- 当前 worktree 仍有无关未提交改动：`CHANGELOG.md`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dac0aa5a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
