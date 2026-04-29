@@ -489,3 +489,40 @@ Codex recovery UI and lifecycle consumers MUST avoid contradictory states across
 - **WHEN** a Codex recovery action produces `rebound`, `fresh`, `failed`, or `abandoned`
 - **THEN** user-visible labels and status text MUST match that outcome
 - **AND** the system MUST NOT use the same success wording for restored identity and fresh continuation
+
+### Requirement: Passive History Selection MUST NOT Force Codex Runtime Acquisition
+
+Selecting or restoring a completed Codex history conversation for display MUST prefer durable local history facts and MUST NOT acquire a managed Codex runtime solely to render already-readable history.
+
+#### Scenario: local history satisfies passive selection
+
+- **WHEN** the user selects an unloaded Codex history conversation
+- **AND** local session history can reconstruct visible conversation items for that `threadId`
+- **THEN** the UI MUST render that history without calling Codex `thread/resume`
+- **AND** backend runtime acquisition MUST remain reserved for runtime-required actions such as send, explicit retry, fork, or verified stale recovery
+
+#### Scenario: passive selection may fall back when local history is insufficient
+
+- **WHEN** local session history is unavailable, unreadable, or reconstructs no visible items
+- **THEN** the system MAY use the existing runtime-backed resume path if the caller intentionally requested runtime verification
+- **AND** any resulting recovery MUST follow the existing liveness and stale-thread contracts
+
+### Requirement: Manual Recovery Actions MUST Settle To Non-Contradictory Conversation State
+
+Manual recovery actions on the conversation surface MUST leave lifecycle state consistent with the actual target thread that can accept future work.
+
+#### Scenario: fresh fallback cannot masquerade as old conversation continuity
+- **WHEN** a manual recovery action for a stale Codex thread creates a fresh replacement conversation
+- **THEN** lifecycle state MUST identify the fresh thread as the active continuation target
+- **AND** the UI MUST NOT claim that the old stale thread was restored in place
+
+#### Scenario: failed manual recovery keeps the user in a recoverable state
+- **WHEN** a manual recovery action fails to produce a usable target thread
+- **THEN** the current conversation surface MUST leave processing state
+- **AND** the recovery affordance MUST remain visibly failed or retryable instead of silently doing nothing
+
+#### Scenario: runtime reconnect remains separate from conversation identity recovery
+- **WHEN** runtime readiness succeeds during a stale thread recovery action
+- **AND** the stale conversation identity still cannot be rebound
+- **THEN** lifecycle state MUST NOT treat runtime readiness alone as successful conversation recovery
+- **AND** the thread identity recovery outcome MUST determine whether the recovery card succeeds, fails, or offers fresh continuation

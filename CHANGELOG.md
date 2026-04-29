@@ -2,6 +2,60 @@
 
 ---
 
+##### **2026年4月29日（v0.4.10）**
+
+中文：
+
+✨ Features
+- 新增邮件发送设置与测试发送能力，在设置页补齐邮箱配置、发送校验、后端邮件发送 command 与 OpenSpec 行为契约，让通知链路具备可配置的发送端
+- 新增客户端界面显示控制，支持按配置隐藏或显示侧栏、状态面板、文件视图、Git 面板、composer 等主要 UI 区域，并补齐布局恢复与 shortcut 边界
+- 新增工作区别名能力，支持在侧边栏展示更友好的 workspace alias，并提供别名编辑入口与持久化映射
+- 新增可配置应用快捷键扩展，覆盖 archive、new agent、search、interrupt、mode switch、panel、UI scale 等主操作，让桌面快捷键配置更完整
+- 新增模型选择器配置刷新入口，让 Codex model selector 可以主动刷新当前模型配置，减少配置变更后 UI 与 runtime 状态不同步
+
+🔧 Improvements
+- 收口 Windows Codex app-server wrapper 启动参数拼装，把 doctor / probe 与真实 app-server 启动统一到共享 launch options，降低不同启动路径的参数漂移
+- 为 Windows `.cmd` / `.bat` wrapper 增加一次兼容 retry，primary 启动失败时跳过内部 spec priority hint 重新启动，同时保留用户 `codexArgs`
+- 强化 Codex 会话保活恢复，补齐 conversation liveness、stale thread binding recovery、stalled recovery contract 与 runtime stability 的 OpenSpec 说明
+- 稳定 Codex 历史加载与侧栏缓存，过滤后台辅助会话，收敛 cross-source history 与可见会话列表的展示边界
+- 拆分 spec root 消息测试并格式化后端测试代码，降低线程消息与 Rust backend 回归维护成本
+- 同步 OpenSpec 变更，覆盖模型选择器配置操作、邮件发送设置、工作区别名、客户端 UI 显示控制、快捷键扩展与 Windows wrapper 启动规范
+
+🐛 Fixes
+- 修复 Windows 11 下通过 npm `.cmd` wrapper 启动 Codex app-server 时，`cmd.exe /c` 与内部 quoted config 组合导致初始化前退出的问题
+- 修复 Windows wrapper fallback 成功后仍可能把 primary 的早期 runtime / ended / stderr 事件暴露到前端的问题，避免 UI 误判为启动失败
+- 修复 Codex 停滞会话隔离与历史展示边界，减少 stalled recovery 期间旧线程、后台辅助会话与当前历史视图混入的问题
+- 修复 Codex 后台辅助会话污染历史列表的问题，让用户可见历史只展示真实可恢复的会话
+- 修复方向键快捷键别名归一化问题，让快捷键配置中的方向键输入与展示保持一致
+- 修复 Nix 前端依赖导入链路，改用 `importNpmLock` 并恢复固定前端依赖 hash，降低 flake 构建因依赖闭包变化失败的概率
+
+English:
+
+✨ Features
+- Add email sender settings and a test-send flow, including settings UI, validation, backend mail commands, and OpenSpec behavior coverage
+- Add client UI visibility controls for hiding or showing major surfaces such as the sidebar, status panel, file view, Git panel, and composer
+- Add workspace sidebar aliases so workspaces can be shown with friendlier names and edited from the sidebar
+- Expand configurable application shortcuts across archive, new agent, search, interrupt, mode switching, panels, and UI scaling
+- Add a model-selector config refresh action so Codex model settings can be refreshed without drifting from runtime state
+
+🔧 Improvements
+- Consolidate Windows Codex app-server wrapper launch options so doctor, probe, and real app-server startup share the same argument semantics
+- Add a Windows `.cmd` / `.bat` wrapper retry path that skips the internal spec priority hint after primary launch failure while preserving user `codexArgs`
+- Strengthen Codex conversation liveness, stale-thread binding recovery, stalled recovery, and runtime-stability specifications
+- Stabilize Codex history loading and sidebar cache by filtering background helper sessions from visible history
+- Split spec-root message tests and format backend test code to keep thread-message and Rust backend coverage easier to maintain
+- Sync OpenSpec changes for model-selector config actions, email sender settings, workspace aliases, client UI visibility controls, shortcut expansion, and Windows wrapper launch behavior
+
+🐛 Fixes
+- Fix Windows 11 Codex app-server startup failures caused by npm `.cmd` wrappers, `cmd.exe /c`, and quoted internal config arguments
+- Fix false frontend startup failures after a successful Windows wrapper fallback by dropping primary-path early runtime / ended / stderr events
+- Fix Codex stalled-session isolation and history display boundaries so old threads, helper sessions, and current history views do not bleed together
+- Fix background Codex helper sessions appearing in user-visible history lists
+- Fix direction-key shortcut alias normalization so shortcut input and display stay aligned
+- Fix Nix frontend dependency import and pinned hash handling by moving to `importNpmLock` and restoring the fixed frontend dependency hash
+
+---
+
 ##### **2026年4月27日（v0.4.9）**
 
 中文：
