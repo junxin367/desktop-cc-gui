@@ -65,6 +65,11 @@ import {
   resolveShortcutPlatform,
   resolveUndoRedoShortcutAction,
 } from './utils/undoRedoShortcut.js';
+import {
+  isCompositionRecentlySettled,
+  isLinuxImeCompatibilityPlatform,
+  shouldTriggerFileTagRenderOnSpaceKey,
+} from './utils/imeCompatibility.js';
 import type { CommitSnapshotOptions, UndoRedoSnapshot } from './hooks/useUndoRedoHistory.js';
 import { perfTimer } from '../../utils/debug.js';
 import { DEBOUNCE_TIMING } from '../../constants/performance.js';
@@ -258,6 +263,10 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
     const lastBeforeInputSelectionReplaceRef = useRef(false);
 
     const shortcutPlatform = useMemo(() => resolveShortcutPlatform(), []);
+    const linuxImeCompatibilityMode = useMemo(
+      () => isLinuxImeCompatibilityPlatform(shortcutPlatform),
+      [shortcutPlatform],
+    );
     const undoRedoHistory = useUndoRedoHistory({
       maxTransactions: INCREMENTAL_UNDO_REDO_MAX_TRANSACTIONS,
       mergeWindowMs: INCREMENTAL_UNDO_REDO_MERGE_WINDOW_MS,
@@ -895,13 +904,13 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
      */
     const handleKeyDownForTagRendering = useCallback(
       (e: KeyboardEvent) => {
-        if (e.key !== ' ') return;
-
-        // IME uses Space/Enter for candidate selection. Rendering file tags here
-        // (which may rewrite innerHTML) can interrupt composition and leave raw pinyin.
-        const isIMEComposing =
-          sharedComposingRef.current || e.isComposing || e.keyCode === 229;
-        if (isIMEComposing) {
+        if (
+          !shouldTriggerFileTagRenderOnSpaceKey(e, {
+            isComposing: sharedComposingRef.current,
+            lastCompositionEndTime: lastCompositionEndTimeRef.current,
+            platform: shortcutPlatform,
+          })
+        ) {
           debouncedRenderFileTags.cancel();
           return;
         }
@@ -909,7 +918,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
         // If space key pressed outside IME composition, use debounce for delayed rendering.
         debouncedRenderFileTags();
       },
-      [debouncedRenderFileTags, sharedComposingRef]
+      [debouncedRenderFileTags, lastCompositionEndTimeRef, sharedComposingRef, shortcutPlatform]
     );
 
     const handleSubmit = useSubmitHandler({
@@ -1012,6 +1021,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       handleSubmit,
       handleEnhancePrompt,
       shortcutPlatform,
+      linuxImeCompatibilityMode,
     });
 
     useControlledValueSync({
@@ -1049,6 +1059,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       handleSubmit,
       handleEnhancePrompt,
       shortcutPlatform,
+      linuxImeCompatibilityMode,
     });
 
     // Paste and drop hook
@@ -1360,6 +1371,9 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
                   lastBeforeInputSelectionReplaceRef.current = !!selectionRange &&
                     selectionRange.start !== selectionRange.end;
                   if (inputType === 'insertParagraph') {
+                    if (linuxImeCompatibilityMode) {
+                      return;
+                    }
                     if (shiftEnterRef.current) {
                       return;
                     }
@@ -1368,7 +1382,9 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
                     }
 
                     // IME confirm may also emit insertParagraph; do not hijack it.
-                    const isRecentlyComposing = Date.now() - lastCompositionEndTimeRef.current < 100;
+                    const isRecentlyComposing = isCompositionRecentlySettled(
+                      lastCompositionEndTimeRef.current,
+                    );
                     if (isComposingRef.current || isRecentlyComposing) {
                       return;
                     }

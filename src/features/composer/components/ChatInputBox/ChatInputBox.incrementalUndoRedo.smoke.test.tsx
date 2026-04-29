@@ -75,6 +75,9 @@ function dispatchBeforeInput(editable: HTMLDivElement, inputType: string) {
 describe('ChatInputBox incremental undo/redo smoke', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
+      window.setTimeout(() => callback(0), 0)
+    );
     localStorage.clear();
     if (!HTMLElement.prototype.scrollIntoView) {
       HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -85,6 +88,7 @@ describe('ChatInputBox incremental undo/redo smoke', () => {
     cleanup();
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     localStorage.clear();
     delete (window as Window & { insertCodeSnippetAtCursor?: (selectionInfo: string) => void })
       .insertCodeSnippetAtCursor;
@@ -139,5 +143,55 @@ describe('ChatInputBox incremental undo/redo smoke', () => {
     });
     expect(editable.innerText).toContain('hello world');
 
+  });
+
+  it('submits finalized Linux IME text exactly once after composition settles', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(window.navigator, 'platform');
+    Object.defineProperty(window.navigator, 'platform', {
+      value: 'Linux x86_64',
+      configurable: true,
+    });
+
+    const onSubmit = vi.fn();
+    const view = render(<ChatInputBox showHeader={false} onSubmit={onSubmit} />);
+    const editable = view.container.querySelector('.input-editable') as HTMLDivElement | null;
+    expect(editable).toBeTruthy();
+    if (!editable) {
+      if (originalPlatform) {
+        Object.defineProperty(window.navigator, 'platform', originalPlatform);
+      }
+      return;
+    }
+
+    Object.defineProperty(editable, 'isContentEditable', {
+      value: true,
+      configurable: true,
+    });
+
+    editable.focus();
+    fireEvent.compositionStart(editable);
+    setEditableText(editable, '中文');
+    fireEvent.compositionEnd(editable);
+    fireEvent.input(editable);
+
+    fireEvent.keyDown(editable, { key: 'Enter' });
+    expect(onSubmit).toHaveBeenCalledTimes(0);
+    expect(editable.innerText).toBe('中文');
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+
+    fireEvent.keyDown(editable, { key: 'Enter' });
+    await act(async () => {
+      vi.runAllTimers();
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenNthCalledWith(1, '中文', undefined);
+
+    if (originalPlatform) {
+      Object.defineProperty(window.navigator, 'platform', originalPlatform);
+    }
   });
 });

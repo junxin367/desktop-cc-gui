@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useRef } from 'react';
 import { useKeyboardHandler } from './useKeyboardHandler.js';
@@ -12,16 +12,20 @@ function Harness({
   onSubmit = vi.fn(),
   onEnhancePrompt = vi.fn(),
   platform = 'windows',
+  compositionEndedMsAgo,
 }: {
   isIncrementalUndoRedoEnabled?: boolean;
   onUndoRedoAction?: (action: 'undo' | 'redo') => void;
   onSubmit?: () => void;
   onEnhancePrompt?: () => void;
   platform?: ShortcutPlatform;
+  compositionEndedMsAgo?: number;
 }) {
   const editableRef = useRef<HTMLDivElement | null>(null);
   const isComposingRef = useRef(false);
-  const lastCompositionEndTimeRef = useRef(0);
+  const lastCompositionEndTimeRef = useRef(
+    compositionEndedMsAgo === undefined ? 0 : Date.now() - compositionEndedMsAgo
+  );
   const completionSelectedRef = useRef(false);
   const submittedOnEnterRef = useRef(false);
 
@@ -53,6 +57,7 @@ function Harness({
     handleSubmit: onSubmit,
     handleEnhancePrompt: onEnhancePrompt,
     shortcutPlatform: platform,
+    linuxImeCompatibilityMode: platform === 'linux',
   });
 
   return (
@@ -200,6 +205,64 @@ describe('useKeyboardHandler undo/redo integration', () => {
     fireEvent.keyDown(editable, { key: '/', code: 'Slash', metaKey: true });
 
     expect(onEnhancePrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats linux keyCode 229 enter as active composition and does not submit', () => {
+    const onSubmit = vi.fn();
+    render(<Harness onSubmit={onSubmit} platform="linux" />);
+    const editable = screen.getByTestId('editable');
+    (editable as HTMLDivElement).focus();
+
+    const keyDown = createEvent.keyDown(editable, {
+      key: 'Enter',
+      keyCode: 229,
+    });
+    fireEvent(editable, keyDown);
+
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('still submits on plain linux enter after composition has fully settled', () => {
+    const onSubmit = vi.fn();
+    render(
+      <Harness
+        onSubmit={onSubmit}
+        platform="linux"
+        compositionEndedMsAgo={150}
+      />
+    );
+    const editable = screen.getByTestId('editable');
+    (editable as HTMLDivElement).focus();
+
+    const keyDown = createEvent.keyDown(editable, {
+      key: 'Enter',
+      keyCode: 13,
+    });
+    fireEvent(editable, keyDown);
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(keyDown.defaultPrevented).toBe(true);
+  });
+
+  it('does not consume linux enter keyup when recent composition blocked submit', () => {
+    const onSubmit = vi.fn();
+    render(
+      <Harness
+        onSubmit={onSubmit}
+        platform="linux"
+        compositionEndedMsAgo={20}
+      />
+    );
+    const editable = screen.getByTestId('editable');
+    (editable as HTMLDivElement).focus();
+
+    fireEvent.keyDown(editable, { key: 'Enter' });
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    const keyUp = createEvent.keyUp(editable, { key: 'Enter' });
+    fireEvent(editable, keyUp);
+
+    expect(keyUp.defaultPrevented).toBe(false);
   });
 
   it('does not trigger enhancer on Ctrl+/ in macOS path', () => {

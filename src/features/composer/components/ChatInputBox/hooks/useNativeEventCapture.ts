@@ -4,6 +4,7 @@ import {
   resolveShortcutPlatform,
   type ShortcutPlatform,
 } from '../utils/undoRedoShortcut.js';
+import { isCompositionRecentlySettled } from '../utils/imeCompatibility.js';
 
 interface CompletionOpenLike {
   isOpen: boolean;
@@ -41,6 +42,7 @@ export interface UseNativeEventCaptureOptions {
   editableRef: React.RefObject<HTMLDivElement | null>;
   isComposingRef: MutableRefObject<boolean>;
   lastCompositionEndTimeRef: MutableRefObject<number>;
+  linuxImeCompatibilityMode?: boolean;
   sendShortcut: 'enter' | 'cmdEnter';
   fileCompletion: CompletionOpenLike;
   memoryCompletion: CompletionOpenLike;
@@ -67,6 +69,7 @@ export function useNativeEventCapture({
   editableRef,
   isComposingRef,
   lastCompositionEndTimeRef,
+  linuxImeCompatibilityMode = false,
   sendShortcut,
   fileCompletion,
   memoryCompletion,
@@ -87,6 +90,7 @@ export function useNativeEventCapture({
     editableRef,
     isComposingRef,
     lastCompositionEndTimeRef,
+    linuxImeCompatibilityMode,
     sendShortcut,
     fileCompletion,
     memoryCompletion,
@@ -104,6 +108,7 @@ export function useNativeEventCapture({
     editableRef,
     isComposingRef,
     lastCompositionEndTimeRef,
+    linuxImeCompatibilityMode,
     sendShortcut,
     fileCompletion,
     memoryCompletion,
@@ -169,7 +174,13 @@ export function useNativeEventCapture({
         return;
       }
 
-      const isRecentlyComposing = Date.now() - latest.lastCompositionEndTimeRef.current < 100;
+      if (latest.linuxImeCompatibilityMode) {
+        return;
+      }
+
+      const isRecentlyComposing = isCompositionRecentlySettled(
+        latest.lastCompositionEndTimeRef.current,
+      );
       const metaOrCtrl = ev.metaKey || ev.ctrlKey;
       const isSendKey =
         latest.sendShortcut === 'cmdEnter'
@@ -188,6 +199,9 @@ export function useNativeEventCapture({
 
     const nativeKeyUp = (ev: KeyboardEvent) => {
       const latest = latestRef.current;
+      if (latest.linuxImeCompatibilityMode) {
+        return;
+      }
       const isEnterKey = ev.key === 'Enter' || ev.keyCode === 13;
       if (isEnterKey) {
         sawShiftEnterRef.current = false;
@@ -211,6 +225,9 @@ export function useNativeEventCapture({
 
     const nativeBeforeInput = (ev: InputEvent) => {
       const latest = latestRef.current;
+      if (latest.linuxImeCompatibilityMode) {
+        return;
+      }
       const type = (ev as InputEvent).inputType;
       if (type !== 'insertParagraph') return;
 
@@ -224,7 +241,9 @@ export function useNativeEventCapture({
       // IME may emit insertParagraph when confirming candidates with Enter.
       // In that case, never hijack this event for submit fallback.
       const isInputComposing = (ev as InputEvent).isComposing === true;
-      const isRecentlyComposing = Date.now() - latest.lastCompositionEndTimeRef.current < 100;
+      const isRecentlyComposing = isCompositionRecentlySettled(
+        latest.lastCompositionEndTimeRef.current,
+      );
       if (latest.isComposingRef.current || isInputComposing || isRecentlyComposing) {
         return;
       }

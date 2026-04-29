@@ -5,6 +5,11 @@ import {
   type ShortcutPlatform,
   type UndoRedoShortcutAction,
 } from '../utils/undoRedoShortcut.js';
+import {
+  isCompositionRecentlySettled,
+  isImeKeydownStillComposing,
+  isLinuxImeCompatibilityPlatform,
+} from '../utils/imeCompatibility.js';
 
 interface CompletionWithKeyDown {
   isOpen: boolean;
@@ -76,6 +81,7 @@ export interface UseKeyboardHandlerOptions {
   handleSubmit: () => void;
   handleEnhancePrompt?: () => void;
   shortcutPlatform?: ShortcutPlatform;
+  linuxImeCompatibilityMode?: boolean;
 }
 
 /**
@@ -111,10 +117,16 @@ export function useKeyboardHandler({
   handleSubmit,
   handleEnhancePrompt,
   shortcutPlatform,
+  linuxImeCompatibilityMode = false,
 }: UseKeyboardHandlerOptions) {
   const onKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLDivElement>) => {
-      const isIMEComposing = isComposingRef.current || e.nativeEvent.isComposing;
+      const platform = shortcutPlatform ?? resolveShortcutPlatform();
+      const isIMEComposing = isImeKeydownStillComposing(
+        e.nativeEvent,
+        isComposingRef.current,
+        platform,
+      );
 
       const isEnterKey =
         e.key === 'Enter' || e.nativeEvent.keyCode === 13;
@@ -223,7 +235,9 @@ export function useKeyboardHandler({
 
       if (handleHistoryKeyDown(e)) return;
 
-      const isRecentlyComposing = Date.now() - lastCompositionEndTimeRef.current < 100;
+      const isRecentlyComposing = isCompositionRecentlySettled(
+        lastCompositionEndTimeRef.current,
+      );
       const isSendKey =
         sendShortcut === 'cmdEnter'
           ? isEnterKey && (e.metaKey || e.ctrlKey) && !isIMEComposing
@@ -264,8 +278,9 @@ export function useKeyboardHandler({
     ]
   );
 
-  const onKeyUp = useCallback(
-    (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const onKeyUp = useCallback(
+      (e: ReactKeyboardEvent<HTMLDivElement>) => {
+      const platform = shortcutPlatform ?? resolveShortcutPlatform();
       const isEnterKey =
         e.key === 'Enter' || e.nativeEvent.keyCode === 13;
 
@@ -275,6 +290,14 @@ export function useKeyboardHandler({
           : isEnterKey && !e.shiftKey;
 
       if (!isSendKey) return;
+
+      if (
+        (linuxImeCompatibilityMode || isLinuxImeCompatibilityPlatform(platform)) &&
+        !completionSelectedRef.current &&
+        !submittedOnEnterRef.current
+      ) {
+        return;
+      }
       e.preventDefault();
 
       if (completionSelectedRef.current) {
@@ -285,7 +308,13 @@ export function useKeyboardHandler({
         submittedOnEnterRef.current = false;
       }
     },
-    [sendShortcut, completionSelectedRef, submittedOnEnterRef]
+    [
+      shortcutPlatform,
+      sendShortcut,
+      linuxImeCompatibilityMode,
+      completionSelectedRef,
+      submittedOnEnterRef,
+    ]
   );
 
   return { onKeyDown, onKeyUp };

@@ -31,6 +31,7 @@ function Harness({
   onSubmit,
   onEnhancePrompt = () => {},
   platform = 'windows',
+  linuxImeCompatibilityMode = platform === 'linux',
   isComposing = false,
   compositionEndedMsAgo,
 }: {
@@ -38,6 +39,7 @@ function Harness({
   onSubmit: () => void;
   onEnhancePrompt?: () => void;
   platform?: ShortcutPlatform;
+  linuxImeCompatibilityMode?: boolean;
   isComposing?: boolean;
   compositionEndedMsAgo?: number;
 }) {
@@ -54,6 +56,7 @@ function Harness({
     editableRef,
     isComposingRef,
     lastCompositionEndTimeRef,
+    linuxImeCompatibilityMode,
     sendShortcut,
     fileCompletion: closedCompletion,
     memoryCompletion: closedCompletion,
@@ -124,6 +127,35 @@ describe('useNativeEventCapture', () => {
     editable.dispatchEvent(createBeforeInputEvent('insertParagraph'));
 
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('disables native enter submit interception for linux compatibility mode', () => {
+    const onSubmit = vi.fn();
+    render(<Harness sendShortcut="enter" onSubmit={onSubmit} platform="linux" />);
+    const editable = screen.getByTestId('editable');
+    const keydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      keyCode: 13,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    editable.dispatchEvent(keydown);
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(keydown.defaultPrevented).toBe(false);
+  });
+
+  it('disables beforeinput fallback submit for linux compatibility mode', () => {
+    const onSubmit = vi.fn();
+    render(<Harness sendShortcut="enter" onSubmit={onSubmit} platform="linux" />);
+    const editable = screen.getByTestId('editable');
+    const beforeInput = createBeforeInputEvent('insertParagraph');
+
+    editable.dispatchEvent(beforeInput);
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(beforeInput.defaultPrevented).toBe(false);
   });
 
   it('does not submit beforeinput fallback when InputEvent reports composing', () => {
