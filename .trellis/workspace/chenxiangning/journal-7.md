@@ -1628,3 +1628,82 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 233: 支持不切换分支直接更新本地分支
+
+**Date**: 2026-04-30
+**Task**: 支持不切换分支直接更新本地分支
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 支持 GitHub 面板分支区域对非当前本地 tracked branch 直接执行 Update，无需 checkout 到目标分支。
+- 保持当前分支现有 update 能力与项目上下文不受影响。
+- 为该行为变更补齐 OpenSpec proposal/design/spec/tasks 与自动化回归覆盖。
+
+主要改动:
+- 后端新增 update_git_branch command，并同步注册到 Tauri command registry 与 cc_gui_daemon。
+- current branch 继续走 pull 路径；non-current tracked branch 改为 fetch -> ahead/behind -> fast-forward only -> update-ref。
+- 补齐 blocked/no-op/success/failed 结构化 outcome 与 reason，覆盖 no_upstream、diverged、occupied_worktree、stale_ref 等 guardrail。
+- 前端分支右键菜单放开非当前 tracked branch 的 Update 可用性，并按 current/non-current/remote 分流不同执行器。
+- 更新中英文 i18n 文案、刷新链路与相关 runtime contract 类型。
+- 新增 OpenSpec change：allow-branch-update-without-checkout，补齐 proposal、design、delta specs、tasks。
+- 为 large-file governance 将部分 locale menu 文案分段迁移到 part2，保持行为不变。
+
+涉及模块:
+- src-tauri/src/git/commands_branch.rs
+- src-tauri/src/bin/cc_gui_daemon.rs
+- src-tauri/src/bin/cc_gui_daemon/git.rs
+- src-tauri/src/command_registry.rs
+- src-tauri/src/git/mod.rs
+- src-tauri/src/types.rs
+- src/services/tauri.ts
+- src/services/tauri.test.ts
+- src/types.ts
+- src/features/git-history/components/git-history-panel/hooks/useGitHistoryPanelInteractions.tsx
+- src/features/git-history/components/git-history-panel/components/GitHistoryPanelImpl.tsx
+- src/features/git-history/components/GitHistoryPanel.test.tsx
+- src/i18n/locales/en.part1.ts
+- src/i18n/locales/en.part2.ts
+- src/i18n/locales/zh.part1.ts
+- src/i18n/locales/zh.part2.ts
+- openspec/changes/allow-branch-update-without-checkout/**
+
+验证结果:
+- npm run lint 通过
+- npm run typecheck 通过
+- npm run test 通过
+- npm run check:runtime-contracts 通过
+- npm run check:heavy-test-noise 通过
+- npm run check:large-files:near-threshold 通过
+- npm run check:large-files:gate 通过
+- cargo test --manifest-path src-tauri/Cargo.toml 通过
+
+后续事项:
+- 补齐 stale_ref blocked 的稳定行为级 Rust 测试 fixture，尽量只加测试 seam，不污染生产逻辑。
+- 在桌面端真实仓库场景执行手工验收并补回滚预案核对记录。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f5c183a5d8afe3197dcd6b055f87f101d224d265` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
