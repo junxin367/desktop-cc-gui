@@ -30,8 +30,13 @@ import { getClientStoreSync } from "../../../services/clientStorage";
 import { normalizeOpenAppTargets } from "../../app/utils/openApp";
 import { getDefaultInterruptShortcut } from "../../../utils/shortcuts";
 import { normalizeHexColor } from "../../../utils/colorUtils";
+import {
+  sanitizeDarkThemePresetId,
+  sanitizeLightThemePresetId,
+  sanitizeThemePresetId,
+} from "../../theme/utils/themePreset";
 
-const allowedThemes = new Set(["system", "light", "dark", "dim"]);
+const allowedThemes = new Set(["system", "light", "dark", "dim", "custom"]);
 const allowedCanvasWidthModes = new Set(["narrow", "wide"]);
 const allowedLayoutModes = new Set(["default", "swapped"]);
 const allowedComposerSendShortcuts = new Set(["enter", "cmdEnter"]);
@@ -151,6 +156,9 @@ const defaultSettings: AppSettings = {
   lastComposerReasoningEffort: null,
   uiScale: UI_SCALE_DEFAULT,
   theme: "system",
+  lightThemePresetId: "vscode-light-modern",
+  darkThemePresetId: "vscode-dark-modern",
+  customThemePresetId: "vscode-dark-modern",
   canvasWidthMode: "narrow",
   layoutMode: "default",
   userMsgColor: "",
@@ -260,6 +268,9 @@ function normalizeAppSettings(
       ? sanitizeUiScale(settings.uiScale)
       : clampUiScale(settings.uiScale),
     theme: allowedThemes.has(settings.theme) ? settings.theme : "system",
+    lightThemePresetId: sanitizeLightThemePresetId(settings.lightThemePresetId),
+    darkThemePresetId: sanitizeDarkThemePresetId(settings.darkThemePresetId),
+    customThemePresetId: sanitizeThemePresetId(settings.customThemePresetId),
     canvasWidthMode: allowedCanvasWidthModes.has(settings.canvasWidthMode)
       ? settings.canvasWidthMode
       : "narrow",

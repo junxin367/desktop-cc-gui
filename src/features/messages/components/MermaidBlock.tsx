@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  isThemeMutationAttribute,
+  mapAppearanceToMermaidTheme,
+  readDocumentThemeAppearance,
+} from "../../theme/utils/themeAppearance";
 
 type MermaidBlockProps = {
   value: string;
@@ -13,13 +18,7 @@ type RenderState =
   | { status: "error"; message: string };
 
 function detectMermaidTheme(): "dark" | "default" {
-  const dataTheme = document.documentElement.dataset.theme;
-  if (dataTheme === "light") return "default";
-  if (dataTheme === "dark" || dataTheme === "dim") return "dark";
-  if (window.matchMedia("(prefers-color-scheme: light)").matches) {
-    return "default";
-  }
-  return "dark";
+  return mapAppearanceToMermaidTheme(readDocumentThemeAppearance());
 }
 
 export default function MermaidBlock({
@@ -85,7 +84,7 @@ export default function MermaidBlock({
   useEffect(() => {
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        if (mutation.attributeName === "data-theme") {
+        if (isThemeMutationAttribute(mutation.attributeName)) {
           setRenderKey((prev) => prev + 1);
         }
       }

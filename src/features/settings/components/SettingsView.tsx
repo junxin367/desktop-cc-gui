@@ -53,6 +53,7 @@ import type {
   AppSettings,
   CodexDoctorResult,
   DictationModelStatus,
+  ThemePresetId,
   WorkspaceSettings,
   OpenAppTarget,
   WorkspaceGroup,
@@ -118,6 +119,12 @@ import {
   type ComposerPreset,
   type OpenAppDraft,
 } from "./settings-view/actions/settingsViewActions";
+import {
+  buildSettingsWithCustomThemePreset,
+  getAllThemePresetOptions,
+  resolveActiveThemePresetId,
+  resolveEffectiveThemeAppearance,
+} from "../../theme/utils/themePreset";
 import { useSystemResolvedTheme } from "./settings-view/hooks/useSystemResolvedTheme";
 import { ProjectsSection } from "./settings-view/sections/ProjectsSection";
 import { ComposerSection } from "./settings-view/sections/ComposerSection";
@@ -378,15 +385,60 @@ export function SettingsView({
     () => normalizeHexColor(appSettings.userMsgColor),
     [appSettings.userMsgColor],
   );
-  const resolvedAppearanceTheme = useMemo<"light" | "dark">(() => {
-    if (appSettings.theme === "light") {
-      return "light";
-    }
-    if (appSettings.theme === "system") {
-      return systemResolvedTheme;
-    }
-    return "dark";
-  }, [appSettings.theme, systemResolvedTheme]);
+  const resolvedAppearanceTheme = useMemo<"light" | "dark">(
+    () =>
+      resolveEffectiveThemeAppearance(
+        {
+          theme: appSettings.theme,
+          lightThemePresetId: appSettings.lightThemePresetId,
+          darkThemePresetId: appSettings.darkThemePresetId,
+          customThemePresetId: appSettings.customThemePresetId,
+        },
+        systemResolvedTheme,
+      ),
+    [
+      appSettings.customThemePresetId,
+      appSettings.darkThemePresetId,
+      appSettings.lightThemePresetId,
+      appSettings.theme,
+      systemResolvedTheme,
+    ],
+  );
+  const activeThemePresetId = useMemo(
+    () =>
+      resolveActiveThemePresetId(
+        {
+          theme: appSettings.theme,
+          darkThemePresetId: appSettings.darkThemePresetId,
+          lightThemePresetId: appSettings.lightThemePresetId,
+          customThemePresetId: appSettings.customThemePresetId,
+        },
+        systemResolvedTheme,
+      ),
+    [
+      appSettings.customThemePresetId,
+      appSettings.darkThemePresetId,
+      appSettings.lightThemePresetId,
+      appSettings.theme,
+      systemResolvedTheme,
+    ],
+  );
+  const themePresetOptions = useMemo(
+    () =>
+      getAllThemePresetOptions().map((preset) => ({
+        id: preset.id,
+        label: t(preset.labelKey),
+      })),
+    [t],
+  );
+  const handleThemePresetChange = useCallback(
+    async (presetId: ThemePresetId) => {
+      await onUpdateAppSettings(
+        buildSettingsWithCustomThemePreset(appSettings, presetId),
+      );
+    },
+    [appSettings, onUpdateAppSettings],
+  );
   const userMsgPresets = useMemo(
     () =>
       resolvedAppearanceTheme === "light"
@@ -2089,6 +2141,9 @@ export function SettingsView({
                   <BasicAppearanceSection
                     appSettings={appSettings}
                     onUpdateAppSettings={onUpdateAppSettings}
+                    activeThemePresetId={activeThemePresetId}
+                    themePresetOptions={themePresetOptions}
+                    onThemePresetChange={handleThemePresetChange}
                     uiScaleDraft={uiScaleDraft}
                     clampedUiScale={clampedUiScale}
                     uiScaleDraftPercentLabel={uiScaleDraftPercentLabel}

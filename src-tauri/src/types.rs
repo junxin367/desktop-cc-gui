@@ -829,6 +829,21 @@ pub(crate) struct AppSettings {
     pub(crate) ui_scale: f64,
     #[serde(default = "default_theme", rename = "theme")]
     pub(crate) theme: String,
+    #[serde(
+        default = "default_light_theme_preset_id",
+        rename = "lightThemePresetId"
+    )]
+    pub(crate) light_theme_preset_id: String,
+    #[serde(
+        default = "default_dark_theme_preset_id",
+        rename = "darkThemePresetId"
+    )]
+    pub(crate) dark_theme_preset_id: String,
+    #[serde(
+        default = "default_custom_theme_preset_id",
+        rename = "customThemePresetId"
+    )]
+    pub(crate) custom_theme_preset_id: String,
     #[serde(default = "default_user_msg_color", rename = "userMsgColor")]
     pub(crate) user_msg_color: String,
     #[serde(
@@ -1064,6 +1079,18 @@ fn default_ui_scale() -> f64 {
 
 fn default_theme() -> String {
     "system".to_string()
+}
+
+fn default_light_theme_preset_id() -> String {
+    "vscode-light-modern".to_string()
+}
+
+fn default_dark_theme_preset_id() -> String {
+    "vscode-dark-modern".to_string()
+}
+
+fn default_custom_theme_preset_id() -> String {
+    "vscode-dark-modern".to_string()
 }
 
 fn default_user_msg_color() -> String {
@@ -1447,6 +1474,9 @@ impl Default for AppSettings {
             last_composer_reasoning_effort: None,
             ui_scale: 1.0,
             theme: default_theme(),
+            light_theme_preset_id: default_light_theme_preset_id(),
+            dark_theme_preset_id: default_dark_theme_preset_id(),
+            custom_theme_preset_id: default_custom_theme_preset_id(),
             user_msg_color: default_user_msg_color(),
             usage_show_remaining: default_usage_show_remaining(),
             show_message_anchors: default_show_message_anchors(),
@@ -1639,6 +1669,9 @@ mod tests {
         assert!(settings.last_composer_reasoning_effort.is_none());
         assert!((settings.ui_scale - 1.0).abs() < f64::EPSILON);
         assert_eq!(settings.theme, "system");
+        assert_eq!(settings.light_theme_preset_id, "vscode-light-modern");
+        assert_eq!(settings.dark_theme_preset_id, "vscode-dark-modern");
+        assert_eq!(settings.custom_theme_preset_id, "vscode-dark-modern");
         assert!(settings.user_msg_color.is_empty());
         assert!(!settings.usage_show_remaining);
         assert!(settings.show_message_anchors);

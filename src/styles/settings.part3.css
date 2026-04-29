@@ -185,6 +185,18 @@
     flex-wrap: wrap;
   }
 
+  .settings-section-basic .settings-basic-theme-preset-control {
+    justify-content: flex-start;
+  }
+
+  .settings-section-basic .settings-basic-theme-preset-select-wrap {
+    width: 100%;
+  }
+
+  .settings-section-basic .settings-basic-theme-preset-select {
+    width: 100%;
+  }
+
   .settings-section-basic .settings-basic-language-selector {
     justify-content: flex-start;
     flex-wrap: wrap;

@@ -15,6 +15,22 @@ const CANVAS_WIDTH_MODE_NARROW: &str = "narrow";
 const CANVAS_WIDTH_MODE_WIDE: &str = "wide";
 const LAYOUT_MODE_DEFAULT: &str = "default";
 const LAYOUT_MODE_SWAPPED: &str = "swapped";
+const THEME_SYSTEM: &str = "system";
+const THEME_LIGHT: &str = "light";
+const THEME_DARK: &str = "dark";
+const THEME_DIM: &str = "dim";
+const THEME_CUSTOM: &str = "custom";
+const LIGHT_THEME_PRESET_MODERN: &str = "vscode-light-modern";
+const LIGHT_THEME_PRESET_PLUS: &str = "vscode-light-plus";
+const LIGHT_THEME_PRESET_GITHUB: &str = "vscode-github-light";
+const LIGHT_THEME_PRESET_SOLARIZED: &str = "vscode-solarized-light";
+const DARK_THEME_PRESET_MODERN: &str = "vscode-dark-modern";
+const DARK_THEME_PRESET_PLUS: &str = "vscode-dark-plus";
+const DARK_THEME_PRESET_GITHUB: &str = "vscode-github-dark";
+const DARK_THEME_PRESET_GITHUB_DIMMED: &str = "vscode-github-dark-dimmed";
+const DARK_THEME_PRESET_ONE_DARK_PRO: &str = "vscode-one-dark-pro";
+const DARK_THEME_PRESET_MONOKAI: &str = "vscode-monokai";
+const DARK_THEME_PRESET_SOLARIZED: &str = "vscode-solarized-dark";
 
 fn sanitize_ui_scale(scale: f64) -> f64 {
     if !scale.is_finite() || scale < UI_SCALE_MIN || scale > UI_SCALE_MAX {
@@ -35,6 +51,79 @@ fn sanitize_layout_mode(mode: &str) -> String {
         LAYOUT_MODE_DEFAULT | LAYOUT_MODE_SWAPPED => mode.to_string(),
         _ => LAYOUT_MODE_DEFAULT.to_string(),
     }
+}
+
+fn sanitize_theme(theme: &str) -> String {
+    match theme {
+        THEME_SYSTEM | THEME_LIGHT | THEME_DARK | THEME_DIM | THEME_CUSTOM => theme.to_string(),
+        _ => THEME_SYSTEM.to_string(),
+    }
+}
+
+fn sanitize_light_theme_preset_id(preset_id: &str) -> String {
+    match preset_id {
+        LIGHT_THEME_PRESET_MODERN
+        | LIGHT_THEME_PRESET_PLUS
+        | LIGHT_THEME_PRESET_GITHUB
+        | LIGHT_THEME_PRESET_SOLARIZED => preset_id.to_string(),
+        _ => LIGHT_THEME_PRESET_MODERN.to_string(),
+    }
+}
+
+fn sanitize_dark_theme_preset_id(preset_id: &str) -> String {
+    match preset_id {
+        DARK_THEME_PRESET_MODERN
+        | DARK_THEME_PRESET_PLUS
+        | DARK_THEME_PRESET_GITHUB
+        | DARK_THEME_PRESET_GITHUB_DIMMED
+        | DARK_THEME_PRESET_ONE_DARK_PRO
+        | DARK_THEME_PRESET_MONOKAI
+        | DARK_THEME_PRESET_SOLARIZED => preset_id.to_string(),
+        _ => DARK_THEME_PRESET_MODERN.to_string(),
+    }
+}
+
+fn sanitize_theme_preset_id(preset_id: &str) -> String {
+    match preset_id {
+        LIGHT_THEME_PRESET_MODERN
+        | LIGHT_THEME_PRESET_PLUS
+        | LIGHT_THEME_PRESET_GITHUB
+        | LIGHT_THEME_PRESET_SOLARIZED
+        | DARK_THEME_PRESET_MODERN
+        | DARK_THEME_PRESET_PLUS
+        | DARK_THEME_PRESET_GITHUB
+        | DARK_THEME_PRESET_GITHUB_DIMMED
+        | DARK_THEME_PRESET_ONE_DARK_PRO
+        | DARK_THEME_PRESET_MONOKAI
+        | DARK_THEME_PRESET_SOLARIZED => preset_id.to_string(),
+        _ => DARK_THEME_PRESET_MODERN.to_string(),
+    }
+}
+
+fn resolve_theme_preset_appearance(preset_id: &str) -> &'static str {
+    match preset_id {
+        LIGHT_THEME_PRESET_MODERN
+        | LIGHT_THEME_PRESET_PLUS
+        | LIGHT_THEME_PRESET_GITHUB
+        | LIGHT_THEME_PRESET_SOLARIZED => THEME_LIGHT,
+        _ => THEME_DARK,
+    }
+}
+
+fn sanitize_theme_settings(settings: &mut AppSettings) {
+    settings.theme = sanitize_theme(&settings.theme);
+    settings.canvas_width_mode = sanitize_canvas_width_mode(&settings.canvas_width_mode);
+    settings.layout_mode = sanitize_layout_mode(&settings.layout_mode);
+    settings.light_theme_preset_id = sanitize_light_theme_preset_id(&settings.light_theme_preset_id);
+    settings.dark_theme_preset_id = sanitize_dark_theme_preset_id(&settings.dark_theme_preset_id);
+    settings.custom_theme_preset_id = sanitize_theme_preset_id(&settings.custom_theme_preset_id);
+}
+
+pub(crate) fn resolve_window_theme_preference(settings: &AppSettings) -> String {
+    if settings.theme == THEME_CUSTOM {
+        return resolve_theme_preset_appearance(&settings.custom_theme_preset_id).to_string();
+    }
+    settings.theme.clone()
 }
 
 fn validate_ui_scale(scale: f64) -> Result<(), String> {
@@ -59,8 +148,7 @@ pub(crate) async fn get_app_settings_core(app_settings: &Mutex<AppSettings>) -> 
     settings.sanitize_runtime_pool_settings();
     settings.experimental_collab_enabled = false;
     settings.ui_scale = sanitize_ui_scale(settings.ui_scale);
-    settings.canvas_width_mode = sanitize_canvas_width_mode(&settings.canvas_width_mode);
-    settings.layout_mode = sanitize_layout_mode(&settings.layout_mode);
+    sanitize_theme_settings(&mut settings);
     settings
 }
 
@@ -73,8 +161,7 @@ pub(crate) async fn update_app_settings_core(
     normalized.normalize_unified_exec_policy();
     normalized.experimental_collab_enabled = false;
     normalized.sanitize_runtime_pool_settings();
-    normalized.canvas_width_mode = sanitize_canvas_width_mode(&normalized.canvas_width_mode);
-    normalized.layout_mode = sanitize_layout_mode(&normalized.layout_mode);
+    sanitize_theme_settings(&mut normalized);
     validate_ui_scale(normalized.ui_scale)?;
     proxy_core::validate_proxy_settings(&normalized)?;
     write_settings(settings_path, &normalized)?;
@@ -92,6 +179,8 @@ pub(crate) async fn restore_app_settings_core(
     let mut normalized = previous.clone();
     normalized.normalize_unified_exec_policy();
     normalized.experimental_collab_enabled = false;
+    normalized.ui_scale = sanitize_ui_scale(normalized.ui_scale);
+    sanitize_theme_settings(&mut normalized);
     write_settings(settings_path, &normalized)?;
     proxy_core::apply_app_proxy_settings(&normalized)?;
     let mut current = app_settings.lock().await;
@@ -188,9 +277,15 @@ mod tests {
     use super::{
         app_settings_change_requires_codex_restart, get_app_settings_core,
         get_codex_unified_exec_external_status_core,
+        resolve_window_theme_preference,
         restore_codex_unified_exec_official_default_core, sanitize_canvas_width_mode,
-        sanitize_layout_mode, sanitize_ui_scale, set_codex_unified_exec_official_override_core,
-        update_app_settings_core, validate_ui_scale, UI_SCALE_DEFAULT,
+        sanitize_dark_theme_preset_id, sanitize_layout_mode, sanitize_light_theme_preset_id,
+        sanitize_theme, sanitize_theme_preset_id, sanitize_ui_scale,
+        set_codex_unified_exec_official_override_core, update_app_settings_core, validate_ui_scale,
+        DARK_THEME_PRESET_GITHUB, DARK_THEME_PRESET_GITHUB_DIMMED, DARK_THEME_PRESET_MODERN,
+        DARK_THEME_PRESET_MONOKAI, DARK_THEME_PRESET_ONE_DARK_PRO, DARK_THEME_PRESET_PLUS,
+        DARK_THEME_PRESET_SOLARIZED, LIGHT_THEME_PRESET_GITHUB, LIGHT_THEME_PRESET_MODERN,
+        LIGHT_THEME_PRESET_PLUS, LIGHT_THEME_PRESET_SOLARIZED, UI_SCALE_DEFAULT,
     };
     use crate::types::{AppSettings, CodexUnifiedExecPolicy};
     use tokio::sync::Mutex;
@@ -261,6 +356,85 @@ mod tests {
     fn sanitize_layout_mode_keeps_supported_values() {
         assert_eq!(sanitize_layout_mode("default"), "default");
         assert_eq!(sanitize_layout_mode("swapped"), "swapped");
+    }
+
+    #[test]
+    fn sanitize_theme_falls_back_for_invalid_values() {
+        assert_eq!(sanitize_theme("invalid"), "system");
+    }
+
+    #[test]
+    fn sanitize_theme_keeps_supported_values() {
+        assert_eq!(sanitize_theme("custom"), "custom");
+        assert_eq!(sanitize_theme("dark"), "dark");
+    }
+
+    #[test]
+    fn sanitize_theme_preset_ids_fall_back_for_invalid_values() {
+        assert_eq!(
+            sanitize_light_theme_preset_id("vscode-dark-modern"),
+            LIGHT_THEME_PRESET_MODERN
+        );
+        assert_eq!(
+            sanitize_dark_theme_preset_id("vscode-light-modern"),
+            DARK_THEME_PRESET_MODERN
+        );
+        assert_eq!(sanitize_theme_preset_id("invalid"), DARK_THEME_PRESET_MODERN);
+    }
+
+    #[test]
+    fn sanitize_theme_preset_ids_keep_supported_values() {
+        assert_eq!(
+            sanitize_light_theme_preset_id(LIGHT_THEME_PRESET_PLUS),
+            LIGHT_THEME_PRESET_PLUS
+        );
+        assert_eq!(
+            sanitize_light_theme_preset_id(LIGHT_THEME_PRESET_GITHUB),
+            LIGHT_THEME_PRESET_GITHUB
+        );
+        assert_eq!(
+            sanitize_light_theme_preset_id(LIGHT_THEME_PRESET_SOLARIZED),
+            LIGHT_THEME_PRESET_SOLARIZED
+        );
+        assert_eq!(
+            sanitize_dark_theme_preset_id(DARK_THEME_PRESET_PLUS),
+            DARK_THEME_PRESET_PLUS
+        );
+        assert_eq!(
+            sanitize_dark_theme_preset_id(DARK_THEME_PRESET_GITHUB),
+            DARK_THEME_PRESET_GITHUB
+        );
+        assert_eq!(
+            sanitize_dark_theme_preset_id(DARK_THEME_PRESET_GITHUB_DIMMED),
+            DARK_THEME_PRESET_GITHUB_DIMMED
+        );
+        assert_eq!(
+            sanitize_dark_theme_preset_id(DARK_THEME_PRESET_ONE_DARK_PRO),
+            DARK_THEME_PRESET_ONE_DARK_PRO
+        );
+        assert_eq!(
+            sanitize_dark_theme_preset_id(DARK_THEME_PRESET_MONOKAI),
+            DARK_THEME_PRESET_MONOKAI
+        );
+        assert_eq!(
+            sanitize_dark_theme_preset_id(DARK_THEME_PRESET_SOLARIZED),
+            DARK_THEME_PRESET_SOLARIZED
+        );
+        assert_eq!(
+            sanitize_theme_preset_id(LIGHT_THEME_PRESET_GITHUB),
+            LIGHT_THEME_PRESET_GITHUB
+        );
+    }
+
+    #[test]
+    fn resolve_window_theme_preference_maps_custom_to_preset_appearance() {
+        let mut settings = AppSettings::default();
+        settings.theme = "custom".to_string();
+        settings.custom_theme_preset_id = LIGHT_THEME_PRESET_GITHUB.to_string();
+        assert_eq!(resolve_window_theme_preference(&settings), "light");
+
+        settings.custom_theme_preset_id = DARK_THEME_PRESET_ONE_DARK_PRO.to_string();
+        assert_eq!(resolve_window_theme_preference(&settings), "dark");
     }
 
     #[test]

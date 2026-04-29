@@ -150,6 +150,9 @@ const baseSettings: AppSettings = {
   lastComposerReasoningEffort: null,
   uiScale: 1,
   theme: "system",
+  lightThemePresetId: "vscode-light-modern",
+  darkThemePresetId: "vscode-dark-modern",
+  customThemePresetId: "vscode-dark-modern",
   canvasWidthMode: "narrow",
   layoutMode: "default",
   userMsgColor: "",
@@ -807,6 +810,88 @@ describe("SettingsView Display", () => {
         expect.objectContaining({ theme: "dark" }),
       );
     });
+  });
+
+  it("updates the active theme preset for dark appearance", async () => {
+    const onUpdateAppSettings = vi.fn().mockResolvedValue(undefined);
+    renderDisplaySection({
+      onUpdateAppSettings,
+      appSettings: {
+        theme: "custom",
+        customThemePresetId: "vscode-dark-modern",
+      },
+    });
+
+    fireEvent.change(screen.getByLabelText("Theme Palette"), {
+      target: { value: "vscode-dark-plus" },
+    });
+
+    await waitFor(() => {
+      expect(onUpdateAppSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customThemePresetId: "vscode-dark-plus",
+          lightThemePresetId: "vscode-light-modern",
+          darkThemePresetId: "vscode-dark-modern",
+        }),
+      );
+    });
+  });
+
+  it("updates the active theme preset for light appearance", async () => {
+    const onUpdateAppSettings = vi.fn().mockResolvedValue(undefined);
+    renderDisplaySection({
+      onUpdateAppSettings,
+      appSettings: {
+        theme: "custom",
+        customThemePresetId: "vscode-light-modern",
+      },
+    });
+
+    fireEvent.change(screen.getByLabelText("Theme Palette"), {
+      target: { value: "vscode-light-plus" },
+    });
+
+    await waitFor(() => {
+      expect(onUpdateAppSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customThemePresetId: "vscode-light-plus",
+          lightThemePresetId: "vscode-light-modern",
+          darkThemePresetId: "vscode-dark-modern",
+        }),
+      );
+    });
+  });
+
+  it("shows the theme palette only for custom theme and lists all presets", async () => {
+    renderDisplaySection({
+      appSettings: { theme: "light" },
+    });
+
+    expect(screen.queryByLabelText("Theme Palette")).toBeNull();
+
+    renderDisplaySection({
+      appSettings: {
+        theme: "custom",
+        customThemePresetId: "vscode-light-modern",
+      },
+    });
+
+    const select = screen.getByLabelText("Theme Palette");
+    const options = within(select).getAllByRole("option");
+
+    expect(options.map((option) => option.getAttribute("value"))).toEqual([
+      "vscode-light-modern",
+      "vscode-light-plus",
+      "vscode-github-light",
+      "vscode-solarized-light",
+      "vscode-dark-modern",
+      "vscode-dark-plus",
+      "vscode-github-dark",
+      "vscode-github-dark-dimmed",
+      "vscode-one-dark-pro",
+      "vscode-monokai",
+      "vscode-solarized-dark",
+    ]);
   });
 
   it("updates the canvas width mode selection", async () => {

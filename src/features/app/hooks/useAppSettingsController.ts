@@ -14,7 +14,7 @@ export function useAppSettingsController() {
     isLoading: appSettingsLoading,
   } = useAppSettings();
 
-  useThemePreference(appSettings.theme);
+  useThemePreference(appSettings);
   useUserMessageBubbleColor(appSettings.userMsgColor);
   const { reduceTransparency, setReduceTransparency } =
     useTransparencyPreference();

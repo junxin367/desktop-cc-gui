@@ -3,8 +3,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+function normalizeLineEndings(content: string): string {
+  return content.replace(/\r\n/g, "\n");
+}
+
 function readCssWithImports(filePath: string): string {
-  const css = readFileSync(filePath, "utf8");
+  const css = normalizeLineEndings(readFileSync(filePath, "utf8"));
   const importPattern = /^@import\s+"(.+?)";$/gm;
 
   return css.replace(importPattern, (_, relativeImportPath: string) =>
@@ -12,24 +16,23 @@ function readCssWithImports(filePath: string): string {
   );
 }
 
-const baseCss = readFileSync(
-  fileURLToPath(new URL("./base.css", import.meta.url)),
-  "utf8",
+const baseCss = normalizeLineEndings(
+  readFileSync(fileURLToPath(new URL("./base.css", import.meta.url)), "utf8"),
 );
-const mainCss = readFileSync(
-  fileURLToPath(new URL("./main.css", import.meta.url)),
-  "utf8",
+const mainCss = normalizeLineEndings(
+  readFileSync(fileURLToPath(new URL("./main.css", import.meta.url)), "utf8"),
 );
-const sidebarCss = readFileSync(
-  fileURLToPath(new URL("./sidebar.css", import.meta.url)),
-  "utf8",
+const sidebarCss = normalizeLineEndings(
+  readFileSync(fileURLToPath(new URL("./sidebar.css", import.meta.url)), "utf8"),
 );
 const messagesCss = readCssWithImports(
   fileURLToPath(new URL("./messages.css", import.meta.url)),
 );
-const diffViewerCss = readFileSync(
-  fileURLToPath(new URL("./diff-viewer.css", import.meta.url)),
-  "utf8",
+const diffViewerCss = normalizeLineEndings(
+  readFileSync(
+    fileURLToPath(new URL("./diff-viewer.css", import.meta.url)),
+    "utf8",
+  ),
 );
 
 function getCssRuleBlock(css: string, selector: string): string {

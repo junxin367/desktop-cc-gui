@@ -12,6 +12,11 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { highlightLine } from "../../../utils/syntax";
+import {
+  isThemeMutationAttribute,
+  mapAppearanceToMermaidTheme,
+  readDocumentThemeAppearance,
+} from "../../theme/utils/themeAppearance";
 
 type FileMarkdownPreviewProps = {
   value: string;
@@ -60,16 +65,7 @@ function extractCodeFromPre(node?: PreviewPreNode) {
 }
 
 function detectMermaidTheme(): "dark" | "default" {
-  const dataTheme = document.documentElement.dataset.theme;
-  if (dataTheme === "light") return "default";
-  if (dataTheme === "dark" || dataTheme === "dim") return "dark";
-  if (
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-color-scheme: light)").matches
-  ) {
-    return "default";
-  }
-  return "dark";
+  return mapAppearanceToMermaidTheme(readDocumentThemeAppearance());
 }
 
 function normalizeFrontmatterValue(raw: string): string {
@@ -211,7 +207,7 @@ function FileMarkdownMermaidBlock({
   useEffect(() => {
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        if (mutation.attributeName === "data-theme") {
+        if (isThemeMutationAttribute(mutation.attributeName)) {
           setRenderKey((prev) => prev + 1);
         }
       }

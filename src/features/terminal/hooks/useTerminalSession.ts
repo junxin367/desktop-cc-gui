@@ -11,6 +11,7 @@ import {
   resizeTerminalSession,
   writeTerminalSession,
 } from "../../../services/tauri";
+import { isThemeMutationAttribute } from "../../theme/utils/themeAppearance";
 
 const MAX_BUFFER_CHARS = 200_000;
 /** Maximum number of terminal session buffers to keep in memory.
@@ -161,6 +162,16 @@ export function useTerminalSession({
     terminal.refresh(0, lastRow);
     terminal.focus();
   }, []);
+  const applyTerminalAppearance = useCallback(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+    const appearance = getTerminalAppearance(containerRef.current);
+    terminal.options.fontFamily = appearance.fontFamily;
+    terminal.options.theme = appearance.theme;
+    refreshTerminal();
+  }, [refreshTerminal]);
 
   const syncActiveBuffer = useCallback(
     (key: string) => {
@@ -243,6 +254,7 @@ export function useTerminalSession({
       fitAddon.fit();
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
+      applyTerminalAppearance();
 
       inputDisposableRef.current = terminal.onData((data: string) => {
         const workspace = activeWorkspaceRef.current;
@@ -263,7 +275,7 @@ export function useTerminalSession({
         });
       });
     }
-  }, [isVisible, onDebug]);
+  }, [applyTerminalAppearance, isVisible, onDebug]);
 
   useEffect(() => {
     return () => {
@@ -344,6 +356,26 @@ export function useTerminalSession({
     fitAddonRef.current.fit();
     refreshTerminal();
   }, [activeKey, isVisible, refreshTerminal]);
+
+  useEffect(() => {
+    if (
+      !isVisible ||
+      typeof document === "undefined" ||
+      typeof MutationObserver === "undefined"
+    ) {
+      return;
+    }
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (isThemeMutationAttribute(mutation.attributeName)) {
+          applyTerminalAppearance();
+          return;
+        }
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true });
+    return () => observer.disconnect();
+  }, [applyTerminalAppearance, isVisible]);
 
   useEffect(() => {
     if (

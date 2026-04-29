@@ -164,7 +164,22 @@ export type ReviewTarget = { type: "uncommittedChanges" } | { type: "baseBranch"
 
 export type AccessMode = "default" | "read-only" | "current" | "full-access";
 export type BackendMode = "local" | "remote";
-export type ThemePreference = "system" | "light" | "dark";
+export type ThemeAppearance = "light" | "dark";
+export type ThemePreference = "system" | "light" | "dark" | "dim" | "custom";
+export type LightThemePresetId =
+  | "vscode-light-modern"
+  | "vscode-light-plus"
+  | "vscode-github-light"
+  | "vscode-solarized-light";
+export type DarkThemePresetId =
+  | "vscode-dark-modern"
+  | "vscode-dark-plus"
+  | "vscode-github-dark"
+  | "vscode-github-dark-dimmed"
+  | "vscode-one-dark-pro"
+  | "vscode-monokai"
+  | "vscode-solarized-dark";
+export type ThemePresetId = LightThemePresetId | DarkThemePresetId;
 export type AppMode = "chat" | "kanban" | "gitHistory";
 
 export type ComposerEditorPreset = "default" | "helpful" | "smart";
@@ -516,6 +531,9 @@ export type AppSettings = {
   lastComposerReasoningEffort: string | null;
   uiScale: number;
   theme: ThemePreference;
+  lightThemePresetId?: LightThemePresetId;
+  darkThemePresetId?: DarkThemePresetId;
+  customThemePresetId?: ThemePresetId;
   canvasWidthMode: CanvasWidthMode;
   layoutMode?: LayoutMode;
   userMsgColor: string;

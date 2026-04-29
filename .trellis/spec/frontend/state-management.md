@@ -141,6 +141,77 @@ const deferredComposerRateLimits = useDeferredValue(activeRateLimits);
 />
 ```
 
+## Scenario: Theme Mode / Custom Preset Persistent Contract
+
+### 1. Scope / Trigger
+
+- Trigger：修改 `AppSettings.theme`、新增 theme preset 持久化字段、调整外观设置 UI、或让 runtime / Rust settings 消费新的主题模式。
+- 目标：让“主题模式”和“主题配色 preset”各自有单一职责，同时不破坏现有依赖 `light / dark` appearance 的运行时链路。
+
+### 2. Signatures
+
+- frontend settings：
+  - `AppSettings.theme: "system" | "light" | "dark" | "custom"`
+  - `AppSettings.customThemePresetId?: ThemePresetId | null`
+- Rust settings：
+  - `theme`
+  - `custom_theme_preset_id`
+- runtime DOM attributes：
+  - `data-theme`
+  - `data-theme-preset`
+  - `data-theme-preset-appearance`
+
+### 3. Contracts
+
+- `theme` 决定用户当前处于哪种主题模式；`customThemePresetId` 只在 `theme === "custom"` 时生效。
+- `custom` 是 settings mode，不是 runtime appearance；下游依赖 light/dark 的渲染链路 MUST 继续消费 preset 推导出的 `light | dark` appearance，而不是字面量 `custom`。
+- 设置页中的 preset selector MUST 只在 `theme === "custom"` 时显示；不允许用户在 `light/dark/system` 模式下维护一份隐式“二级颜色状态”。
+- persisted `customThemePresetId` 缺失、损坏或不受支持时，frontend 与 Rust sanitize MUST 回退到有效 preset，且不得阻塞启动或设置保存。
+- Tauri window appearance 与 DOM `data-theme` 必须对同一个 preset 推导出一致的 `light | dark` appearance。
+
+### 4. Validation & Error Matrix
+
+| 场景 | 必须行为 | 禁止行为 |
+|---|---|---|
+| `theme=custom` + valid preset | UI 使用 preset token；runtime 继续暴露 `light/dark` appearance | 把 `custom` 直接写进仅接受 `light/dark` 的下游链路 |
+| `theme=custom` + invalid preset | 回退到默认有效 preset | 因坏值导致设置页空白、启动失败或窗口 appearance 异常 |
+| `theme=light/dark/system` | preset selector 隐藏，既有行为不变 | 继续暴露一个与主题模式耦合的二级颜色开关 |
+| 切换 preset | 持久化 preset identity，并即时更新 UI | 只更新 UI，不写回设置源 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：`theme` 只表达 `system / light / dark / custom`，而 preset identity 单独放在 `customThemePresetId`，runtime 再把 preset 解析成 appearance。
+- Base：设置页展示 `自定义` 主题按钮，进入后显示统一 select，下拉列出全部 preset。
+- Bad：让用户先选 `light` 再选某个“颜色主题”，导致 theme mode 与 preset 语义混杂。
+- Bad：把 `custom` 直接写到 `data-theme`，再要求 Mermaid/terminal/preview 自己理解新枚举。
+
+### 6. Tests Required
+
+- settings hooks：覆盖 `theme=custom` 与 `customThemePresetId` 的持久化、fallback 和 sanitize。
+- settings UI：覆盖 `custom` 模式显示 preset selector、切换 preset 即时生效、非 `custom` 模式隐藏 selector。
+- theme helpers：覆盖 preset lookup、appearance 推导、invalid preset fallback。
+- cross-layer：覆盖 runtime contract checks 与 `settings_core` Rust tests，确保 frontend/Rust 字段和 fallback 一致。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+document.documentElement.dataset.theme = appSettings.theme;
+```
+
+#### Correct
+
+```ts
+const resolvedAppearance =
+  appSettings.theme === "custom"
+    ? getThemePresetAppearance(activeThemePresetId)
+    : resolveBaseThemeAppearance(appSettings.theme);
+
+document.documentElement.dataset.theme = resolvedAppearance;
+document.documentElement.dataset.themePreset = activeThemePresetId;
+```
+
 ## State 分类
 
 - UI state：面板开关、选中项、临时输入

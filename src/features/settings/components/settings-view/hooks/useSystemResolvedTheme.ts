@@ -1,17 +1,9 @@
 import { useEffect, useState } from "react";
-
-const getSystemResolvedTheme = (): "light" | "dark" => {
-  if (typeof window === "undefined" || !window.matchMedia) {
-    return "dark";
-  }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
-};
+import { getSystemResolvedThemeAppearance } from "../../../../theme/utils/themeAppearance";
 
 export const useSystemResolvedTheme = (): "light" | "dark" => {
   const [systemResolvedTheme, setSystemResolvedTheme] = useState<"light" | "dark">(
-    getSystemResolvedTheme,
+    getSystemResolvedThemeAppearance,
   );
 
   useEffect(() => {
