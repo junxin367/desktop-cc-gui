@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-7.md`
-- **Total Sessions**: 230
-- **Last Active**: 2026-04-29
+- **Total Sessions**: 236
+- **Last Active**: 2026-04-30
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-7.md` | ~1518 | Active |
+| `journal-7.md` | ~1887 | Active |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
 | `journal-4.md` | ~1975 | Archived |
@@ -35,6 +35,12 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 236 | 2026-04-30 | 同步分支更新提案任务完成状态 | `2cc5fef91d95557c0094e8b6c89aff9a116c0016` | `feature/fix-0.4.12` |
+| 235 | 2026-04-30 | 修复 Codex 压缩文案生命周期边界问题 | `536062ceb85383e060bb83257ac3fb241ba6259e` | `feature/fix-0.4.12` |
+| 234 | 2026-04-30 | 修正分支更新的无上游提示与边界处理 | `3adf51af0ceff9597930e4f85435ef99f4fa96a8` | `feature/fix-0.4.12` |
+| 233 | 2026-04-30 | 支持不切换分支直接更新本地分支 | `f5c183a5d8afe3197dcd6b055f87f101d224d265` | `feature/v0.4.11` |
+| 232 | 2026-04-29 | 归档已验证提案并补全主规范 | `e660880c63dba813197c3b7e0e23bed60806b07b` | `feature/v0.4.11` |
+| 231 | 2026-04-29 | 归档已完成 OpenSpec 提案并同步主规范 | `1d5fef13b206354d9344af0253253bb7c6ede164` | `feature/v0.4.11` |
 | 230 | 2026-04-29 | 合并 PR #448 自定义主题预设 | `bc7f575d03e37b7750b12753ce069e5c5044fbd8` | `integrate/pr-448-theme-presets` |
 | 229 | 2026-04-29 | 修复历史恢复幕布渲染回归 | `d938e025` | `feature/v0.4.11` |
 | 228 | 2026-04-29 | CI sentry workflow 权限门禁修复 | `0b25913f890407eb0c98bca96eafd820b71f6486` | `feature/v0.4.11` |
