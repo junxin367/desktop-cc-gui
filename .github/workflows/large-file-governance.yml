@@ -5,6 +5,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   large-file-sentry-hard-gate:
     runs-on: ubuntu-latest

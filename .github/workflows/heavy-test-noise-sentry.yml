@@ -5,6 +5,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   heavy-test-noise-sentry:
     runs-on: ubuntu-latest
